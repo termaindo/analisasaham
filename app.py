@@ -123,7 +123,7 @@ def main():
     # --- TAMPILAN 2: SUDAH LOGIN ---
     else:
         with st.sidebar:
-            st.header("Musa Stock Pro")
+            st.header("Expert Stock Pro")
             st.success("Status: Member Premium")
             st.markdown("---")
             
@@ -150,3 +150,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
