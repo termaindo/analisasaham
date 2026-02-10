@@ -13,8 +13,8 @@ st.set_page_config(
 )
 
 # --- PASSWORD & LINK PEMBELIAN ---
-PASSWORD_RAHASIA = "SUKSES2026"  # Ganti dengan password yang Bapak mau
-LINK_LYNK_ID = "https://lynk.id/musatanaja" # Ganti dengan link Lynk.id Bapak yang asli
+PASSWORD_RAHASIA = "PINTARSAHAM2026"  # Ganti dengan password yang Bapak mau
+LINK_LYNK_ID = "https://lynk.id/hahastoresby" # Ganti dengan link Lynk.id Bapak yang asli
 
 # ==========================================
 # BAGIAN 1: CSS CUSTOM (Agar Tampilan Mirip Aplikasi Sehat)
@@ -164,3 +164,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
