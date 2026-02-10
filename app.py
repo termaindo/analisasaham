@@ -6,23 +6,30 @@ import yfinance as yf
 # KONFIGURASI HALAMAN
 # ==========================================
 st.set_page_config(
-    page_title="Musa Stock Pro",
+    page_title="Expert Stock Pro",
     page_icon="📈",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# --- PASSWORD & LINK PEMBELIAN ---
-PASSWORD_RAHASIA = "PINTARSAHAM2026"  # Ganti dengan password yang Bapak mau
-LINK_LYNK_ID = "https://lynk.id/hahastoresby" # Ganti dengan link Lynk.id Bapak yang asli
+# --- KEAMANAN PASSWORD (SECRETS) ---
+# Kita mengambil password dari brankas rahasia Streamlit, bukan ditulis di sini.
+try:
+    PASSWORD_RAHASIA = st.secrets["PASSWORD_RAHASIA"]
+except FileNotFoundError:
+    # Ini untuk jaga-jaga kalau dijalankan di komputer lokal tanpa setting secrets
+    PASSWORD_RAHASIA = "12345" 
+
+# Ganti link ini dengan Link Lynk.id Bapak
+LINK_LYNK_ID = "https://lynk.id/hahastoresby"
 
 # ==========================================
-# BAGIAN 1: CSS CUSTOM (Agar Tampilan Mirip Aplikasi Sehat)
+# BAGIAN 1: CSS CUSTOM
 # ==========================================
 def local_css():
     st.markdown("""
     <style>
-    /* Mengubah warna tombol Link (Beli) menjadi Merah agar mirip screenshot */
+    /* Tombol Beli Merah */
     a[href^="https://lynk.id"] {
         background-color: #ff4b4b;
         color: white;
@@ -38,11 +45,6 @@ def local_css():
         background-color: #cc0000;
         border-color: #cc0000;
         color: white;
-    }
-    
-    /* Mempercantik kotak info biru */
-    .stAlert {
-        border-radius: 10px;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -92,65 +94,49 @@ if 'status_login' not in st.session_state:
     st.session_state['status_login'] = False
 
 def main():
-    local_css() # Panggil gaya tambahan
+    local_css()
     
-    # --- TAMPILAN 1: BELUM LOGIN (GERBANG DEPAN) ---
+    # --- TAMPILAN 1: BELUM LOGIN ---
     if not st.session_state['status_login']:
+        col1, col2, col3 = st.columns([1, 2, 1])
         
-        # Kita buat kolom di tengah agar rapi (seperti tampilan HP di desktop)
-        col_space_1, col_login, col_space_2 = st.columns([1, 2, 1])
-        
-        with col_login:
-            # 1. Judul & Logo (Saya pakai Emoji Grafik sebagai ganti daun)
+        with col2:
             st.markdown("<h1 style='text-align: center;'>📈 Konsultan Saham Pro</h1>", unsafe_allow_html=True)
             st.markdown("<p style='text-align: center;'>Selamat datang di Aplikasi Analisa Saham & Trading.</p>", unsafe_allow_html=True)
+            st.markdown("---")
             
-            st.markdown("---") # Garis Pembatas
-            
-            # 2. Input Password dengan Icon Kunci
             st.write("🔑 **Masukkan Kode Akses Premium:**")
-            input_pass = st.text_input("Ketik kode akses Anda di sini...", type="password", label_visibility="collapsed")
+            input_pass = st.text_input("Password", type="password", label_visibility="collapsed")
             
-            # Tombol Masuk (Kecil saja, di bawah password)
-            if st.button("Buka Aplikasi", use_container_width=True, type="secondary"):
+            if st.button("Buka Aplikasi", use_container_width=True):
                 if input_pass == PASSWORD_RAHASIA:
                     st.session_state['status_login'] = True
                     st.rerun()
                 else:
-                    st.error("Kode akses salah. Silakan coba lagi.")
+                    st.error("Kode akses salah.")
 
-            # 3. Kotak Biru (Info Terkunci)
             st.info("🔒 Aplikasi ini dikunci khusus untuk Member Premium.")
-            
-            st.markdown("<br>", unsafe_allow_html=True) # Spasi
+            st.markdown("<br>", unsafe_allow_html=True)
+            st.write("**Belum punya Kode Akses?**")
+            st.link_button("🛒 Beli Kode Akses (Klik Di Sini)", LINK_LYNK_ID, use_container_width=True)
 
-            # 4. Teks Penawaran
-            st.write("**Belum punya Kode Akses?** Dapatkan panduan trading lengkap, sinyal harian, dan akses aplikasi seumur hidup dengan biaya terjangkau.")
-            
-            # 5. Tombol Merah (Link Pembelian)
-            # Menggunakan st.link_button agar mengarah ke web luar
-            st.link_button("🛒 Beli Manual dan Kode Akses (Klik Di Sini)", LINK_LYNK_ID, use_container_width=True)
-
-    # --- TAMPILAN 2: SUDAH LOGIN (DASHBOARD) ---
+    # --- TAMPILAN 2: SUDAH LOGIN ---
     else:
-        # --- SIDEBAR MENU ---
         with st.sidebar:
             st.header("Musa Stock Pro")
             st.success("Status: Member Premium")
             st.markdown("---")
             
-            # Pilihan Menu
             pilihan_menu = st.radio(
                 "Pilih Fitur:",
                 ("🏠 Beranda", "📊 Fundamental", "📈 Teknikal", "⚖️ Perbandingan", "🔍 Screening")
             )
             
             st.markdown("---")
-            if st.button("Log Out / Keluar"):
+            if st.button("Log Out"):
                 st.session_state['status_login'] = False
                 st.rerun()
 
-        # --- KONTEN UTAMA ---
         if pilihan_menu == "🏠 Beranda":
             halaman_beranda()
         elif pilihan_menu == "📊 Fundamental":
@@ -164,4 +150,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
