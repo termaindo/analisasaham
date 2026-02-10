@@ -6,28 +6,43 @@ import yfinance as yf
 # KONFIGURASI HALAMAN
 # ==========================================
 st.set_page_config(
-    page_title="Expert Stock Pro",
+    page_title="Musa Stock Pro",
     page_icon="📈",
-    layout="wide", # Menggunakan layout lebar agar grafik saham jelas
+    layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# Password Rahasia
-PASSWORD_RAHASIA = "SUKSESDISAHAM2026"
+# --- PASSWORD & LINK PEMBELIAN ---
+PASSWORD_RAHASIA = "SUKSES2026"  # Ganti dengan password yang Bapak mau
+LINK_LYNK_ID = "https://lynk.id/musatanaja" # Ganti dengan link Lynk.id Bapak yang asli
 
 # ==========================================
-# BAGIAN 1: CSS CUSTOM (Agar Tampilan Lebih Cantik)
+# BAGIAN 1: CSS CUSTOM (Agar Tampilan Mirip Aplikasi Sehat)
 # ==========================================
 def local_css():
     st.markdown("""
     <style>
-    /* Mengubah warna sidebar agar lebih tegas */
-    [data-testid="stSidebar"] {
-        background-color: #f0f2f6;
+    /* Mengubah warna tombol Link (Beli) menjadi Merah agar mirip screenshot */
+    a[href^="https://lynk.id"] {
+        background-color: #ff4b4b;
+        color: white;
+        text-decoration: none;
+        padding: 0.5rem 1rem;
+        border-radius: 0.5rem;
+        display: block;
+        text-align: center;
+        font-weight: bold;
+        border: 1px solid #ff4b4b;
     }
-    /* Mempercantik judul */
-    h1 {
-        color: #2c3e50;
+    a[href^="https://lynk.id"]:hover {
+        background-color: #cc0000;
+        border-color: #cc0000;
+        color: white;
+    }
+    
+    /* Mempercantik kotak info biru */
+    .stAlert {
+        border-radius: 10px;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -40,29 +55,25 @@ def fitur_fundamental():
     st.title("📊 Analisa Fundamental")
     st.markdown("---")
     st.info("💡 Area ini akan diisi kode Python dari Prompt Analisa Fundamental Anda.")
-    # [TEMPEL KODE DI SINI NANTI]
 
 def fitur_teknikal():
     st.title("📈 Analisa Teknikal")
     st.markdown("---")
     st.info("💡 Area ini akan diisi kode Python dari Prompt Analisa Teknikal Anda.")
-    # [TEMPEL KODE DI SINI NANTI]
 
 def fitur_perbandingan():
     st.title("⚖️ Perbandingan Saham")
     st.markdown("---")
     st.info("💡 Area ini akan diisi kode Python dari Prompt Perbandingan Saham Anda.")
-    # [TEMPEL KODE DI SINI NANTI]
 
 def fitur_screening():
     st.title("🔍 Screening Harian")
     st.markdown("---")
     st.info("💡 Area ini akan diisi kode Python dari Prompt Screening Saham Anda.")
-    # [TEMPEL KODE DI SINI NANTI]
 
 def halaman_beranda():
-    st.title("Selamat Datang, Pak Musa")
-    st.image("https://images.unsplash.com/photo-1611974765270-ca1258634369?ixlib=rb-4.0.3&auto=format&fit=crop&w=1000&q=80", caption="Market Dashboard")
+    st.title("Selamat Datang di Dashboard Saham")
+    st.image("https://images.unsplash.com/photo-1611974765270-ca1258634369?ixlib=rb-4.0.3&auto=format&fit=crop&w=1000&q=80", caption="Market Overview")
     st.write("""
     Silakan pilih menu di sebelah kiri (Sidebar) untuk mulai melakukan analisa:
     
@@ -83,36 +94,52 @@ if 'status_login' not in st.session_state:
 def main():
     local_css() # Panggil gaya tambahan
     
-    # --- LOGIKA 1: BELUM LOGIN ---
+    # --- TAMPILAN 1: BELUM LOGIN (GERBANG DEPAN) ---
     if not st.session_state['status_login']:
-        # Buat kolom agar form login ada di tengah (tidak terlalu lebar)
-        col1, col2, col3 = st.columns([1, 2, 1])
         
-        with col2:
-            st.markdown("<br><br>", unsafe_allow_html=True) # Spasi atas
-            st.image("https://cdn-icons-png.flaticon.com/512/2910/2910311.png", width=100)
-            st.title("Login Aplikasi")
-            st.write("Silakan masukkan kode akses premium Anda.")
+        # Kita buat kolom di tengah agar rapi (seperti tampilan HP di desktop)
+        col_space_1, col_login, col_space_2 = st.columns([1, 2, 1])
+        
+        with col_login:
+            # 1. Judul & Logo (Saya pakai Emoji Grafik sebagai ganti daun)
+            st.markdown("<h1 style='text-align: center;'>📈 Konsultan Saham Pro</h1>", unsafe_allow_html=True)
+            st.markdown("<p style='text-align: center;'>Selamat datang di Aplikasi Analisa Saham & Trading.</p>", unsafe_allow_html=True)
             
-            input_pass = st.text_input("Kode Akses", type="password")
-            tombol_masuk = st.button("Masuk Aplikasi", use_container_width=True)
+            st.markdown("---") # Garis Pembatas
             
-            if tombol_masuk:
+            # 2. Input Password dengan Icon Kunci
+            st.write("🔑 **Masukkan Kode Akses Premium:**")
+            input_pass = st.text_input("Ketik kode akses Anda di sini...", type="password", label_visibility="collapsed")
+            
+            # Tombol Masuk (Kecil saja, di bawah password)
+            if st.button("Buka Aplikasi", use_container_width=True, type="secondary"):
                 if input_pass == PASSWORD_RAHASIA:
                     st.session_state['status_login'] = True
                     st.rerun()
                 else:
-                    st.error("Kode akses salah.")
+                    st.error("Kode akses salah. Silakan coba lagi.")
 
-    # --- LOGIKA 2: SUDAH LOGIN (TAMPILAN UTAMA) ---
+            # 3. Kotak Biru (Info Terkunci)
+            st.info("🔒 Aplikasi ini dikunci khusus untuk Member Premium.")
+            
+            st.markdown("<br>", unsafe_allow_html=True) # Spasi
+
+            # 4. Teks Penawaran
+            st.write("**Belum punya Kode Akses?** Dapatkan panduan trading lengkap, sinyal harian, dan akses aplikasi seumur hidup dengan biaya terjangkau.")
+            
+            # 5. Tombol Merah (Link Pembelian)
+            # Menggunakan st.link_button agar mengarah ke web luar
+            st.link_button("🛒 Beli Manual dan Kode Akses (Klik Di Sini)", LINK_LYNK_ID, use_container_width=True)
+
+    # --- TAMPILAN 2: SUDAH LOGIN (DASHBOARD) ---
     else:
         # --- SIDEBAR MENU ---
         with st.sidebar:
             st.header("Musa Stock Pro")
-            st.write(f"User: Pak Musa")
+            st.success("Status: Member Premium")
             st.markdown("---")
             
-            # Pilihan Menu dengan Radio Button
+            # Pilihan Menu
             pilihan_menu = st.radio(
                 "Pilih Fitur:",
                 ("🏠 Beranda", "📊 Fundamental", "📈 Teknikal", "⚖️ Perbandingan", "🔍 Screening")
@@ -123,7 +150,7 @@ def main():
                 st.session_state['status_login'] = False
                 st.rerun()
 
-        # --- KONTEN UTAMA BERDASARKAN PILIHAN ---
+        # --- KONTEN UTAMA ---
         if pilihan_menu == "🏠 Beranda":
             halaman_beranda()
         elif pilihan_menu == "📊 Fundamental":
