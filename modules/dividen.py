@@ -1,32 +1,26 @@
 import streamlit as st
 import yfinance as yf
 import pandas as pd
-import datetime
 
 def run_dividen():
     st.title("💰 Analisa Saham Dividen (High Yield)")
     st.markdown("---")
 
     # 1. INPUT KODE SAHAM
-    col1, col2 = st.columns([1, 2])
-    with col1:
-        ticker_input = st.text_input("Masukkan Kode Saham (Contoh: BBRI, ASII, PTBA):", value="PTBA").upper()
+    col_input = st.columns([1, 2])
+    with col_input[0]:
+        ticker_input = st.text_input("Masukkan Kode Saham:", value="ASII").upper()
     
     ticker = ticker_input if ticker_input.endswith(".JK") else f"{ticker_input}.JK"
 
     if st.button(f"Analisa Dividen {ticker_input}"):
         try:
-            with st.spinner(f"Sedang mengumpulkan data dividen & keuangan {ticker_input}..."):
+            with st.spinner(f"Sedang membedah data dividen {ticker_input}..."):
                 stock = yf.Ticker(ticker)
                 info = stock.info
-                
-                # Ambil Data Laporan Keuangan
-                financials = stock.financials
-                cashflow = stock.cashflow
-                balance = stock.balance_sheet
                 dividends = stock.dividends
 
-                if info.get('quoteType') is None:
+                if not info.get('currentPrice'):
                     st.error("Data tidak ditemukan. Pastikan kode saham benar.")
                     return
 
@@ -44,39 +38,42 @@ def run_dividen():
 
                 # --- 1. OVERVIEW PERUSAHAAN ---
                 st.markdown("### 1. OVERVIEW PERUSAHAAN")
-                st.write(f"- **Bisnis Utama:** {info.get('industry', 'N/A')} di sektor {info.get('sector', 'N/A')}.")
-                st.write(f"- **Deskripsi:** {info.get('longBusinessSummary', 'N/A')[:300]}...")
-                st.write(f"- **Posisi Industri:** Market Cap Rp {info.get('marketCap', 0)/1e12:,.2f} Triliun.")
+                st.write(f"**Bisnis & Model:** {info.get('longBusinessSummary', 'N/A')[:350]}...")
+                st.write(f"**Posisi Industri:** Market Cap Rp {info.get('marketCap', 0)/1e12:,.2f} Triliun.")
 
                 # --- 2. ANALISA KEUANGAN (3-5 Tahun) ---
                 st.markdown("### 2. ANALISA KEUANGAN")
-                if not financials.empty:
-                    rev = financials.loc['Total Revenue'] if 'Total Revenue' in financials.index else pd.Series()
-                    net_inc = financials.loc['Net Income'] if 'Net Income' in financials.index else pd.Series()
-                    
-                    st.write(f"- **Trend Pendapatan:** { 'Meningkat' if rev.iloc[0] > rev.iloc[-1] else 'Berfluktuasi' } dalam 4 tahun terakhir.")
-                    st.write(f"- **Profit Margin:** {info.get('profitMargins', 0)*100:.2f}%")
-                    st.write(f"- **ROE:** {info.get('returnOnEquity', 0)*100:.2f}%")
-                    st.write(f"- **Debt to Equity:** {info.get('debtToEquity', 0):.2f}")
-                else:
-                    st.write("Data laporan keuangan tahunan tidak tersedia lengkap.")
+                st.write(f"* **ROE:** {info.get('returnOnEquity', 0)*100:.2f}%")
+                st.write(f"* **Debt to Equity:** {info.get('debtToEquity', 0):.2f}")
+                st.write(f"* **Current Ratio:** {info.get('currentRatio', 0):.2f}")
 
                 # --- 3. VALUASI ---
                 st.markdown("### 3. VALUASI")
-                pe_curr = info.get('trailingPE', 0)
-                pbv_curr = info.get('priceToBook', 0)
-                st.write(f"- **PER Saat Ini:** {pe_curr:.2f}x (Rata-rata Industri: {info.get('forwardPE', 'N/A')})")
-                st.write(f"- **PBV Saat Ini:** {pbv_curr:.2f}x")
-                st.write(f"- **Status:** {'Undervalued' if pbv_curr < 1.5 else 'Wajar/Premium'}")
+                pbv = info.get('priceToBook', 0)
+                st.write(f"* **PER:** {info.get('trailingPE', 0):.2f}x")
+                st.write(f"* **PBV:** {pbv:.2f}x")
+                st.write(f"* **Status:** {'Undervalued' if pbv < 1.2 else 'Wajar' if pbv < 2.5 else 'Premium'}")
 
-                # --- 4. DIVIDEND HISTORY (5 Tahun Terakhir) ---
-                st.markdown("### 4. DIVIDEND HISTORY")
+                # --- 4. DIVIDEND HISTORY ---
+                st.markdown("### 4. DIVIDEND HISTORY (5 Thn Terakhir)")
                 if not dividends.empty:
-                    last_5_years = dividends.groupby(dividends.index.year).sum().tail(5)
-                    st.write("- **Pembayaran per Saham (5 Thn Terakhir):**")
-                    st.table(last_5_years)
-                    st.write(f"- **Konsistensi:** Perusahaan membayar dividen secara berkala.")
+                    # Ambil dividen per tahun
+                    hist_div = dividends.groupby(dividends.index.year).sum().tail(5)
+                    st.table(hist_div)
                 else:
-                    st.write("- Data dividen historis tidak ditemukan di database.")
+                    st.write("Data historis tidak tersedia.")
 
-                # --- 5. KESEHATAN K
+                # --- 5 & 6. KESEHATAN & PROYEKSI ---
+                st.markdown("### 5 & 6. KESEHATAN & PROYEKSI")
+                fcf = info.get('freeCashflow', 0)
+                st.write(f"* **Sustainability:** {'Sangat Baik (Free Cash Flow Positif)' if fcf > 0 else 'Perlu Waspada'}")
+                st.write(f"* **Potential Yield:** {div_yield:.2f}% pada harga saat ini.")
+
+                # --- 7. REKOMENDASI ---
+                st.markdown("### 7. REKOMENDASI")
+                is_layak = "LAYAK" if div_yield > 6 else "MONITOR"
+                st.success(f"**Keputusan:** {is_layak} sebagai High Yield Dividend Stock.")
+                st.write(f"* **Entry Ideal:** Rp {curr_price * 0.97:,.0f} (Antri 3% di bawah harga sekarang).")
+
+        except Exception as e:
+            st.error(f"Gagal mengambil data. Detail: {e}")
