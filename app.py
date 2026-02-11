@@ -197,4 +197,115 @@ def fitur_screening():
             st.success(f"Ditemukan {len(hasil_lolos)} saham potensial!")
             
             df_hasil = pd.DataFrame(hasil_lolos)
-            st.dataframe(df_hasil[["Ticker", "Rating", "Harga",
+            st.dataframe(df_hasil[["Ticker", "Rating", "Harga","Chg (%)", "Value (M)"]], use_container_width=True)
+            
+            st.markdown("---")
+            st.subheader("📝 Trading Plan & Analisa")
+            
+            for item in hasil_lolos:
+                if "⭐⭐⭐⭐⭐" in item['Rating']:
+                    title = f"🔥 {item['Ticker']} | {item['Rating']} | Score: {item['Confidence']}"
+                else:
+                    title = f"✅ {item['Ticker']} | {item['Rating']} | Score: {item['Confidence']}"
+
+                with st.expander(title):
+                    c1, c2, c3 = st.columns(3)
+                    with c1: st.metric("Entry Price", f"{item['Harga']:,.0f}")
+                    with c2: st.metric("Stop Loss", f"{item['Support']:,.0f}", f"{item['Risk (%)']}%")
+                    with c3: st.metric("Take Profit", f"{item['Resist']:,.0f}", f"+{item['Reward (%)']}%")
+                    st.caption("Analisa Data: Trend + Volume + MACD + Risk/Reward.")
+        else:
+            st.warning("Hari ini pasar sangat selektif. Belum ada saham di Top 50 yang memenuhi kriteria Uptrend + High Volume.")
+
+# --- FITUR LAIN (PLACEHOLDER) ---
+
+def fitur_teknikal():
+    st.title("📈 Analisa Teknikal")
+    st.info("Fitur ini akan kita isi di tahap selanjutnya.")
+
+def fitur_perbandingan():
+    st.title("⚖️ Perbandingan Saham")
+    st.info("Fitur ini akan kita isi di tahap selanjutnya.")
+
+def fitur_fundamental():
+    st.title("📊 Analisa Fundamental")
+    st.info("Fitur ini akan kita isi di tahap selanjutnya.")
+
+def fitur_dividen():
+    st.title("💰 Analisa Dividen")
+    st.info("Fitur ini akan kita isi di tahap selanjutnya.")
+
+def halaman_beranda():
+    st.title("Selamat Datang di Expert Stock Pro")
+    st.image("https://images.unsplash.com/photo-1611974765270-ca1258634369?ixlib=rb-4.0.3&auto=format&fit=crop&w=1000&q=80", caption="Market Dashboard")
+    st.write("Silakan pilih menu di sebelah kiri (Sidebar).")
+
+# ==========================================
+# 4. LOGIKA UTAMA (MAIN LOOP)
+# ==========================================
+
+if 'status_login' not in st.session_state:
+    st.session_state['status_login'] = False
+
+def main():
+    local_css()
+    
+    # --- JIKA BELUM LOGIN ---
+    if not st.session_state['status_login']:
+        col1, col2, col3 = st.columns([1, 2, 1])
+        with col2:
+            st.markdown("<h1 style='text-align: center;'>📈 Expert Stock Pro</h1>", unsafe_allow_html=True)
+            st.markdown("---")
+            st.write("🔑 **Masukkan Kode Akses Premium:**")
+            input_pass = st.text_input("Password", type="password", label_visibility="collapsed")
+            
+            if st.button("Buka Aplikasi", use_container_width=True):
+                if input_pass == PASSWORD_RAHASIA:
+                    st.session_state['status_login'] = True
+                    st.rerun()
+                else:
+                    st.error("Kode akses salah.")
+
+            st.info("🔒 Aplikasi ini dikunci khusus untuk Member Premium.")
+            st.link_button("🛒 Beli Kode Akses (Klik Di Sini)", LINK_LYNK_ID, use_container_width=True)
+
+    # --- JIKA SUDAH LOGIN ---
+    else:
+        with st.sidebar:
+            st.header("Expert Stock Pro")
+            st.success("Status: Member Premium")
+            st.markdown("---")
+            
+            # --- MENU NAVIGASI (Perhatikan string harus sama persis) ---
+            pilihan_menu = st.radio(
+                "Pilih Fitur:",
+                ("🏠 Beranda", 
+                 "🔍 1. Screening Harian", 
+                 "📈 2. Analisa Teknikal", 
+                 "⚖️ 3. Perbandingan Saham", 
+                 "📊 4. Analisa Fundamental", 
+                 "💰 5. Analisa Dividen")
+            )
+            
+            st.markdown("---")
+            if st.button("Log Out"):
+                st.session_state['status_login'] = False
+                st.rerun()
+
+        # --- LOGIKA PINDAH HALAMAN (Semua string ditutup dengan benar) ---
+        if pilihan_menu == "🏠 Beranda":
+            halaman_beranda()
+        elif pilihan_menu == "🔍 1. Screening Harian":
+            fitur_screening()
+        elif pilihan_menu == "📈 2. Analisa Teknikal":
+            fitur_teknikal()
+        elif pilihan_menu == "⚖️ 3. Perbandingan Saham":
+            fitur_perbandingan()
+        elif pilihan_menu == "📊 4. Analisa Fundamental":
+            fitur_fundamental()
+        elif pilihan_menu == "💰 5. Analisa Dividen":
+            fitur_dividen()
+
+if __name__ == "__main__":
+    main()
+
