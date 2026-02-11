@@ -174,3 +174,167 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+
+# --- IMPORT LIBRARY KHUSUS UNTUK FITUR INI ---
+import datetime
+import pytz
+
+def fitur_screening():
+    st.title("🔍 Screening Saham: Top 30 Teraktif")
+    st.markdown("---")
+
+    # 1. SINKRONISASI WAKTU (WIB)
+    wib = pytz.timezone('Asia/Jakarta')
+    now = datetime.datetime.now(wib)
+    jam_sekarang = now.strftime('%H:%M')
+    tanggal_sekarang = now.strftime('%d %B %Y')
+
+    # Tentukan Sesi Pasar
+    if now.hour < 16:
+        sesi_pasar = "LIVE MARKET (Fokus: Volatilitas Intraday)"
+    else:
+        sesi_pasar = "POST MARKET (Fokus: Analisa Penutupan)"
+
+    st.info(f"""
+    **📅 Waktu:** {tanggal_sekarang} - {jam_sekarang} WIB
+    **🎯 Fokus:** 30 Saham Paling Likuid (Market Leaders)
+    """)
+
+    # 2. KRITERIA SCREENING
+    col1, col2 = st.columns(2)
+    with col1:
+        st.markdown("""
+        * ✅ Harga > Rp 55
+        * ✅ Trend: Harga > MA20 > MA50
+        """)
+    with col2:
+        st.markdown("""
+        * ✅ Value Transaksi > 10 Miliar
+        * ✅ Volume Spike (Vol > Rata-rata)
+        """)
+
+    tombol_scan = st.button("Mulai Screening (Proses ±40 Detik)")
+
+    # 3. DAFTAR 30 SAHAM TERAKTIF (Update)
+    # Kombinasi Big Caps, Bank Digital, Komoditas, dan Properti
+    saham_top30 = [
+        # BANK BIG CAPS
+        "BBCA.JK", "BBRI.JK", "BMRI.JK", "BBNI.JK", 
+        # TELEKOMUNIKASI
+        "TLKM.JK", "ISAT.JK", "EXCL.JK", "TOWR.JK",
+        # TEKNOLOGI & BANK DIGITAL
+        "GOTO.JK", "ARTO.JK", "BUKA.JK", "BRIS.JK",
+        # PERTAMBANGAN & ENERGI
+        "ADRO.JK", "ANTM.JK", "MDKA.JK", "PTBA.JK", 
+        "INCO.JK", "PGAS.JK", "MEDC.JK", "AKRA.JK", "HRUM.JK",
+        # CONSUMER GOODS & RETAIL
+        "ICBP.JK", "INDF.JK", "UNVR.JK", "AMRT.JK", "CPIN.JK",
+        # ASTRA & PROPERTI
+        "ASII.JK", "UNTR.JK", "CTRA.JK", "SMRA.JK"
+    ]
+
+    # 4. LOGIKA SCREENING
+    if tombol_scan:
+        hasil_lolos = []
+        progress_bar = st.progress(0)
+        status_text = st.empty()
+        
+        total_saham = len(saham_top30)
+
+        for i, ticker in enumerate(saham_top30):
+            # Update Progress Bar
+            progress = (i + 1) / total_saham
+            progress_bar.progress(progress)
+            status_text.text(f"Menganalisa ({i+1}/{total_saham}): {ticker}...")
+
+            try:
+                # Ambil data 3 bulan terakhir
+                stock = yf.Ticker(ticker)
+                df = stock.history(period="3mo")
+
+                if len(df) < 55: continue
+
+                # --- RUMUS INDIKATOR ---
+                current_price = df['Close'].iloc[-1]
+                prev_price = df['Close'].iloc[-2]
+                volume_now = df['Volume'].iloc[-1]
+                
+                # Moving Average
+                df['MA20'] = df['Close'].rolling(window=20).mean()
+                df['MA50'] = df['Close'].rolling(window=50).mean()
+                df['VolMA20'] = df['Volume'].rolling(window=20).mean()
+
+                ma20 = df['MA20'].iloc[-1]
+                ma50 = df['MA50'].iloc[-1]
+                vol_avg = df['VolMA20'].iloc[-1]
+
+                # Nilai Transaksi
+                transaksi_value = current_price * volume_now
+
+                # --- FILTER ---
+                cond1 = current_price > 55
+                cond2 = (current_price > ma20) and (ma20 > ma50) # Uptrend
+                cond3 = transaksi_value > 10_000_000_000 # Minimal 10 Miliar
+                cond4 = volume_now > vol_avg # Volume Spike
+
+                if cond1 and cond2 and cond3 and cond4:
+                    # Hitung Risk Reward (Support & Resist 20 Hari)
+                    support_level = df['Low'].tail(20).min()
+                    resist_level = df['High'].tail(20).max()
+
+                    risk_pct = ((support_level - current_price) / current_price) * 100
+                    reward_pct = ((resist_level - current_price) / current_price) * 100
+                    chg_pct = ((current_price - prev_price) / prev_price) * 100
+
+                    hasil_lolos.append({
+                        "Ticker": ticker.replace(".JK", ""),
+                        "Harga": current_price,
+                        "Chg (%)": round(chg_pct, 2),
+                        "Trend": "Uptrend ✅",
+                        "Vol Spike": "✅",
+                        "Value (M)": round(transaksi_value / 1_000_000_000, 1),
+                        "Support": support_level,
+                        "Resist": resist_level,
+                        "Risk (%)": round(risk_pct, 2),
+                        "Reward (%)": round(reward_pct, 2)
+                    })
+
+            except Exception:
+                continue 
+
+        progress_bar.empty()
+        status_text.empty()
+
+        # 5. TAMPILKAN HASIL
+        if len(hasil_lolos) > 0:
+            st.success(f"Ditemukan {len(hasil_lolos)} saham potensial dari Top 30!")
+            
+            # Tabel Ringkas
+            df_hasil = pd.DataFrame(hasil_lolos)
+            st.dataframe(
+                df_hasil[["Ticker", "Harga", "Chg (%)", "Vol Spike", "Value (M)"]],
+                use_container_width=True
+            )
+
+            st.markdown("---")
+            st.subheader("📝 Trading Plan Otomatis")
+            
+            # Detail Plan
+            for item in hasil_lolos:
+                with st.expander(f"Analisa: {item['Ticker']} (Risk: {item['Risk (%)']}% | Reward: +{item['Reward (%)']}%)"):
+                    c1, c2, c3 = st.columns(3)
+                    with c1:
+                        st.metric("Entry Price", f"{item['Harga']:,.0f}")
+                    with c2:
+                        st.metric("Stop Loss", f"{item['Support']:,.0f}", f"{item['Risk (%)']}%")
+                    with c3:
+                        st.metric("Take Profit", f"{item['Resist']:,.0f}", f"+{item['Reward (%)']}%")
+                    
+                    st.caption("Plan ini dihitung berdasarkan Support & Resistance 20 hari terakhir.")
+        else:
+            st.warning("Saat ini pasar sedang konsolidasi. Belum ada saham di Top 30 yang memenuhi kriteria Uptrend + High Volume secara bersamaan.")
+
+    st.caption("DISCLAIMER: Keputusan investasi ada di tangan Anda.")
+
