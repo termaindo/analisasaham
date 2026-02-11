@@ -66,8 +66,9 @@ def run_teknikal():
                     x=df.index, y=df['Volume'], name='Volume', marker_color=colors
                 ), row=2, col=1)
                 
+                # UPDATE: Warna Vol MA20 menjadi Kuning (Yellow)
                 fig.add_trace(go.Scatter(
-                    x=df.index, y=df['VolMA20'], name='Vol MA20', line=dict(color='purple', width=2)
+                    x=df.index, y=df['VolMA20'], name='Vol MA20', line=dict(color='yellow', width=2)
                 ), row=2, col=1)
 
                 # Update Layout
@@ -76,15 +77,14 @@ def run_teknikal():
                     xaxis_rangeslider_visible=False,
                     height=600,
                     showlegend=True,
-                    template="plotly_white"
+                    template="plotly_dark" # Menggunakan template dark agar warna kuning lebih menyala
                 )
                 st.plotly_chart(fig, use_container_width=True)
 
-                # --- 4. ANALISA 8 POIN (AI ENGINE) ---
+                # --- 4. ANALISA 8 POIN (Sesuai Prompt Pak Musa) ---
                 st.markdown("---")
-                st.subheader(f"🤖 Hasil Bedah Tuntas {ticker_input}")
+                st.subheader(f"🤖 Analisa Expert: {ticker_input}")
 
-                # Logika Penentuan Otomatis
                 f_score = 8 if info.get('marketCap', 0) > 100e12 else 6
                 t_score = 8 if curr_price > df['MA20'].iloc[-1] else 4
                 sentiment = "Bullish" if curr_price > df['MA20'].iloc[-1] else "Bearish"
@@ -92,19 +92,18 @@ def run_teknikal():
                 supp = df['Low'].tail(30).min()
                 res = df['High'].tail(30).max()
                 
-                # Format Bullet Points Padat
                 st.markdown(f"""
-                1. **Fundamental Score ({f_score}/10):** Kapitalisasi pasar Rp {info.get('marketCap', 0)/1e12:,.1f}T. Kondisi perusahaan {'sangat dominan' if f_score > 7 else 'menengah'}.
-                2. **Technical Score ({t_score}/10):** Harga {'di atas' if t_score > 7 else 'di bawah'} MA20. RSI: {curr_rsi:.1f} ({'Oversold' if curr_rsi < 30 else 'Overbought' if curr_rsi > 70 else 'Netral'}).
-                3. **Sentiment:** **{sentiment}** (Volume {'di atas' if vol_now > vol_ma else 'di bawah'} rata-rata 20 hari).
-                4. **3 Alasan BUY:** {'Uptrend MA' if sentiment == 'Bullish' else 'Pantulan area Support'}, Volume {'kuat' if vol_now > vol_ma else 'stabil'}, RSI menunjukkan {'ruang kenaikan' if curr_rsi < 60 else 'momentum'}.
-                5. **3 Risk:** Sinyal {'jenuh beli' if curr_rsi > 65 else 'lemahnya trend'}, Resiko koreksi global, Penembusan Support Rp {supp:,.0f}.
-                6. **Rekomendasi Final:** **{'BUY/HOLD' if sentiment == 'Bullish' else 'WAIT & SEE'}**
-                7. **Plan:** Entry: **Rp {curr_price:,.0f}** | Target: **Rp {res:,.0f}** | SL: **Rp {supp:,.0f}**.
-                8. **Term:** {'Jangka Panjang (Investasi)' if f_score > 7 else 'Jangka Pendek (Swing)'}.
+                * **Fundamental score (1-10):** {f_score}/10 - Kapitalisasi pasar Rp {info.get('marketCap', 0)/1e12:,.1f}T.
+                * **Technical score (1-10):** {t_score}/10 - Harga {'di atas' if t_score > 7 else 'di bawah'} MA20. RSI: {curr_rsi:.1f}.
+                * **Sentiment pasar saat ini:** **{sentiment}**
+                * **3 Alasan utama untuk BUY:** {'Uptrend MA' if sentiment == 'Bullish' else 'Pantulan Support'}, Volume {'kuat' if vol_now > vol_ma else 'stabil'}, RSI {'mendukung' if curr_rsi < 65 else 'momentum'}.
+                * **3 Risk utama yang harus diwaspadai:** Sinyal {'jenuh beli' if curr_rsi > 68 else 'tren lemah'}, Koreksi pasar, Penembusan Support Rp {supp:,.0f}.
+                * **Rekomendasi final:** **{'BUY/HOLD' if sentiment == 'Bullish' else 'WAIT & SEE'}**
+                * **Entry buy, target price & stop loss:** Entry: **Rp {curr_price:,.0f}** | Target: **Rp {res:,.0f}** | SL: **Rp {supp:,.0f}**.
+                * **Investasi jangka pendek atau panjang?** {'Jangka Panjang (Investasi)' if f_score > 7 else 'Jangka Pendek (Swing)'}.
                 """)
 
         except Exception as e:
-            st.error(f"Gagal memuat data. Error: {e}")
+            st.error(f"Gagal memuat data. Pastikan kode saham benar. Error: {e}")
 
-    st.caption("Peringatan: Analisa berbasis algoritma data historis. Selalu lakukan riset mandiri.")
+    st.caption("DISCLAIMER: Analisa data otomatis, keputusan investasi di tangan Anda.")
