@@ -5,19 +5,19 @@ import datetime
 import pytz
 
 def run_screening():
-    st.title("🔍 Screening Saham Harian")
+    st.title("🔍 Screening Saham: Safe Strategy (R:R 1.3x)")
     
     # 1. SINKRONISASI WAKTU
     wib = pytz.timezone('Asia/Jakarta')
     now = datetime.datetime.now(wib)
     jam_sekarang = now.strftime('%H:%M')
     tanggal_sekarang = now.strftime('%d %B %Y')
-    sesi_pasar = "LIVE MARKET (Fokus: Intraday)" if now.hour < 16 else "POST MARKET (Fokus: Penutupan)"
+    sesi_pasar = "LIVE MARKET" if now.hour < 16 else "POST MARKET"
 
     st.info(f"📅 **Waktu Data:** {tanggal_sekarang} - {jam_sekarang} WIB | **Fokus:** {sesi_pasar}")
+    st.markdown("> **Strategi:** Hanya menampilkan saham dengan *Reward* minimal **1.3x** dari *Risk* menggunakan titik *Entry* di MA20 (Buy on Weakness).")
 
     if st.button("Mulai Screening (Proses ±60 Detik)"):
-        # 2. DAFTAR TOP 50
         saham_top50 = [
             "BBCA.JK", "BBRI.JK", "BMRI.JK", "BBNI.JK", "BBTN.JK", "BRIS.JK", "ARTO.JK", "BFIN.JK", 
             "BREN.JK", "TPIA.JK", "BRPT.JK", "PGEO.JK", "AMMN.JK", "TLKM.JK", "ISAT.JK", "EXCL.JK", 
@@ -56,29 +56,37 @@ def run_screening():
                 macd = exp12 - exp26
                 signal = macd.ewm(span=9, adjust=False).mean()
 
+                # LOGIKA BUY ON WEAKNESS (ENTRY DI MA20)
+                entry_bow = df['MA20'].iloc[-1]
                 supp = df['Low'].tail(20).min()
                 res = df['High'].tail(20).max()
-                risk = ((supp - curr) / curr) * 100
-                reward = ((res - curr) / curr) * 100
+                
+                # Hitung Risk/Reward berdasarkan harga BoW (bukan harga sekarang)
+                risk_bow = ((supp - entry_bow) / entry_bow) * 100
+                reward_bow = ((res - entry_bow) / entry_bow) * 100
+                rr_ratio = reward_bow / abs(risk_bow) if risk_bow != 0 else 0
 
-                # Filter Dasar & Scoring
+                # Filter Dasar & Syarat Ketat R:R >= 1.3
                 if curr > 55 and curr > df['MA20'].iloc[-1] > df['MA50'].iloc[-1] and (curr * vol) > 5e9:
-                    score = 40
-                    if vol > df['VolMA20'].iloc[-1]: score += 15
-                    if macd.iloc[-1] > signal.iloc[-1]: score += 15
-                    if 50 <= curr_rsi <= 68: score += 15
-                    elif curr_rsi > 75: score -= 10
-                    if reward > (abs(risk) * 1.5): score += 15
+                    if rr_ratio >= 1.3:
+                        # Scoring System
+                        score = 40
+                        if vol > df['VolMA20'].iloc[-1]: score += 15
+                        if macd.iloc[-1] > signal.iloc[-1]: score += 15
+                        if 50 <= curr_rsi <= 68: score += 15
+                        elif curr_rsi > 75: score -= 10
+                        if rr_ratio >= 2.0: score += 15
 
-                    if score >= 70:
-                        label = "⭐⭐⭐⭐⭐ (Sangat Kuat)" if score >= 85 else "⭐⭐⭐⭐ (Kuat)"
+                        label = "⭐⭐⭐⭐⭐ (Sangat Layak)" if score >= 85 else "⭐⭐⭐⭐ (Layak)"
+                        
                         hasil_lolos.append({
-                            "Ticker": ticker.replace(".JK", ""), "Harga": int(curr),
-                            "Chg (%)": round(((curr-prev)/prev)*100, 2), "RSI": round(curr_rsi, 1),
+                            "Ticker": ticker.replace(".JK", ""), "Harga_Now": int(curr),
+                            "Entry_BoW": int(entry_bow), "RSI": round(curr_rsi, 1),
                             "Confidence": f"{score}%", "Rating": label,
-                            "Value (M)": round((curr * vol) / 1e9, 1), "Support": supp, 
-                            "Resist": res, "Risk_Pct": round(risk, 2), 
-                            "Reward_Pct": round(reward, 2), "Raw_Score": score
+                            "Value (M)": round((curr * vol) / 1e9, 1), "Stop_Loss": supp, 
+                            "Target": res, "Risk_Pct": round(risk_bow, 2), 
+                            "Reward_Pct": round(reward_bow, 2), "RR_Ratio": round(rr_ratio, 2),
+                            "Raw_Score": score
                         })
             except: continue
 
@@ -86,43 +94,38 @@ def run_screening():
         if hasil_lolos:
             hasil_lolos.sort(key=lambda x: x['Raw_Score'], reverse=True)
             df_final = pd.DataFrame(hasil_lolos)
-            st.success(f"Ditemukan {len(hasil_lolos)} saham potensial!")
-            st.dataframe(df_final[["Ticker", "Rating", "Harga", "Chg (%)", "RSI", "Confidence", "Value (M)"]], use_container_width=True)
+            st.success(f"Ditemukan {len(hasil_lolos)} saham dengan Rasio Risk:Reward sehat (min 1.3x)!")
+            st.dataframe(df_final[["Ticker", "Rating", "Entry_BoW", "Harga_Now", "RR_Ratio", "Confidence"]], use_container_width=True)
             
             st.markdown("---")
-            st.subheader("📊 Analisa Detail & Trading Plan")
+            st.subheader("📊 Strategi Buy on Weakness (BoW)")
             for item in hasil_lolos:
-                with st.expander(f"Detail: {item['Ticker']} | Score: {item['Confidence']}"):
-                    st.write(f"**Analisa:** Saham {item['Ticker']} dalam kondisi {item['Rating']}. RSI {item['RSI']} ({'momentum kuat' if item['RSI'] > 50 else 'pemulihan'}).")
+                with st.expander(f"Plan: {item['Ticker']} | R:R Ratio: {item['RR_Ratio']}x"):
+                    st.write(f"**Analisa:** Saham {item['Ticker']} sedang uptrend. Jangan kejar harga atas (**Rp {item['Harga_Now']:,.0f}**). Tunggu harga melemah ke area **Entry BoW** agar risiko terjaga.")
                     
-                    # --- TAMPILAN TRADING PLAN DENGAN FONT DISESUAIKAN ---
                     c1, c2, c3 = st.columns(3)
-                    
-                    # Kolom 1: Entry
                     with c1:
                         st.markdown(f"""
                         <div style='text-align: center; padding: 10px; border: 1px solid #ddd; border-radius: 5px;'>
-                            <span style='font-size: 0.8em; color: gray;'>Entry Price</span><br>
-                            <span style='font-size: 1.3em; font-weight: bold;'>Rp {item['Harga']:,.0f}</span>
+                            <span style='font-size: 0.8em; color: gray;'>Antri Beli di (BoW)</span><br>
+                            <span style='font-size: 1.3em; font-weight: bold;'>Rp {item['Entry_BoW']:,.0f}</span>
                         </div>
                         """, unsafe_allow_html=True)
                     
-                    # Kolom 2: Stop Loss (Harga BESAR, Risk KECIL)
                     with c2:
                         st.markdown(f"""
                         <div style='background-color: #FF0000; color: white; padding: 10px; border-radius: 5px; text-align: center;'>
-                            <span style='font-size: 1.5em; font-weight: bold;'>Rp {item['Support']:,.0f}</span><br>
+                            <span style='font-size: 1.5em; font-weight: bold;'>Rp {item['Stop_Loss']:,.0f}</span><br>
                             <span style='font-size: 0.9em; opacity: 0.9;'>Stop Loss ({item['Risk_Pct']}% Risk)</span>
                         </div>
                         """, unsafe_allow_html=True)
                     
-                    # Kolom 3: Take Profit (Harga BESAR, Reward KECIL)
                     with c3:
                         st.markdown(f"""
                         <div style='background-color: #008000; color: white; padding: 10px; border-radius: 5px; text-align: center;'>
-                            <span style='font-size: 1.5em; font-weight: bold;'>Rp {item['Resist']:,.0f}</span><br>
+                            <span style='font-size: 1.5em; font-weight: bold;'>Rp {item['Target']:,.0f}</span><br>
                             <span style='font-size: 0.9em; opacity: 0.9;'>Take Profit (+{item['Reward_Pct']}% Reward)</span>
                         </div>
                         """, unsafe_allow_html=True)
-
-        else: st.warning("Tidak ada saham terjaring skor > 70 hari ini.")
+        else: 
+            st.warning("Tidak ada saham dengan rasio R:R sehat (1.3x) hari ini. Lebih baik 'Wait and See' atau tunggu harga terkoreksi ke MA20.")
