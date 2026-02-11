@@ -15,7 +15,7 @@ def run_dividen():
 
     if st.button(f"Analisa Dividen {ticker_input}"):
         try:
-            with st.spinner(f"Sedang membedah data dividen {ticker_input}..."):
+            with st.spinner(f"Sedang menghitung data dividen {ticker_input}..."):
                 stock = yf.Ticker(ticker)
                 info = stock.info
                 dividends = stock.dividends
@@ -24,56 +24,49 @@ def run_dividen():
                     st.error("Data tidak ditemukan. Pastikan kode saham benar.")
                     return
 
-                # --- HEADER RINGKASAN ---
+                # --- PERBAIKAN LOGIKA PERHITUNGAN ---
                 curr_price = info.get('currentPrice', 0)
-                div_yield = info.get('dividendYield', 0) * 100 if info.get('dividendYield') else 0
+                # dividendRate adalah DPS (dalam Rupiah)
+                dps = info.get('dividendRate', 0) 
+                # Hitung Yield secara manual agar akurat (DPS / Harga * 100)
+                calculated_yield = (dps / curr_price) * 100 if curr_price > 0 else 0
+                payout_ratio = info.get('payoutRatio', 0) * 100
                 
                 st.subheader(f"📊 Summary {info.get('longName', ticker_input)}")
-                c1, c2, c3 = st.columns(3)
+                
+                # TAMPILAN HEADER (Sekarang ada 4 kolom agar lebih lengkap)
+                c1, c2, c3, c4 = st.columns(4)
                 c1.metric("Harga Saat Ini", f"Rp {curr_price:,.0f}")
-                c2.metric("Dividend Yield", f"{div_yield:.2f}%")
-                c3.metric("Payout Ratio", f"{info.get('payoutRatio', 0)*100:.1f}%")
+                c2.metric("Dividen (DPS)", f"Rp {dps:,.0f}") # Menampilkan Rupiah
+                c3.metric("Dividend Yield", f"{calculated_yield:.2f}%") # Menampilkan Persen
+                c4.metric("Payout Ratio", f"{payout_ratio:.1f}%")
 
                 st.markdown("---")
 
                 # --- 1. OVERVIEW PERUSAHAAN ---
                 st.markdown("### 1. OVERVIEW PERUSAHAAN")
                 st.write(f"**Bisnis & Model:** {info.get('longBusinessSummary', 'N/A')[:350]}...")
-                st.write(f"**Posisi Industri:** Market Cap Rp {info.get('marketCap', 0)/1e12:,.2f} Triliun.")
+                st.write(f"**Market Cap:** Rp {info.get('marketCap', 0)/1e12:,.2f} Triliun.")
 
-                # --- 2. ANALISA KEUANGAN (3-5 Tahun) ---
-                st.markdown("### 2. ANALISA KEUANGAN")
-                st.write(f"* **ROE:** {info.get('returnOnEquity', 0)*100:.2f}%")
-                st.write(f"* **Debt to Equity:** {info.get('debtToEquity', 0):.2f}")
-                st.write(f"* **Current Ratio:** {info.get('currentRatio', 0):.2f}")
-
-                # --- 3. VALUASI ---
-                st.markdown("### 3. VALUASI")
-                pbv = info.get('priceToBook', 0)
-                st.write(f"* **PER:** {info.get('trailingPE', 0):.2f}x")
-                st.write(f"* **PBV:** {pbv:.2f}x")
-                st.write(f"* **Status:** {'Undervalued' if pbv < 1.2 else 'Wajar' if pbv < 2.5 else 'Premium'}")
-
-                # --- 4. DIVIDEND HISTORY ---
-                st.markdown("### 4. DIVIDEND HISTORY (5 Thn Terakhir)")
+                # --- 4. DIVIDEND HISTORY (Tabel 5 Tahun Terakhir) ---
+                st.markdown("### 4. DIVIDEND HISTORY (5 Tahun Terakhir)")
                 if not dividends.empty:
-                    # Ambil dividen per tahun
-                    hist_div = dividends.groupby(dividends.index.year).sum().tail(5)
-                    st.table(hist_div)
+                    # Ambil data dividen dan kelompokkan per tahun
+                    df_div = dividends.to_frame()
+                    df_div['Year'] = df_div.index.year
+                    hist_div = df_div.groupby('Year')['Dividends'].sum().tail(5)
+                    
+                    # Tampilkan tabel yang rapi
+                    st.table(hist_div.rename("Dividen (Rp)"))
                 else:
-                    st.write("Data historis tidak tersedia.")
-
-                # --- 5 & 6. KESEHATAN & PROYEKSI ---
-                st.markdown("### 5 & 6. KESEHATAN & PROYEKSI")
-                fcf = info.get('freeCashflow', 0)
-                st.write(f"* **Sustainability:** {'Sangat Baik (Free Cash Flow Positif)' if fcf > 0 else 'Perlu Waspada'}")
-                st.write(f"* **Potential Yield:** {div_yield:.2f}% pada harga saat ini.")
+                    st.info("Data riwayat dividen tahunan tidak tersedia di database.")
 
                 # --- 7. REKOMENDASI ---
                 st.markdown("### 7. REKOMENDASI")
-                is_layak = "LAYAK" if div_yield > 6 else "MONITOR"
-                st.success(f"**Keputusan:** {is_layak} sebagai High Yield Dividend Stock.")
-                st.write(f"* **Entry Ideal:** Rp {curr_price * 0.97:,.0f} (Antri 3% di bawah harga sekarang).")
+                # Kriteria: Layak jika yield > 5%
+                status_div = "LAYAK (High Yield)" if calculated_yield > 5 else "MODERAT"
+                st.success(f"**Kesimpulan:** Saham ini tergolong {status_div}.")
+                st.write(f"* **Yield vs Deposito:** {'Lebih tinggi dari rata-rata deposito bank' if calculated_yield > 4 else 'Setara dengan deposito bank'}.")
 
         except Exception as e:
-            st.error(f"Gagal mengambil data. Detail: {e}")
+            st.error(f"Gagal memproses data. Kesalahan: {e}")
