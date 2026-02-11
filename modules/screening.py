@@ -1,71 +1,55 @@
 import streamlit as st
-import pandas as pd
-import yfinance as yf
-import datetime
-import pytz
+import modules.screening as screening
+# Tambahkan import lainnya jika file sudah ada di folder modules
 
-def run_screening():
-    st.title("🔍 Screening Saham: Top 50 + RSI & MACD")
-    st.markdown("---")
+# 1. KONFIGURASI
+st.set_page_config(page_title="Expert Stock Pro", page_icon="📈", layout="wide")
 
-    wib = pytz.timezone('Asia/Jakarta')
-    now = datetime.datetime.now(wib)
-    
-    st.info(f"**📅 Data Per:** {now.strftime('%d %B %Y - %H:%M')} WIB")
+# --- KEAMANAN & LINK ---
+try:
+    PASSWORD_RAHASIA = st.secrets["PASSWORD_RAHASIA"]
+except:
+    PASSWORD_RAHASIA = "12345"
 
-    if st.button("Mulai Screening (Proses ±60 Detik)"):
-        saham_top50 = [
-            "BBCA.JK", "BBRI.JK", "BMRI.JK", "BBNI.JK", "BBTN.JK", "BRIS.JK", "ARTO.JK", "BFIN.JK",
-            "BREN.JK", "TPIA.JK", "BRPT.JK", "PGEO.JK", "AMMN.JK", "TLKM.JK", "ISAT.JK", "EXCL.JK", 
-            "GOTO.JK", "ADRO.JK", "ANTM.JK", "MDKA.JK", "PTBA.JK", "INCO.JK", "MEDC.JK", "PANI.JK",
-            "ASII.JK", "UNTR.JK", "CTRA.JK", "SMRA.JK", "ACES.JK", "MAPI.JK" # Tambahkan hingga 50
-        ]
+LINK_LYNK_ID = "https://lynk.id/hahastoresby"
 
-        hasil_lolos = []
-        progress = st.progress(0)
-        
-        for i, ticker in enumerate(saham_top50):
-            progress.progress((i + 1) / len(saham_top50))
-            try:
-                stock = yf.Ticker(ticker)
-                df = stock.history(period="6mo")
-                if len(df) < 50: continue
+if 'status_login' not in st.session_state:
+    st.session_state['status_login'] = False
 
-                curr = df['Close'].iloc[-1]
-                vol = df['Volume'].iloc[-1]
-                
-                # Indikator
-                df['MA20'] = df['Close'].rolling(20).mean()
-                df['MA50'] = df['Close'].rolling(50).mean()
-                
-                # RSI
-                delta = df['Close'].diff()
-                gain = (delta.where(delta > 0, 0)).rolling(14).mean()
-                loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
-                rsi = 100 - (100 / (1 + (gain/loss)))
-                curr_rsi = rsi.iloc[-1]
+# 2. LOGIKA LOGIN
+if not st.session_state['status_login']:
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        st.markdown("<h1 style='text-align: center;'>📈 Expert Stock Pro</h1>", unsafe_allow_html=True)
+        st.markdown("---")
+        input_pass = st.text_input("Password Premium", type="password")
+        if st.button("Masuk Aplikasi", use_container_width=True):
+            if input_pass == PASSWORD_RAHASIA:
+                st.session_state['status_login'] = True
+                st.rerun()
+            else: st.error("Password Salah.")
+        st.link_button("🛒 Beli Akses Premium", LINK_LYNK_ID, use_container_width=True)
+else:
+    # 3. SIDEBAR NAVIGASI
+    with st.sidebar:
+        st.header("Expert Stock Pro")
+        pilihan = st.radio("Pilih Menu:", (
+            "🏠 Beranda", 
+            "🔍 1. Screening Harian", 
+            "📈 2. Analisa Teknikal", 
+            "📊 3. Analisa Fundamental",
+            "💰 4. Analisa Dividen",
+            "⚖️ 5. Perbandingan 2 Saham"
+        ))
+        if st.button("Keluar"):
+            st.session_state['status_login'] = False
+            st.rerun()
 
-                # Filter: Uptrend & Liquid
-                if curr > 55 and curr > df['MA20'].iloc[-1] > df['MA50'].iloc[-1] and (curr*vol) > 10_000_000_000:
-                    # Hitung Score (Logika yang sama)
-                    score = 60
-                    if 50 <= curr_rsi <= 68: score += 20
-                    
-                    hasil_lolos.append({
-                        "Ticker": ticker.replace(".JK", ""),
-                        "Harga": curr,
-                        "RSI": round(curr_rsi, 1),
-                        "Confidence": f"{score}%",
-                        "Rating": "⭐⭐⭐⭐" if score > 70 else "⭐⭐⭐",
-                        "Value (M)": round((curr*vol)/1e9, 1),
-                        "Raw_Score": score
-                    })
-            except: continue
-
-        if hasil_lolos:
-            hasil_lolos.sort(key=lambda x: x['Raw_Score'], reverse=True)
-            df_final = pd.DataFrame(hasil_lolos)
-            # PASTIKAN KOLOM RSI ADA DI SINI
-            st.dataframe(df_final[["Ticker", "Rating", "Harga", "RSI", "Confidence", "Value (M)"]], use_container_width=True)
-        else:
-            st.warning("Tidak ada saham terjaring.")
+    # 4. ROUTING
+    if pilihan == "🏠 Beranda":
+        st.title("Selamat Datang di Expert Stock Pro")
+        st.write("Silakan pilih fitur di sidebar untuk memulai analisa.")
+    elif pilihan == "🔍 1. Screening Harian":
+        screening.run_screening()
+    else:
+        st.info(f"Fitur {pilihan} sedang disiapkan.")
