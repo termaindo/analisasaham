@@ -71,7 +71,7 @@ def run_fundamental():
                 with col_v1:
                     st.write(f"**PER Saat Ini:** {info.get('trailingPE', 0):.2f}x")
                     st.write(f"**PBV Saat Ini:** {info.get('priceToBook', 0):.2f}x")
-                    st.write(f"**Dividend Yield:** {div_yield:.2f}% (Koreksi)")
+                    st.write(f"**Dividend Yield:** {div_yield:.2f}%")
                 
                 with col_v2:
                     st.info(f"**Estimasi Harga Wajar (PER 5Y):** Rp {fair_pe:,.0f}")
