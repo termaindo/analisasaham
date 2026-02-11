@@ -1,55 +1,55 @@
 import streamlit as st
-import modules.screening as screening
-# Tambahkan import lainnya jika file sudah ada di folder modules
+import pandas as pd
+import yfinance as yf
+import datetime
+import pytz
 
-# 1. KONFIGURASI
-st.set_page_config(page_title="Expert Stock Pro", page_icon="📈", layout="wide")
+def run_screening():
+    st.title("🔍 Screening Saham Harian")
+    
+    wib = pytz.timezone('Asia/Jakarta')
+    now = datetime.datetime.now(wib)
+    st.info(f"📅 Data Per: {now.strftime('%d %B %Y - %H:%M')} WIB")
 
-# --- KEAMANAN & LINK ---
-try:
-    PASSWORD_RAHASIA = st.secrets["PASSWORD_RAHASIA"]
-except:
-    PASSWORD_RAHASIA = "12345"
+    if st.button("Mulai Screening (Proses ±60 Detik)"):
+        # Daftar 50 Saham (Singkatan untuk contoh)
+        saham_list = ["BBCA.JK", "BBRI.JK", "TLKM.JK", "ASII.JK", "GOTO.JK", "BMRI.JK", "BBNI.JK", "BRIS.JK", "ADRO.JK", "ANTM.JK", "PGEO.JK", "MAPI.JK", "BBTN.JK", "TINS.JK"] 
+        
+        hasil = []
+        prog = st.progress(0)
+        
+        for i, ticker in enumerate(saham_list):
+            prog.progress((i + 1) / len(saham_list))
+            try:
+                data = yf.Ticker(ticker).history(period="6mo")
+                if len(data) < 50: continue
+                
+                curr = data['Close'].iloc[-1]
+                # Hitung RSI 14
+                delta = data['Close'].diff()
+                gain = (delta.where(delta > 0, 0)).rolling(14).mean()
+                loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
+                rsi = 100 - (100 / (1 + (gain/loss)))
+                curr_rsi = rsi.iloc[-1]
+                
+                # Logika Skor (Sederhana)
+                score = 70 if curr_rsi > 50 else 50
+                
+                hasil.append({
+                    "Ticker": ticker.replace(".JK", ""),
+                    "Rating": "⭐⭐⭐⭐" if score >= 70 else "⭐⭐⭐",
+                    "Harga": int(curr),
+                    "RSI": round(curr_rsi, 1),
+                    "Confidence": f"{score}%",
+                    "Value (M)": round((curr * data['Volume'].iloc[-1]) / 1e9, 1),
+                    "Raw_Score": score
+                })
+            except: continue
 
-LINK_LYNK_ID = "https://lynk.id/hahastoresby"
-
-if 'status_login' not in st.session_state:
-    st.session_state['status_login'] = False
-
-# 2. LOGIKA LOGIN
-if not st.session_state['status_login']:
-    col1, col2, col3 = st.columns([1, 2, 1])
-    with col2:
-        st.markdown("<h1 style='text-align: center;'>📈 Expert Stock Pro</h1>", unsafe_allow_html=True)
-        st.markdown("---")
-        input_pass = st.text_input("Password Premium", type="password")
-        if st.button("Masuk Aplikasi", use_container_width=True):
-            if input_pass == PASSWORD_RAHASIA:
-                st.session_state['status_login'] = True
-                st.rerun()
-            else: st.error("Password Salah.")
-        st.link_button("🛒 Beli Akses Premium", LINK_LYNK_ID, use_container_width=True)
-else:
-    # 3. SIDEBAR NAVIGASI
-    with st.sidebar:
-        st.header("Expert Stock Pro")
-        pilihan = st.radio("Pilih Menu:", (
-            "🏠 Beranda", 
-            "🔍 1. Screening Harian", 
-            "📈 2. Analisa Teknikal", 
-            "📊 3. Analisa Fundamental",
-            "💰 4. Analisa Dividen",
-            "⚖️ 5. Perbandingan 2 Saham"
-        ))
-        if st.button("Keluar"):
-            st.session_state['status_login'] = False
-            st.rerun()
-
-    # 4. ROUTING
-    if pilihan == "🏠 Beranda":
-        st.title("Selamat Datang di Expert Stock Pro")
-        st.write("Silakan pilih fitur di sidebar untuk memulai analisa.")
-    elif pilihan == "🔍 1. Screening Harian":
-        screening.run_screening()
-    else:
-        st.info(f"Fitur {pilihan} sedang disiapkan.")
+        if hasil:
+            hasil.sort(key=lambda x: x['Raw_Score'], reverse=True)
+            df = pd.DataFrame(hasil)
+            # BAGIAN PENTING: Menampilkan kolom RSI & Confidence
+            st.dataframe(df[["Ticker", "Rating", "Harga", "RSI", "Confidence", "Value (M)"]], use_container_width=True)
+        else:
+            st.warning("Tidak ada saham terjaring.")
