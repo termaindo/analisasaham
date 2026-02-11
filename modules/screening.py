@@ -128,4 +128,4 @@ def run_screening():
                         </div>
                         """, unsafe_allow_html=True)
         else: 
-            st.warning("Tidak ada saham dengan rasio R:R sehat (1.3x) hari ini. Lebih baik 'Wait and See' atau tunggu harga terkoreksi ke MA20.")
+            st.warning("Tidak ada saham dengan rasio R:R sehat (1.2x) hari ini. Lebih baik 'Wait and See' atau tunggu harga terkoreksi ke MA20.")
