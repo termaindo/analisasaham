@@ -5,7 +5,7 @@ import datetime
 import pytz
 
 def run_screening():
-    st.title("🔍 Screening Saham: Safe Strategy (R:R 1.3x)")
+    st.title("🔍 Screening Saham Harian dengan Safe Strategy")
     
     # 1. SINKRONISASI WAKTU
     wib = pytz.timezone('Asia/Jakarta')
@@ -66,9 +66,9 @@ def run_screening():
                 reward_bow = ((res - entry_bow) / entry_bow) * 100
                 rr_ratio = reward_bow / abs(risk_bow) if risk_bow != 0 else 0
 
-                # Filter Dasar & Syarat Ketat R:R >= 1.3
+                # Filter Dasar & Syarat Ketat R:R >= 1.2
                 if curr > 55 and curr > df['MA20'].iloc[-1] > df['MA50'].iloc[-1] and (curr * vol) > 5e9:
-                    if rr_ratio >= 1.3:
+                    if rr_ratio >= 1.2:
                         # Scoring System
                         score = 40
                         if vol > df['VolMA20'].iloc[-1]: score += 15
