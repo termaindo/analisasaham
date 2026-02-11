@@ -17,7 +17,7 @@ def run_screening():
     st.info(f"📅 **Waktu Data:** {tanggal_sekarang} - {jam_sekarang} WIB | **Fokus:** {sesi_pasar}")
 
     if st.button("Mulai Screening (Proses ±60 Detik)"):
-        # 2. DAFTAR TOP 50 (Sesuai List Terakhir)
+        # 2. DAFTAR TOP 50
         saham_top50 = [
             "BBCA.JK", "BBRI.JK", "BMRI.JK", "BBNI.JK", "BBTN.JK", "BRIS.JK", "ARTO.JK", "BFIN.JK", 
             "BREN.JK", "TPIA.JK", "BRPT.JK", "PGEO.JK", "AMMN.JK", "TLKM.JK", "ISAT.JK", "EXCL.JK", 
@@ -61,7 +61,7 @@ def run_screening():
                 risk = ((supp - curr) / curr) * 100
                 reward = ((res - curr) / curr) * 100
 
-                # Filter Dasar & Scoring (Sesuai Permintaan)
+                # Filter Dasar & Scoring
                 if curr > 55 and curr > df['MA20'].iloc[-1] > df['MA50'].iloc[-1] and (curr * vol) > 5e9:
                     score = 40
                     if vol > df['VolMA20'].iloc[-1]: score += 15
@@ -91,38 +91,11 @@ def run_screening():
             
             st.markdown("---")
             st.subheader("📊 Analisa Detail & Trading Plan")
-            
             for item in hasil_lolos:
                 with st.expander(f"Detail: {item['Ticker']} | Score: {item['Confidence']}"):
                     st.write(f"**Analisa:** Saham {item['Ticker']} dalam kondisi {item['Rating']}. RSI {item['RSI']} ({'momentum kuat' if item['RSI'] > 50 else 'pemulihan'}).")
-                    
-                    # --- Tampilan Trading Plan Baru ---
                     c1, c2, c3 = st.columns(3)
-                    
-                    with c1:
-                        # Entry dengan harga lebih kecil sedikit
-                        st.markdown(f"""
-                            <div style='text-align:center; padding:10px; border:1px solid #ddd; border-radius:5px;'>
-                                <small style='color:grey;'>Entry Price</small><br>
-                                <b style='font-size:1.1em;'>Rp {item['Harga']:,.0f}</b>
-                            </div>
-                        """, unsafe_allow_html=True)
-                    
-                    with c2:
-                        # Stop Loss (Risk) Background Merah, Tulisan Putih, Font Besar
-                        st.markdown(f"""
-                            <div style='background-color:#ff4b4b; color:white; padding:10px; border-radius:5px; text-align:center;'>
-                                <small style='font-size:0.8em; opacity:0.9;'>Stop Loss (Price: Rp {item['Support']:,.0f})</small><br>
-                                <b style='font-size:1.4em;'>{item['Risk_Pct']}% Risk</b>
-                            </div>
-                        """, unsafe_allow_html=True)
-                        
-                    with c3:
-                        # Take Profit (Reward) Background Hijau, Tulisan Putih, Font Besar
-                        st.markdown(f"""
-                            <div style='background-color:#28a745; color:white; padding:10px; border-radius:5px; text-align:center;'>
-                                <small style='font-size:0.8em; opacity:0.9;'>Take Profit (Price: Rp {item['Resist']:,.0f})</small><br>
-                                <b style='font-size:1.4em;'>+{item['Reward_Pct']}% Reward</b>
-                            </div>
-                        """, unsafe_allow_html=True)
+                    c1.metric("Entry", f"Rp {item['Harga']:,.0f}")
+                    c2.metric("Stop Loss", f"Rp {item['Support']:,.0f}", f"{item['Risk_Pct']}% Risk")
+                    c3.metric("Take Profit", f"Rp {item['Resist']:,.0f}", f"+{item['Reward_Pct']}% Reward")
         else: st.warning("Tidak ada saham terjaring skor > 70 hari ini.")
