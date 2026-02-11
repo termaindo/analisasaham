@@ -95,7 +95,7 @@ def run_screening():
                 with st.expander(f"Detail: {item['Ticker']} | Score: {item['Confidence']}"):
                     st.write(f"**Analisa:** Saham {item['Ticker']} dalam kondisi {item['Rating']}. RSI {item['RSI']} ({'momentum kuat' if item['RSI'] > 50 else 'pemulihan'}).")
                     
-                    # --- BAGIAN TRADING PLAN DENGAN WARNA KONTRAS ---
+                    # --- TAMPILAN TRADING PLAN DENGAN FONT DISESUAIKAN ---
                     c1, c2, c3 = st.columns(3)
                     
                     # Kolom 1: Entry
@@ -103,25 +103,25 @@ def run_screening():
                         st.markdown(f"""
                         <div style='text-align: center; padding: 10px; border: 1px solid #ddd; border-radius: 5px;'>
                             <span style='font-size: 0.8em; color: gray;'>Entry Price</span><br>
-                            <span style='font-size: 1.2em; font-weight: bold;'>Rp {item['Harga']:,.0f}</span>
+                            <span style='font-size: 1.3em; font-weight: bold;'>Rp {item['Harga']:,.0f}</span>
                         </div>
                         """, unsafe_allow_html=True)
                     
-                    # Kolom 2: Stop Loss (Background Merah)
+                    # Kolom 2: Stop Loss (Harga BESAR, Risk KECIL)
                     with c2:
                         st.markdown(f"""
                         <div style='background-color: #FF0000; color: white; padding: 10px; border-radius: 5px; text-align: center;'>
-                            <span style='font-size: 0.8em;'>Stop Loss: Rp {item['Support']:,.0f}</span><br>
-                            <span style='font-size: 1.5em; font-weight: bold;'>{item['Risk_Pct']}% Risk</span>
+                            <span style='font-size: 1.5em; font-weight: bold;'>Rp {item['Support']:,.0f}</span><br>
+                            <span style='font-size: 0.9em; opacity: 0.9;'>Stop Loss ({item['Risk_Pct']}% Risk)</span>
                         </div>
                         """, unsafe_allow_html=True)
                     
-                    # Kolom 3: Take Profit (Background Hijau)
+                    # Kolom 3: Take Profit (Harga BESAR, Reward KECIL)
                     with c3:
                         st.markdown(f"""
                         <div style='background-color: #008000; color: white; padding: 10px; border-radius: 5px; text-align: center;'>
-                            <span style='font-size: 0.8em;'>Take Profit: Rp {item['Resist']:,.0f}</span><br>
-                            <span style='font-size: 1.5em; font-weight: bold;'>+{item['Reward_Pct']}% Reward</span>
+                            <span style='font-size: 1.5em; font-weight: bold;'>Rp {item['Resist']:,.0f}</span><br>
+                            <span style='font-size: 0.9em; opacity: 0.9;'>Take Profit (+{item['Reward_Pct']}% Reward)</span>
                         </div>
                         """, unsafe_allow_html=True)
 
