@@ -91,11 +91,33 @@ def run_screening():
             
             st.markdown("---")
             st.subheader("📊 Analisa Detail & Trading Plan")
+            
             for item in hasil_lolos:
                 with st.expander(f"Detail: {item['Ticker']} | Score: {item['Confidence']}"):
                     st.write(f"**Analisa:** Saham {item['Ticker']} dalam kondisi {item['Rating']}. RSI {item['RSI']} ({'momentum kuat' if item['RSI'] > 50 else 'pemulihan'}).")
+                    
+                    # --- Tampilan Trading Plan (Kontras Tinggi) ---
                     c1, c2, c3 = st.columns(3)
-                    c1.metric("Entry", f"Rp {item['Harga']:,.0f}")
-                    c2.metric("Stop Loss", f"Rp {item['Support']:,.0f}", f"{item['Risk_Pct']}% Risk")
-                    c3.metric("Take Profit", f"Rp {item['Resist']:,.0f}", f"+{item['Reward_Pct']}% Reward")
+                    
+                    with c1:
+                        st.write("**Entry Price**")
+                        st.markdown(f"### Rp {item['Harga']:,.0f}")
+                    
+                    with c2:
+                        # Background MERAH, Tulisan PUTIH
+                        st.markdown(f"""
+                            <div style="background-color: #FF0000; padding: 15px; border-radius: 10px; text-align: center;">
+                                <span style="color: white; font-size: 14px;">Stop Loss: Rp {item['Support']:,.0f}</span><br>
+                                <b style="color: white; font-size: 24px;">{item['Risk_Pct']}% Risk</b>
+                            </div>
+                        """, unsafe_allow_html=True)
+                        
+                    with c3:
+                        # Background HIJAU, Tulisan PUTIH
+                        st.markdown(f"""
+                            <div style="background-color: #008000; padding: 15px; border-radius: 10px; text-align: center;">
+                                <span style="color: white; font-size: 14px;">Take Profit: Rp {item['Resist']:,.0f}</span><br>
+                                <b style="color: white; font-size: 24px;">+{item['Reward_Pct']}% Reward</b>
+                            </div>
+                        """, unsafe_allow_html=True)
         else: st.warning("Tidak ada saham terjaring skor > 70 hari ini.")
