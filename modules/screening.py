@@ -91,33 +91,38 @@ def run_screening():
             
             st.markdown("---")
             st.subheader("📊 Analisa Detail & Trading Plan")
-            
             for item in hasil_lolos:
                 with st.expander(f"Detail: {item['Ticker']} | Score: {item['Confidence']}"):
                     st.write(f"**Analisa:** Saham {item['Ticker']} dalam kondisi {item['Rating']}. RSI {item['RSI']} ({'momentum kuat' if item['RSI'] > 50 else 'pemulihan'}).")
                     
-                    # --- Tampilan Trading Plan (Kontras Tinggi) ---
+                    # --- BAGIAN TRADING PLAN DENGAN WARNA KONTRAS ---
                     c1, c2, c3 = st.columns(3)
                     
+                    # Kolom 1: Entry
                     with c1:
-                        st.write("**Entry Price**")
-                        st.markdown(f"### Rp {item['Harga']:,.0f}")
+                        st.markdown(f"""
+                        <div style='text-align: center; padding: 10px; border: 1px solid #ddd; border-radius: 5px;'>
+                            <span style='font-size: 0.8em; color: gray;'>Entry Price</span><br>
+                            <span style='font-size: 1.2em; font-weight: bold;'>Rp {item['Harga']:,.0f}</span>
+                        </div>
+                        """, unsafe_allow_html=True)
                     
+                    # Kolom 2: Stop Loss (Background Merah)
                     with c2:
-                        # Background MERAH, Tulisan PUTIH
                         st.markdown(f"""
-                            <div style="background-color: #FF0000; padding: 15px; border-radius: 10px; text-align: center;">
-                                <span style="color: white; font-size: 14px;">Stop Loss: Rp {item['Support']:,.0f}</span><br>
-                                <b style="color: white; font-size: 24px;">{item['Risk_Pct']}% Risk</b>
-                            </div>
+                        <div style='background-color: #FF0000; color: white; padding: 10px; border-radius: 5px; text-align: center;'>
+                            <span style='font-size: 0.8em;'>Stop Loss: Rp {item['Support']:,.0f}</span><br>
+                            <span style='font-size: 1.5em; font-weight: bold;'>{item['Risk_Pct']}% Risk</span>
+                        </div>
                         """, unsafe_allow_html=True)
-                        
+                    
+                    # Kolom 3: Take Profit (Background Hijau)
                     with c3:
-                        # Background HIJAU, Tulisan PUTIH
                         st.markdown(f"""
-                            <div style="background-color: #008000; padding: 15px; border-radius: 10px; text-align: center;">
-                                <span style="color: white; font-size: 14px;">Take Profit: Rp {item['Resist']:,.0f}</span><br>
-                                <b style="color: white; font-size: 24px;">+{item['Reward_Pct']}% Reward</b>
-                            </div>
+                        <div style='background-color: #008000; color: white; padding: 10px; border-radius: 5px; text-align: center;'>
+                            <span style='font-size: 0.8em;'>Take Profit: Rp {item['Resist']:,.0f}</span><br>
+                            <span style='font-size: 1.5em; font-weight: bold;'>+{item['Reward_Pct']}% Reward</span>
+                        </div>
                         """, unsafe_allow_html=True)
+
         else: st.warning("Tidak ada saham terjaring skor > 70 hari ini.")
