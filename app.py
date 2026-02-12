@@ -1,4 +1,6 @@
 import streamlit as st
+import importlib.util
+import sys
 
 # --- 1. CONFIG HALAMAN ---
 st.set_page_config(
@@ -9,14 +11,9 @@ st.set_page_config(
 )
 
 # --- 2. IMPORT MODUL (MODE AMAN) ---
-# Kita gunakan teknik "Lazy Import" agar app tidak error total jika satu file bermasalah
-import importlib.util
-import sys
-
 def load_module(module_name):
     """Mencoba load modul, jika gagal akan return None"""
     try:
-        # Cara import dinamis yang lebih aman
         return importlib.import_module(f"modules.{module_name}")
     except ImportError as e:
         return None
@@ -26,7 +23,7 @@ def load_module(module_name):
 
 # Load semua modul
 mod_screening = load_module("screening")
-mod_cepat = load_module("analisa_cepat") # Ini yang bermasalah tadi
+mod_cepat = load_module("analisa_cepat")
 mod_teknikal = load_module("teknikal")
 mod_fundamental = load_module("fundamental")
 mod_dividen = load_module("dividen")
@@ -40,6 +37,7 @@ st.markdown("""
     [data-testid="stSidebar"] {display: none;}
     footer {visibility: hidden;}
     
+    /* Style Tombol Navigasi Umum */
     div.stButton > button {
         width: 100%; border-radius: 12px; height: 85px;
         font-weight: bold; font-size: 18px;
@@ -49,6 +47,25 @@ st.markdown("""
     div.stButton > button:hover {
         background-color: #ff0000; border-color: #ff0000; color: white;
     }
+    
+    /* Style KHUSUS Tombol Pembelian (Link Button) */
+    [data-testid="stLinkButton"] a {
+        background-color: #ff0000 !important;
+        color: white !important;
+        border-radius: 12px !important;
+        border: none !important;
+        font-weight: bold !important;
+        height: 50px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        text-decoration: none !important;
+    }
+    [data-testid="stLinkButton"] a:hover {
+        background-color: #cc0000 !important;
+        color: white !important;
+    }
+
     .back-btn-container button {
         height: 40px !important; background-color: #444 !important; font-size: 14px !important;
     }
@@ -80,7 +97,9 @@ def login_page():
                 else: st.error("Password salah.")
         st.markdown("<br>", unsafe_allow_html=True)
         st.info("🔒 Belum punya akses premium? Sekali beli, berlaku seumur hidup")
-        st.link_button("🛒 Beli Akses via Lynk.id", "https://lynk.id/hahastoresby", use_container_width=True)
+        
+        # Tombol ini sekarang otomatis berwarna merah karena CSS di atas
+        st.link_button("🛒 Beli Akses via Lynk.id. Sekali beli dengan harga terjangkau, berlaku seumur hidup", "https://lynk.id/hahastoresby", use_container_width=True)
 
 # --- 6. DASHBOARD ---
 def show_dashboard():
@@ -93,7 +112,6 @@ def show_dashboard():
         if st.button("🔍 Screening Harian", use_container_width=True):
             st.session_state.current_menu = "screening"; st.rerun()
     with c2:
-        # Cek apakah modul Analisa Cepat berhasil dimuat
         label = "⚡ Analisa Cepat" if mod_cepat else "⚡ Analisa Cepat (Rusak)"
         if st.button(label, use_container_width=True):
             if mod_cepat:
@@ -134,7 +152,6 @@ def main_app():
             st.markdown('</div>', unsafe_allow_html=True)
             st.markdown("---")
 
-        # Router Modul dengan Pengecekan
         try:
             if st.session_state.current_menu == "screening" and mod_screening: mod_screening.run_screening()
             elif st.session_state.current_menu == "analisa_cepat" and mod_cepat: mod_cepat.run_analisa_cepat()
@@ -143,12 +160,10 @@ def main_app():
             elif st.session_state.current_menu == "dividen" and mod_dividen: mod_dividen.run_dividen()
             elif st.session_state.current_menu == "perbandingan" and mod_perbandingan: mod_perbandingan.run_perbandingan()
             else:
-                st.error(f"Modul {st.session_state.current_menu} tidak dapat dimuat. Cek file di GitHub.")
+                st.error(f"Modul {st.session_state.current_menu} tidak dapat dimuat.")
         except Exception as e:
             st.error(f"Terjadi error saat menjalankan menu: {e}")
 
 if __name__ == "__main__":
     if st.session_state.logged_in: main_app()
     else: login_page()
-
-
