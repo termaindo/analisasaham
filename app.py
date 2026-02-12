@@ -27,38 +27,39 @@ LINK_LYNK_ID = "https://lynk.id/hahastoresby"
 # --- CSS CUSTOM (Tampilan Tombol Merah & Layout) ---
 st.markdown("""
 <style>
-    /* 1. SEMBUNYIKAN tombol Fork, GitHub, dan menu titik tiga di pojok KANAN */
+    /* 1. SEMBUNYIKAN tombol Fork dan GitHub di pojok kanan */
     [data-testid="stHeaderActionElements"] {
         display: none !important;
     }
 
-    /* 2. PASTIKAN header tetap muncul tapi transparan agar tidak menutupi tombol */
-    header {
-        background-color: rgba(0,0,0,0) !important;
-    }
-
-    /* 3. MODIFIKASI Tombol Sidebar di pojok KIRI */
-    /* Menghilangkan ikon panah asli */
-    [data-testid="stSidebarCollapseButton"] svg {
+    /* 2. STYLE TOMBOL MENU HANYA DI HALAMAN BERANDA */
+    /* Targetkan tombol yang berada di dalam Header Utama */
+    header[data-testid="stHeader"] [data-testid="stSidebarCollapseButton"] svg {
         display: none !important;
     }
 
-    /* Menampilkan teks ☰ MENU sebagai penggantinya */
-    [data-testid="stSidebarCollapseButton"]::after {
+    header[data-testid="stHeader"] [data-testid="stSidebarCollapseButton"]::after {
         content: "☰ MENU";
         font-size: 14px;
         font-weight: bold;
         color: white;
-        background-color: #ff0000; /* Warna Merah agar sangat mencolok */
-        padding: 6px 12px;
+        background-color: #ff0000;
+        padding: 8px 16px;
         border-radius: 5px;
         display: inline-block;
-        line-height: 1;
+        line-height: 1.2;
     }
 
-    /* Efek saat ditekan agar terasa responsif */
-    [data-testid="stSidebarCollapseButton"]:active {
-        transform: scale(0.95);
+    /* 3. NORMALKAN TOMBOL DI DALAM SIDEBAR */
+    /* Pastikan tombol tutup di dalam sidebar tidak ikut jadi merah */
+    [data-testid="stSidebar"] [data-testid="stSidebarCollapseButton"]::after {
+        content: none !important;
+    }
+    [data-testid="stSidebar"] [data-testid="stSidebarCollapseButton"] svg {
+        display: block !important;
+        color: #ffffff !important; /* Warna ikon panah tutup */
+        width: 25px;
+        height: 25px;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -142,6 +143,7 @@ else:
         
     elif pilihan_menu == "⚖️ 5. Perbandingan 2 Saham":
         perbandingan.run_perbandingan()
+
 
 
 
