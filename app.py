@@ -31,7 +31,7 @@ mod_perbandingan = load_module("perbandingan")
 
 # --- 3. CSS CUSTOM ---
 st.markdown("""
-    <style>
+<style>
     header {visibility: hidden;}
     [data-testid="stHeader"] {display: none;}
     [data-testid="stSidebar"] {display: none;}
@@ -67,7 +67,7 @@ st.markdown("""
     .back-btn-container button {
         height: 40px !important; background-color: #444 !important; font-size: 14px !important;
     }
-    </style>
+</style>
 """, unsafe_allow_html=True)
 
 # --- 4. SESSION STATE ---
@@ -103,10 +103,80 @@ def show_dashboard():
     
     with st.expander("📖 Panduan Penggunaan & Istilah (Baca Ini Dulu)"):
         st.markdown("""
-        #### **1. Cara Mulai Analisa**
-        * Pilih menu di bawah. Masukkan kode saham (Contoh: `BBRI` atau `BBRI.JK`).
-        #### **2. Memahami Grafik**
-        * 🟡 **MA20 Kuning:** Tren pendek. 🟣 **MA200 Ungu:** Tren panjang.
-        #### **3. Strategi ATR**
-        * SL & TP dihitung otomatis berdasarkan volatilitas, dengan **batas risiko maksimal 8%**.
-        #### **4. Tips Anti-Error**
+#### **1. Cara Mulai Analisa**
+* Pilih menu di bawah. Masukkan kode saham (Contoh: `BBRI` atau `BBRI.JK`).
+#### **2. Memahami Grafik**
+* 🟡 **MA20 Kuning:** Tren pendek. 🟣 **MA200 Ungu:** Tren panjang.
+#### **3. Strategi ATR**
+* SL & TP dihitung otomatis berdasarkan volatilitas, dengan **batas risiko maksimal 8%**.
+#### **4. Tips Anti-Error**
+* Jika data tidak muncul, tunggu 1 menit lalu gunakan tombol **Clear Cache** di pojok kanan atas.
+        """)
+    
+    # JUDUL MENCOLOK (EXPERT STOCK PRO)
+    st.markdown("<h1 style='text-align: center; color: #ff0000; letter-spacing: 2px;'>📈 EXPERT STOCK PRO</h1>", unsafe_allow_html=True)
+    st.write("Silakan pilih menu analisa:")
+    st.markdown("---")
+
+    c1, c2 = st.columns(2)
+    with c1:
+        if st.button("🔍 Screening Harian", use_container_width=True):
+            st.session_state.current_menu = "screening"; st.rerun()
+    with c2:
+        label = "⚡ Analisa Cepat" if mod_cepat else "⚡ Analisa Cepat (Rusak)"
+        if st.button(label, use_container_width=True):
+            if mod_cepat:
+                st.session_state.current_menu = "analisa_cepat"; st.rerun()
+            else:
+                st.error("Modul analisa_cepat.py bermasalah.")
+
+    c3, c4 = st.columns(2)
+    with c3:
+        if st.button("📈 Teknikal Pro", use_container_width=True):
+            st.session_state.current_menu = "teknikal"; st.rerun()
+    with c4:
+        if st.button("📊 Fundamental Pro", use_container_width=True):
+            st.session_state.current_menu = "fundamental"; st.rerun()
+
+    c5, c6 = st.columns(2)
+    with c5:
+        if st.button("💰 Analisa Dividen", use_container_width=True):
+            st.session_state.current_menu = "dividen"; st.rerun()
+    with c6:
+        if st.button("⚖️ Perbandingan Saham", use_container_width=True):
+            st.session_state.current_menu = "perbandingan"; st.rerun()
+
+    st.markdown("---")
+    if st.button("Keluar / Logout"):
+        st.session_state.logged_in = False; st.session_state.user_name = ""; st.rerun()
+
+# --- 7. MAIN ROUTER ---
+def main_app():
+    if st.session_state.current_menu == "Beranda":
+        show_dashboard()
+    else:
+        col_back, _ = st.columns([1, 4])
+        with col_back:
+            st.markdown('<div class="back-btn-container">', unsafe_allow_html=True)
+            if st.button("⬅️ Menu Utama"):
+                st.session_state.current_menu = "Beranda"; st.rerun()
+            st.markdown('</div>', unsafe_allow_html=True)
+            st.markdown("---")
+
+        try:
+            m = st.session_state.current_menu
+            if m == "screening" and mod_screening: mod_screening.run_screening()
+            elif m == "analisa_cepat" and mod_cepat: mod_cepat.run_analisa_cepat()
+            elif m == "teknikal" and mod_teknikal: mod_teknikal.run_teknikal()
+            elif m == "fundamental" and mod_fundamental: mod_fundamental.run_fundamental()
+            elif m == "dividen" and mod_dividen: mod_dividen.run_dividen()
+            elif m == "perbandingan" and mod_perbandingan: mod_perbandingan.run_perbandingan()
+            else: st.error("Modul tidak ditemukan di folder 'modules'.")
+        except Exception as e:
+            st.error(f"Terjadi kesalahan sistem: {e}")
+
+if __name__ == "__main__":
+    if st.session_state.logged_in:
+        main_app()
+    else:
+        login_page()
