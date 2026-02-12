@@ -2,48 +2,37 @@ import streamlit as st
 import yfinance as yf
 import pandas as pd
 
-# --- FUNGSI TEKNIKAL & UMUM ---
+# --- CACHE 1: KHUSUS HARGA & CHART (Ringan & Cepat) ---
 @st.cache_data(ttl=3600, show_spinner=False)
-def ambil_data_saham(ticker, period="1y"):
-    stock = yf.Ticker(ticker)
+def ambil_data_history(ticker, period="1y"):
+    """Hanya mengambil data harga OHLCV. Jarang error."""
     try:
-        history = stock.history(period=period)
-        info = stock.info
-    except:
-        history = pd.DataFrame()
-        info = {}
-    return history, info
+        stock = yf.Ticker(ticker)
+        df = stock.history(period=period)
+        # Bersihkan timezone agar kompatibel dengan plot
+        if not df.empty:
+            df.index = df.index.tz_localize(None)
+        return df
+    except Exception:
+        return pd.DataFrame()
 
-@st.cache_data(ttl=3600, show_spinner=False)
-def ambil_data_dividen(ticker):
-    stock = yf.Ticker(ticker)
-    try:
-        dividends = stock.dividends
-        info = stock.info
-        return dividends, info
-    except:
-        return None, None
-
-# --- FUNGSI KHUSUS FUNDAMENTAL MENDALAM (NEW) ---
+# --- CACHE 2: KHUSUS FUNDAMENTAL (Berat) ---
 @st.cache_data(ttl=3600, show_spinner=False)
 def ambil_data_fundamental_lengkap(ticker):
-    """
-    Mengambil data Info, Income Statement, Balance Sheet, dan Cash Flow
-    secara terpusat agar stabil dan anti-error.
-    """
+    """Mengambil Info, Financials, Balance Sheet dengan Error Handling per item."""
     stock = yf.Ticker(ticker)
     
-    # 1. Info Perusahaan
+    # 1. Info (Profil & Rasio)
     try:
         info = stock.info
     except:
         info = {}
 
-    # 2. Laporan Keuangan (Income Statement)
+    # 2. Laporan Laba Rugi (Income Statement)
     try:
         financials = stock.financials
         if financials.empty:
-            financials = stock.income_stmt # Coba alias lain
+            financials = stock.income_stmt
     except:
         financials = pd.DataFrame()
 
@@ -52,17 +41,5 @@ def ambil_data_fundamental_lengkap(ticker):
         balance_sheet = stock.balance_sheet
     except:
         balance_sheet = pd.DataFrame()
-        
-    # 4. Arus Kas (Cash Flow)
-    try:
-        cashflow = stock.cashflow
-    except:
-        cashflow = pd.DataFrame()
 
-    # 5. History Harga (Untuk Validasi)
-    try:
-        history = stock.history(period="1mo")
-    except:
-        history = pd.DataFrame()
-
-    return info, financials, balance_sheet, cashflow, history
+    return info, financials, balance_sheet
