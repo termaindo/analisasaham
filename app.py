@@ -27,31 +27,32 @@ LINK_LYNK_ID = "https://lynk.id/hahastoresby"
 # --- CSS CUSTOM (Tampilan Tombol Merah & Layout) ---
 st.markdown("""
 <style>
-    /* 1. SEMBUNYIKAN tombol Fork dan GitHub di pojok kanan agar tidak membingungkan */
-    [data-testid="stHeaderActionElements"] {
+    /* 1. SEMBUNYIKAN total semua elemen di pojok kanan (Fork, GitHub, Login) */
+    header [data-testid="stHeaderActionElements"] {
         display: none !important;
     }
 
-    /* 2. TARGETKAN hanya tombol Sidebar (biasanya di kiri atas) */
-    /* Kita hilangkan ikon panah aslinya */
-    button[data-testid="stBaseButton-header"] svg {
+    /* 2. TARGETKAN hanya tombol Sidebar di pojok kiri */
+    /* Kita hilangkan ikon panah (>>) bawaan Streamlit */
+    [data-testid="stSidebarCollapseButton"] svg {
         display: none !important;
     }
 
-    /* 3. UBAH tombol tersebut menjadi "☰ MENU" */
-    button[data-testid="stBaseButton-header"]::before {
+    /* 3. UBAH tombol sidebar tersebut menjadi tulisan "☰ MENU" */
+    [data-testid="stSidebarCollapseButton"]::before {
         content: "☰ MENU";
-        font-size: 1rem;
+        font-size: 14px;
         font-weight: bold;
-        color: white; /* Sesuaikan warna teks */
-        padding: 5px 10px;
-        border: 1px solid #444;
+        color: white;
+        background-color: #1e1e1e;
+        padding: 6px 12px;
         border-radius: 5px;
-        background-color: #1e1e1e; /* Warna latar tombol */
+        border: 1px solid #444;
+        white-space: nowrap;
     }
 
-    /* Efek ketika tombol disorot (hover) */
-    button[data-testid="stBaseButton-header"]:hover::before {
+    /* Efek hover agar berubah warna saat disentuh */
+    [data-testid="stSidebarCollapseButton"]:hover::before {
         color: #ff0000;
         border-color: #ff0000;
     }
@@ -137,5 +138,6 @@ else:
         
     elif pilihan_menu == "⚖️ 5. Perbandingan 2 Saham":
         perbandingan.run_perbandingan()
+
 
 
