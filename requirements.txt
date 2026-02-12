@@ -1,4 +1,5 @@
 streamlit
-pandas
 yfinance
+pandas
 plotly
+streamlit-option-menu
