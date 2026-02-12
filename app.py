@@ -26,7 +26,8 @@ LINK_LYNK_ID = "https://lynk.id/hahastoresby"
 
 # --- CSS CUSTOM (Tampilan Tombol Merah & Layout) ---
 st.markdown("""
-    <style>
+<style>
+    /* CSS yang sudah ada untuk tombol merah (Biarkan saja) */
     div.stLinkButton > a {
         background-color: #ff0000 !important;
         color: white !important;
@@ -36,6 +37,29 @@ st.markdown("""
     div.stLinkButton > a:hover {
         background-color: #cc0000 !important;
         color: white !important;
+    }
+
+    /* --- TAMBAHAN BARU UNTUK SIDEBAR --- */
+    /* 1. Menyembunyikan ikon panah/segitiga bawaan Streamlit */
+    button[kind="header"] > svg {
+        display: none !important;
+    }
+
+    /* 2. Menambahkan ikon Hamburger (☰) dan tulisan "MENU" */
+    button[kind="header"]::before {
+        content: "☰ MENU";  /* Unicode untuk tiga garis + teks */
+        font-size: 1.1rem;
+        font-weight: 700;  /* Bold */
+        color: white;      /* Warna teks putih agar kontras dengan background gelap */
+        margin-right: 10px;
+    }
+
+    /* 3. (Opsional) Mengubah warna tombol saat disorot mouse agar lebih interaktif */
+    button[kind="header"]:hover {
+        color: #ff0000 !important; /* Berubah merah saat di-hover */
+    }
+    button[kind="header"]:hover::before {
+         color: #ff0000 !important;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -119,3 +143,4 @@ else:
         
     elif pilihan_menu == "⚖️ 5. Perbandingan 2 Saham":
         perbandingan.run_perbandingan()
+
