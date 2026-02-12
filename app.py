@@ -32,6 +32,7 @@ st.markdown("""
         font-weight: bold;
         border: none;
         padding: 10px 24px;
+        transition: all 0.3s;
     }
     div.stButton > button:hover {
         background-color: #cc0000;
@@ -71,10 +72,12 @@ def login_page():
         with st.form("login_form"):
             input_nama = st.text_input("👤 Nama Panggilan Anda", placeholder="Contoh: Pak Musa")
             password = st.text_input("🔑 Password Akses", type="password")
+            
+            # Tombol Submit Form
             submit = st.form_submit_button("MASUK SISTEM", use_container_width=True)
 
             if submit:
-                # Koreksi: .strip() membuang spasi tidak sengaja
+                # Password Default: 12345 (Ganti di sini jika ingin ubah)
                 if password.strip() == "12345":  
                     if input_nama.strip() == "":
                         st.warning("Mohon isi nama panggilan Anda.")
@@ -85,7 +88,7 @@ def login_page():
                 else:
                     st.error("Password salah. Silakan coba lagi.")
 
-        # --- INFO PEMBELIAN (YANG HILANG) ---
+        # --- INFO PEMBELIAN (UPDATED LINK) ---
         st.markdown("<br>", unsafe_allow_html=True)
         st.info("🔒 Aplikasi ini dikunci khusus untuk Member Premium.")
         
@@ -95,9 +98,9 @@ def login_page():
         </div>
         """, unsafe_allow_html=True)
 
-        # Tombol Link ke WhatsApp (Ganti No WA di bawah ini)
-        url_wa = "https://wa.me/6281234567890?text=Halo%20Admin,%20saya%20tertarik%20beli%20akses%20Expert%20Stock%20Pro"
-        st.link_button("🛒 Beli Manual dan Kode Akses (Klik Di Sini)", url_wa, use_container_width=True)
+        # LINK TOMBOL BELI (SUDAH DISESUAIKAN)
+        url_beli = "https://lynk.id/hahastoresby"
+        st.link_button("🛒 Beli Manual dan Kode Akses (Klik Di Sini)", url_beli, use_container_width=True)
 
 
 # --- DASHBOARD UTAMA (SETELAH LOGIN) ---
@@ -153,11 +156,12 @@ def main_app():
         perbandingan.run_perbandingan()
 
 def show_dashboard():
-    st.title(f"👋 Selamat Datang, {st.session_state.user_name}!")
+    st.title(f"👋 Selamat Datang, sobat {st.session_state.user_name}!")
     st.markdown("### Dashboard Navigasi Pasar Saham")
     st.write("Silakan pilih modul analisa yang ingin Anda gunakan hari ini:")
     st.markdown("---")
 
+    # GRID NAVIGASI DASHBOARD
     c1, c2 = st.columns(2)
     with c1:
         st.markdown("""<div class="dashboard-card"><h4>🔍 Screening Harian</h4><p>Temukan saham momentum tinggi & volume spike.</p></div>""", unsafe_allow_html=True)
