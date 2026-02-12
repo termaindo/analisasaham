@@ -1,59 +1,66 @@
 import streamlit as st
-from streamlit_option_menu import option_menu
 
-# --- IMPORT MODUL ---
+# --- 1. IMPORT MODUL (Pastikan semua file ada di folder modules) ---
 try:
-    from modules import screening, teknikal, fundamental, dividen, perbandingan
-except ImportError:
-    st.error("⚠️ Error: File modul tidak ditemukan. Pastikan folder 'modules' lengkap.")
+    from modules import screening, analisa_cepat, teknikal, fundamental, dividen, perbandingan
+except ImportError as e:
+    st.error(f"⚠️ Error Import: {e}. Pastikan file analisa_cepat.py, screening.py, dll ada di folder 'modules'.")
     st.stop()
 
-# --- KONFIGURASI HALAMAN ---
+# --- 2. KONFIGURASI HALAMAN ---
 st.set_page_config(
     page_title="Expert Stock Pro",
     page_icon="📈",
     layout="wide",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="collapsed" # Sidebar otomatis tertutup
 )
 
-# --- CSS: TAMPILAN PREMIUM ---
+# --- 3. CSS CUSTOM (TAMPILAN PREMIUM & HILANGKAN SIDEBAR) ---
 st.markdown("""
     <style>
-    /* Sembunyikan Header & Footer Bawaan */
+    /* Sembunyikan Header Streamlit & Sidebar Bawaan */
     header {visibility: hidden;}
     [data-testid="stHeader"] {display: none;}
-    footer {visibility: hidden;}
+    [data-testid="stSidebar"] {display: none;} /* Hilangkan Sidebar Total */
     
-    /* Tombol Merah Khas */
-    div.stButton > button {
-        background-color: #ff0000;
-        color: white;
-        border-radius: 8px;
+    /* Tombol Navigasi Menu Utama */
+    .stButton > button {
+        width: 100%;
+        border-radius: 10px;
+        height: 80px; /* Tombol Tinggi agar mudah dipencet */
         font-weight: bold;
-        border: none;
-        padding: 10px 24px;
+        font-size: 18px;
         transition: all 0.3s;
+        border: 1px solid #444;
     }
-    div.stButton > button:hover {
-        background-color: #cc0000;
-        color: white;
+    
+    /* Efek Hover Tombol */
+    .stButton > button:hover {
         transform: scale(1.02);
+        border-color: #ff0000;
+        color: #ff0000;
+    }
+
+    /* Tombol Kembali (Back) lebih kecil */
+    .back-btn > button {
+        height: 40px !important;
+        background-color: #333;
+        color: white;
     }
 
     /* Kartu Dashboard */
     .dashboard-card {
         background-color: #1e2b3e;
-        padding: 20px;
+        padding: 15px;
         border-radius: 10px;
         border-left: 5px solid #ff0000;
         margin-bottom: 10px;
+        text-align: center;
     }
-    h4 { margin-top: 0; color: #ffffff; }
-    p { color: #cccccc; font-size: 0.9rem; }
     </style>
 """, unsafe_allow_html=True)
 
-# --- SESSION STATE ---
+# --- 4. INISIALISASI SESSION STATE ---
 if 'logged_in' not in st.session_state:
     st.session_state.logged_in = False
 if 'user_name' not in st.session_state:
@@ -61,30 +68,31 @@ if 'user_name' not in st.session_state:
 if 'current_menu' not in st.session_state:
     st.session_state.current_menu = "Beranda"
 
-# --- HALAMAN LOGIN (GERBANG) ---
+# --- 5. HALAMAN LOGIN (GERBANG) ---
 def login_page():
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
         st.markdown("<br><br>", unsafe_allow_html=True)
         st.markdown("<h1 style='text-align: center; color: #ff0000;'>🔒 EXPERT STOCK PRO</h1>", unsafe_allow_html=True)
-        st.markdown("<p style='text-align: center;'>Silakan masuk untuk mengakses data pasar premium.</p>", unsafe_allow_html=True)
+        st.markdown("<p style='text-align: center;'>Portal Analisa Saham Profesional</p>", unsafe_allow_html=True)
         
         with st.form("login_form"):
-            input_nama = st.text_input("👤 Nama Panggilan Anda", placeholder="Contoh: Pak Musa")
+            # INPUT NAMA
+            input_nama = st.text_input("👤 Nama Panggilan", placeholder="Contoh: Budi")
+            
+            # INPUT PASSWORD
             password = st.text_input("🔑 Password Akses", type="password")
             
             submit = st.form_submit_button("MASUK SISTEM", use_container_width=True)
 
             if submit:
-                # --- PERBAIKAN DI SINI ---
-                # Mengambil password dari Secrets Streamlit (bukan manual "12345")
+                # Cek Password (Prioritas Secrets, Fallback ke 12345)
                 try:
-                    correct_password = st.secrets["PASSWORD_RAHASIA"]
+                    correct_pass = st.secrets["PASSWORD_RAHASIA"]
                 except:
-                    st.error("⚠️ Password belum disetting di Secrets! Gunakan '12345' sementara.")
-                    correct_password = "12345"
+                    correct_pass = "12345"
 
-                if password.strip() == correct_password:  
+                if password.strip() == correct_pass:  
                     if input_nama.strip() == "":
                         st.warning("Mohon isi nama panggilan Anda.")
                     else:
@@ -94,110 +102,101 @@ def login_page():
                 else:
                     st.error("Password salah. Silakan coba lagi.")
 
-        # --- INFO PEMBELIAN ---
+        # INFO PEMBELIAN (LYNK.ID)
         st.markdown("<br>", unsafe_allow_html=True)
-        st.info("🔒 Aplikasi ini dikunci khusus untuk Member Premium.")
-        
+        st.info("🔒 Belum punya akses premium?")
         st.markdown("""
         <div style='text-align: center; margin-bottom: 10px;'>
-            <b>Belum punya Kode Akses?</b> Dapatkan akses analisa saham lengkap dan update fitur seumur hidup dengan biaya terjangkau.
+            Dapatkan kode akses seumur hidup untuk fitur analisa lengkap.
         </div>
         """, unsafe_allow_html=True)
-
-        url_beli = "https://lynk.id/hahastoresby"
-        st.link_button("🛒 Beli Manual dan Kode Akses (Klik Di Sini)", url_beli, use_container_width=True)
-
-
-# --- DASHBOARD UTAMA (SETELAH LOGIN) ---
-def main_app():
-    # SIDEBAR
-    with st.sidebar:
-        st.markdown(f"### 👤 {st.session_state.user_name}")
-        st.markdown("---")
         
-        menu_options = ["Beranda", "Screening Harian", "Analisa Teknikal", "Analisa Fundamental", "Analisa Dividen", "Perbandingan Saham"]
-        
-        try:
-            default_index = menu_options.index(st.session_state.current_menu)
-        except ValueError:
-            default_index = 0
+        # Link Button ke Lynk.id
+        st.link_button("🛒 Beli Akses via Lynk.id (Klik Disini)", "https://lynk.id/hahastoresby", use_container_width=True)
 
-        selected = option_menu(
-            menu_title="Navigasi Utama",
-            options=menu_options,
-            icons=["house", "search", "graph-up-arrow", "building", "cash-coin", "scales"],
-            menu_icon="cast",
-            default_index=default_index,
-            styles={
-                "container": {"padding": "5!important", "background-color": "#0e1117"},
-                "icon": {"color": "orange", "font-size": "18px"}, 
-                "nav-link": {"font-size": "16px", "text-align": "left", "margin":"0px"},
-                "nav-link-selected": {"background-color": "#ff0000"},
-            }
-        )
-        
-        if selected != st.session_state.current_menu:
-            st.session_state.current_menu = selected
-            st.rerun()
-            
-        st.markdown("---")
-        if st.button("Keluar / Logout", use_container_width=True):
-            st.session_state.logged_in = False
-            st.session_state.user_name = ""
-            st.rerun()
-
-    # LOGIKA KONTEN
-    if st.session_state.current_menu == "Beranda":
-        show_dashboard()
-    elif st.session_state.current_menu == "Screening Harian":
-        screening.run_screening()
-    elif st.session_state.current_menu == "Analisa Teknikal":
-        teknikal.run_teknikal()
-    elif st.session_state.current_menu == "Analisa Fundamental":
-        fundamental.run_fundamental()
-    elif st.session_state.current_menu == "Analisa Dividen":
-        dividen.run_dividen()
-    elif st.session_state.current_menu == "Perbandingan Saham":
-        perbandingan.run_perbandingan()
-
+# --- 6. DASHBOARD UTAMA (MENU PILIHAN) ---
 def show_dashboard():
-    st.title(f"👋 Selamat Datang, sobat {st.session_state.user_name}!")
-    st.markdown("### Dashboard Navigasi Pasar Saham")
-    st.write("Silakan pilih modul analisa yang ingin Anda gunakan hari ini:")
+    # Sapaan Sobat
+    st.title(f"👋 Halo Sobat {st.session_state.user_name}!")
+    st.write("Menu Analisa Saham:")
     st.markdown("---")
 
+    # GRID MENU (3 Baris x 2 Kolom)
+    
+    # Baris 1
     c1, c2 = st.columns(2)
     with c1:
-        st.markdown("""<div class="dashboard-card"><h4>🔍 Screening Harian</h4><p>Temukan saham momentum tinggi & volume spike.</p></div>""", unsafe_allow_html=True)
-        if st.button("Buka Screening ➔", key="btn_scr"):
-            st.session_state.current_menu = "Screening Harian"; st.rerun()
-
+        if st.button("🔍 Screening Saham Harian", use_container_width=True):
+            st.session_state.current_menu = "screening"
+            st.rerun()
     with c2:
-        st.markdown("""<div class="dashboard-card"><h4>📈 Analisa Teknikal</h4><p>Lihat chart candlestick, RSI, MACD & Plan.</p></div>""", unsafe_allow_html=True)
-        if st.button("Buka Chart Teknikal ➔", key="btn_tek"):
-            st.session_state.current_menu = "Analisa Teknikal"; st.rerun()
+        if st.button("⚡ Analisa Cepat", use_container_width=True):
+            st.session_state.current_menu = "analisa_cepat"
+            st.rerun()
 
+    # Baris 2
     c3, c4 = st.columns(2)
     with c3:
-        st.markdown("""<div class="dashboard-card"><h4>💰 Analisa Dividen</h4><p>Cari saham yield tinggi & fundamental kuat.</p></div>""", unsafe_allow_html=True)
-        if st.button("Cek Dividen ➔", key="btn_div"):
-            st.session_state.current_menu = "Analisa Dividen"; st.rerun()
-
+        if st.button("📈 Analisa Teknikal Mendalam", use_container_width=True):
+            st.session_state.current_menu = "teknikal"
+            st.rerun()
     with c4:
-        st.markdown("""<div class="dashboard-card"><h4>📊 Analisa Fundamental</h4><p>Valuasi wajar (Fair Value) & Margin of Safety.</p></div>""", unsafe_allow_html=True)
-        if st.button("Cek Fundamental ➔", key="btn_fund"):
-            st.session_state.current_menu = "Analisa Fundamental"; st.rerun()
-            
+        if st.button("📊 Analisa Fundamental", use_container_width=True):
+            st.session_state.current_menu = "fundamental"
+            st.rerun()
+
+    # Baris 3
     c5, c6 = st.columns(2)
     with c5:
-        st.markdown("""<div class="dashboard-card"><h4>⚖️ Perbandingan Saham</h4><p>Head-to-head dua saham pilihan.</p></div>""", unsafe_allow_html=True)
-        if st.button("Mulai Bandingkan ➔", key="btn_comp"):
-            st.session_state.current_menu = "Perbandingan Saham"; st.rerun()
+        if st.button("💰 Analisa Dividen", use_container_width=True):
+            st.session_state.current_menu = "dividen"
+            st.rerun()
+    with c6:
+        if st.button("⚖️ Perbandingan 2 Saham", use_container_width=True):
+            st.session_state.current_menu = "perbandingan"
+            st.rerun()
 
-# --- EKSEKUSI ---
+    # Tombol Logout
+    st.markdown("<br>", unsafe_allow_html=True)
+    if st.button("Keluar / Logout", type="secondary", use_container_width=True):
+        st.session_state.logged_in = False
+        st.session_state.user_name = ""
+        st.rerun()
+
+# --- 7. LOGIKA NAVIGASI UTAMA ---
+def main_app():
+    # Jika di Beranda, tampilkan Dashboard Menu
+    if st.session_state.current_menu == "Beranda":
+        show_dashboard()
+    
+    # Jika masuk ke salah satu menu, tampilkan Tombol KEMBALI & Modulnya
+    else:
+        # Tombol Kembali ke Menu Utama
+        col_back, _ = st.columns([1, 4])
+        with col_back:
+            st.markdown('<div class="back-btn">', unsafe_allow_html=True)
+            if st.button("⬅️ Kembali ke Menu Utama"):
+                st.session_state.current_menu = "Beranda"
+                st.rerun()
+            st.markdown('</div>', unsafe_allow_html=True)
+
+        # Router ke Modul
+        if st.session_state.current_menu == "screening":
+            screening.run_screening()
+        elif st.session_state.current_menu == "analisa_cepat":
+            analisa_cepat.run_analisa_cepat()
+        elif st.session_state.current_menu == "teknikal":
+            teknikal.run_teknikal()
+        elif st.session_state.current_menu == "fundamental":
+            fundamental.run_fundamental()
+        elif st.session_state.current_menu == "dividen":
+            dividen.run_dividen()
+        elif st.session_state.current_menu == "perbandingan":
+            perbandingan.run_perbandingan()
+
+# --- 8. EKSEKUSI PROGRAM ---
 if __name__ == "__main__":
     if st.session_state.logged_in:
         main_app()
     else:
         login_page()
-
