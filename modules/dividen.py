@@ -91,6 +91,6 @@ def run_dividen():
             # --- LOGIKA SARAN INVESTASI ---
             st.markdown("---")
             if curr_price < entry_price:
-                st.success(f"✅ **Saran:** Harga saat ini lebih murah dari target entry. Pertimbangkan untuk **Buy** guna mengunci yield yang lebih tinggi.")
+                st.success(f"✅ **Saran:** Harga saat ini lebih murah dari target entry. Pertimbangkan untuk **BUY** guna mengunci yield yang lebih tinggi.")
             else:
-                st.warning(f"⏳ **Saran:** Harga saat ini masih mahal. Disarankan untuk **Wait and See / Tunggu Koreksi** hingga mendekati Rp {entry_price:,.0f}.")
+                st.warning(f"⏳ **Saran:** Harga saat ini masih mahal. Disarankan untuk **WAIT and SEE / Tunggu Koreksi** hingga mendekati Rp {entry_price:,.0f}.")
