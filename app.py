@@ -103,7 +103,7 @@ def show_dashboard():
 
     c3, c4 = st.columns(2)
     with c3:
-        if st.button("📈 Teknikal Mendalam", use_container_width=True):
+        if st.button("📈 Teknikal Pro", use_container_width=True):
             st.session_state.current_menu = "teknikal"; st.rerun()
     with c4:
         if st.button("📊 Fundamental Pro", use_container_width=True):
@@ -150,3 +150,4 @@ def main_app():
 if __name__ == "__main__":
     if st.session_state.logged_in: main_app()
     else: login_page()
+
