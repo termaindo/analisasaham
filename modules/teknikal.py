@@ -16,7 +16,7 @@ def run_teknikal():
 
     col_input, _ = st.columns([1, 2])
     with col_input:
-        ticker_input = st.text_input("Masukkan Kode Saham:", value="BBTN").upper()
+        ticker_input = st.text_input("Masukkan Kode Saham:", value="BBCA").upper()
     
     ticker = ticker_input if ticker_input.endswith(".JK") else f"{ticker_input}.JK"
 
