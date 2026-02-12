@@ -73,12 +73,18 @@ def login_page():
             input_nama = st.text_input("👤 Nama Panggilan Anda", placeholder="Contoh: Pak Musa")
             password = st.text_input("🔑 Password Akses", type="password")
             
-            # Tombol Submit Form
             submit = st.form_submit_button("MASUK SISTEM", use_container_width=True)
 
             if submit:
-                # Password Default: 12345 (Ganti di sini jika ingin ubah)
-                if password.strip() == "12345":  
+                # --- PERBAIKAN DI SINI ---
+                # Mengambil password dari Secrets Streamlit (bukan manual "12345")
+                try:
+                    correct_password = st.secrets["PASSWORD_RAHASIA"]
+                except:
+                    st.error("⚠️ Password belum disetting di Secrets! Gunakan '12345' sementara.")
+                    correct_password = "12345"
+
+                if password.strip() == correct_password:  
                     if input_nama.strip() == "":
                         st.warning("Mohon isi nama panggilan Anda.")
                     else:
@@ -88,7 +94,7 @@ def login_page():
                 else:
                     st.error("Password salah. Silakan coba lagi.")
 
-        # --- INFO PEMBELIAN (UPDATED LINK) ---
+        # --- INFO PEMBELIAN ---
         st.markdown("<br>", unsafe_allow_html=True)
         st.info("🔒 Aplikasi ini dikunci khusus untuk Member Premium.")
         
@@ -98,7 +104,6 @@ def login_page():
         </div>
         """, unsafe_allow_html=True)
 
-        # LINK TOMBOL BELI (SUDAH DISESUAIKAN)
         url_beli = "https://lynk.id/hahastoresby"
         st.link_button("🛒 Beli Manual dan Kode Akses (Klik Di Sini)", url_beli, use_container_width=True)
 
@@ -156,12 +161,11 @@ def main_app():
         perbandingan.run_perbandingan()
 
 def show_dashboard():
-    st.title(f"👋 Selamat Datang, sobat {st.session_state.user_name}!")
+    st.title(f"👋 Selamat Datang, {st.session_state.user_name}!")
     st.markdown("### Dashboard Navigasi Pasar Saham")
     st.write("Silakan pilih modul analisa yang ingin Anda gunakan hari ini:")
     st.markdown("---")
 
-    # GRID NAVIGASI DASHBOARD
     c1, c2 = st.columns(2)
     with c1:
         st.markdown("""<div class="dashboard-card"><h4>🔍 Screening Harian</h4><p>Temukan saham momentum tinggi & volume spike.</p></div>""", unsafe_allow_html=True)
