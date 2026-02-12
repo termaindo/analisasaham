@@ -1,7 +1,6 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import textwrap  # Library untuk memperbaiki tampilan HTML
 from modules.data_loader import ambil_data_history, ambil_data_fundamental_lengkap
 
 def run_analisa_cepat():
@@ -42,12 +41,10 @@ def run_analisa_cepat():
                 roe = info.get('returnOnEquity', 0)
                 mkt_cap = info.get('marketCap', 0)
                 
-                # Fix Dividen Yield (Kadang Yahoo error kasih angka 400%)
+                # Logic Fix: Dividen Yield (Cegah angka 409%)
                 raw_yield = info.get('dividendYield', 0)
-                if raw_yield > 1: # Jika datanya > 1 (misal 4.09), berarti sudah persen
-                    div_yield = raw_yield
-                else: # Jika datanya desimal (misal 0.04), kali 100
-                    div_yield = raw_yield * 100
+                if raw_yield > 1: div_yield = raw_yield # Jika data Yahoo 4.5, pakai itu
+                else: div_yield = raw_yield * 100       # Jika data Yahoo 0.045, kali 100
 
                 # --- LOGIKA 8 POIN ---
 
@@ -111,53 +108,47 @@ def run_analisa_cepat():
                 elif t_score < 4: rec = "WAIT AND SEE"
                 else: rec = "HOLD"
 
-                # 7. Target & SL (ATR FIX)
-                # Pastikan menggunakan .mean() saja tanpa .iloc[-1]
+                # 7. Target & SL (ATR FIX: Tanpa iloc)
                 atr = (df['High'] - df['Low']).tail(14).mean()
                 
                 sl = int(curr_price - (1.5 * atr))
                 tp = int(curr_price + (2.5 * atr))
 
-                # 8. Timeframe & Variabel Penjelas
+                # 8. Timeframe
                 timeframe = "Jangka Panjang (Investasi)" if f_score >= 7 else "Jangka Pendek (Trading)"
                 
                 reason_f = ', '.join(f_reasons[:2]) if f_reasons else 'Kurang Menarik'
                 reason_t = ', '.join(t_reasons[:2]) if t_reasons else 'Trend Lemah'
 
-                # --- TAMPILAN OUTPUT FINAL (TEXTWRAP DEDENT) ---
+                # --- TAMPILAN OUTPUT FINAL ---
                 st.subheader(f"Analisa Singkat: {info.get('longName', ticker_input)}")
                 
                 color_map = {"STRONG BUY": "green", "TRADING BUY": "blue", "ACCUMULATE / HOLD": "orange", "WAIT AND SEE": "red", "HOLD": "gray"}
                 color = color_map.get(rec, "blue")
 
-                # KUNCI PERBAIKAN: Gunakan textwrap.dedent agar HTML dirender benar
-                html_code = textwrap.dedent(f"""
-                    <div style="background-color: #1e2b3e; padding: 25px; border-radius: 12px; border-left: 8px solid {color}; box-shadow: 0 4px 6px rgba(0,0,0,0.3);">
-                        <h2 style="color: {color}; margin-top: 0; border-bottom: 1px solid #444; padding-bottom: 10px;">{rec}</h2>
-                        
-                        <ul style="line-height: 1.8; padding-left: 20px; color: #e0e0e0;">
-                            <li><b>1. Fundamental Score:</b> {f_score}/10 <span style='color:gray'>({reason_f})</span></li>
-                            <li><b>2. Technical Score:</b> {t_score}/10 <span style='color:gray'>({reason_t})</span></li>
-                            <li><b>3. Sentiment Pasar:</b> {sentiment}</li>
-                            <br>
-                            <li><b>4. Alasan Utama BUY:</b>
-                                <ul>{buy_str}</ul>
-                            </li>
-                            <br>
-                            <li><b>5. Risiko Wajib Waspada:</b>
-                                <ul>{risk_str}</ul>
-                            </li>
-                            <br>
-                            <li><b>6. Rekomendasi Final:</b> <b>{rec}</b></li>
-                            <li><b>7. Trading Plan:</b>
-                                <br>🎯 Target Price: <b>Rp {tp:,.0f}</b>
-                                <br>🛑 Stop Loss: <b>Rp {sl:,.0f}</b>
-                            </li>
-                            <li><b>8. Timeframe:</b> {timeframe}</li>
-                        </ul>
-                    </div>
-                """)
-                
+                # HTML DITULIS TANPA INDENTASI AGAR TIDAK DIANGGAP CODE BLOCK
+                html_code = f"""
+<div style="background-color: #1e2b3e; padding: 25px; border-radius: 12px; border-left: 8px solid {color}; box-shadow: 0 4px 6px rgba(0,0,0,0.3);">
+    <h2 style="color: {color}; margin-top: 0; border-bottom: 1px solid #444; padding-bottom: 10px;">{rec}</h2>
+    <div style="color: #e0e0e0; font-size: 16px; line-height: 1.6;">
+        <p><b>1. Fundamental Score:</b> {f_score}/10 <span style='color:#bbb'>({reason_f})</span></p>
+        <p><b>2. Technical Score:</b> {t_score}/10 <span style='color:#bbb'>({reason_t})</span></p>
+        <p><b>3. Sentiment Pasar:</b> {sentiment}</p>
+        <hr style="border-top: 1px solid #444; margin: 15px 0;">
+        <p><b>4. Alasan Utama BUY:</b></p>
+        <ul style="margin-top: 5px;">{buy_str}</ul>
+        <p><b>5. Risiko Wajib Waspada:</b></p>
+        <ul style="margin-top: 5px;">{risk_str}</ul>
+        <hr style="border-top: 1px solid #444; margin: 15px 0;">
+        <p><b>6. Rekomendasi Final:</b> <strong style="color: {color}; font-size: 18px;">{rec}</strong></p>
+        <p><b>7. Trading Plan:</b><br>
+           &nbsp;&nbsp;🎯 Target Price: <b>Rp {tp:,.0f}</b><br>
+           &nbsp;&nbsp;🛑 Stop Loss: <b>Rp {sl:,.0f}</b>
+        </p>
+        <p><b>8. Timeframe:</b> {timeframe}</p>
+    </div>
+</div>
+"""
                 st.markdown(html_code, unsafe_allow_html=True)
 
             except Exception as e:
