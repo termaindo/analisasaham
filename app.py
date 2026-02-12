@@ -98,14 +98,13 @@ def login_page():
         st.markdown("<br>", unsafe_allow_html=True)
         st.info("🔒 Belum punya akses premium? Sekali beli, berlaku seumur hidup")
         
-        # Tombol ini sekarang otomatis berwarna merah karena CSS di atas
         st.link_button("🛒 Beli Akses via Lynk.id. Sekali beli dengan harga terjangkau, berlaku seumur hidup", "https://lynk.id/hahastoresby", use_container_width=True)
 
 # --- 6. DASHBOARD ---
 def show_dashboard():
     st.markdown(f"### 👋 Halo Sobat <span style='color:#ff0000'>{st.session_state.user_name}</span>!", unsafe_allow_html=True)
     
-    # --- TAMBAHKAN BLOK README / PANDUAN DI SINI ---
+    # --- PANDUAN / README ---
     with st.expander("📖 Panduan Penggunaan & Istilah (Baca Ini Dulu)"):
         st.markdown("""
         #### **1. Cara Mulai Analisa**
@@ -127,6 +126,9 @@ def show_dashboard():
         Jika data tidak muncul atau tertulis 'Data Not Found', itu berarti server Yahoo Finance sedang sibuk. 
         **Solusinya:** Tunggu 1 menit, lalu klik tombol **'Clear Cache'** di menu pojok kanan atas, kemudian coba lagi.
         """)
+    
+    # --- JUDUL MENCOLOK (TAMBAHAN BARU) ---
+    st.markdown("<h1 style='text-align: center; color: #ff0000; letter-spacing: 2px; margin-top: 20px; margin-bottom: 20px;'>📈 EXPERT STOCK PRO</h1>", unsafe_allow_html=True)
     
     st.write("Silakan pilih menu analisa:")
     st.markdown("---")
@@ -184,11 +186,3 @@ def main_app():
             elif st.session_state.current_menu == "dividen" and mod_dividen: mod_dividen.run_dividen()
             elif st.session_state.current_menu == "perbandingan" and mod_perbandingan: mod_perbandingan.run_perbandingan()
             else:
-                st.error(f"Modul {st.session_state.current_menu} tidak dapat dimuat.")
-        except Exception as e:
-            st.error(f"Terjadi error saat menjalankan menu: {e}")
-
-if __name__ == "__main__":
-    if st.session_state.logged_in: main_app()
-    else: login_page()
-
