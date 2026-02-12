@@ -161,7 +161,7 @@ def main_app():
         perbandingan.run_perbandingan()
 
 def show_dashboard():
-    st.title(f"👋 Selamat Datang, {st.session_state.user_name}!")
+    st.title(f"👋 Selamat Datang, sobat {st.session_state.user_name}!")
     st.markdown("### Dashboard Navigasi Pasar Saham")
     st.write("Silakan pilih modul analisa yang ingin Anda gunakan hari ini:")
     st.markdown("---")
@@ -200,3 +200,4 @@ if __name__ == "__main__":
         main_app()
     else:
         login_page()
+
