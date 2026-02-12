@@ -79,7 +79,7 @@ def login_page():
                         st.rerun()
                 else: st.error("Password salah.")
         st.markdown("<br>", unsafe_allow_html=True)
-        st.info("🔒 Belum punya akses premium?")
+        st.info("🔒 Belum punya akses premium? Sekali beli, berlaku seumur hidup")
         st.link_button("🛒 Beli Akses via Lynk.id", "https://lynk.id/hahastoresby", use_container_width=True)
 
 # --- 6. DASHBOARD ---
@@ -150,4 +150,5 @@ def main_app():
 if __name__ == "__main__":
     if st.session_state.logged_in: main_app()
     else: login_page()
+
 
