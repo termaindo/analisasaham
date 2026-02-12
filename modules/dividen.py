@@ -75,6 +75,7 @@ def run_dividen():
             # --- 4. REKOMENDASI ---
             st.header("4. REKOMENDASI")
             deposito_rate = 5.0
+            entry_price = est_dps / (deposito_rate/100)
             
             if yield_val > deposito_rate * 1.5:
                 status = "SANGAT LAYAK (Yield jauh di atas Deposito)"
@@ -84,7 +85,12 @@ def run_dividen():
                 status = "KURANG MENARIK (Yield di bawah Deposito)"
             
             st.subheader(f"Status: {status}")
-            st.write(f"**Entry Price (untuk Mencapai Yield setara Deposito {deposito_rate}%):** Rp {est_dps / (deposito_rate/100):,.0f} ")
-            
-            # INFO TAMBAHAN SESUAI PERMINTAAN
+            st.write(f"**Entry Price (untuk Mencapai Yield setara Deposito {deposito_rate}%):** Rp {entry_price:,.0f}")
             st.write(f"**Harga Saham Saat Ini:** Rp {curr_price:,.0f}")
+            
+            # --- LOGIKA SARAN INVESTASI ---
+            st.markdown("---")
+            if curr_price < entry_price:
+                st.success(f"✅ **Saran:** Harga saat ini lebih murah dari target entry. Pertimbangkan untuk **Buy** guna mengunci yield yang lebih tinggi.")
+            else:
+                st.warning(f"⏳ **Saran:** Harga saat ini masih mahal. Disarankan untuk **Wait and See / Tunggu Koreksi** hingga mendekati Rp {entry_price:,.0f}.")
