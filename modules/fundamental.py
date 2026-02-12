@@ -3,7 +3,7 @@ import pandas as pd
 from modules.data_loader import get_full_stock_data, hitung_div_yield_normal
 
 def run_fundamental():
-    st.title("🏛️ Analisa Fundamental Mendalam")
+    st.title("🏛️ Analisa Fundamental Pro")
     st.markdown("---")
 
     col_inp, _ = st.columns([1, 2])
