@@ -104,6 +104,30 @@ def login_page():
 # --- 6. DASHBOARD ---
 def show_dashboard():
     st.markdown(f"### 👋 Halo Sobat <span style='color:#ff0000'>{st.session_state.user_name}</span>!", unsafe_allow_html=True)
+    
+    # --- TAMBAHKAN BLOK README / PANDUAN DI SINI ---
+    with st.expander("📖 Panduan Penggunaan & Istilah (Baca Ini Dulu)"):
+        st.markdown("""
+        #### **1. Cara Mulai Analisa**
+        * Pilih menu yang diinginkan di bawah (Screening, Teknikal, dll).
+        * Masukkan **Kode Saham** dengan atau tanpa `.JK` (Contoh: `BBCA` atau `ASII`).
+        * Klik tombol **Jalankan Analisa** dan tunggu hingga data muncul.
+
+        #### **2. Memahami Grafik Teknikal**
+        * 🟡 **Garis Kuning (MA20):** Tren jangka pendek. Jika harga di atas garis ini, tenaga naik masih kuat.
+        * 🟣 **Garis Ungu (MA200):** Tren jangka panjang (Batas Bullish/Bearish).
+        * ⚪ **Bollinger Bands:** Area abu-abu tipis adalah batas volatilitas normal harga.
+
+        #### **3. Strategi ATR (Stop Loss & Take Profit)**
+        Aplikasi ini menggunakan indikator **ATR (Average True Range)** untuk menghitung batasan harga:
+        * **Stop Loss (SL):** Batas aman agar modal Anda tidak tergerus saat harga berbalik arah.
+        * **Take Profit (TP):** Target keuntungan yang realistis berdasarkan volatilitas harian saham.
+
+        #### **4. Tips Anti-Error**
+        Jika data tidak muncul atau tertulis 'Data Not Found', itu berarti server Yahoo Finance sedang sibuk. 
+        **Solusinya:** Tunggu 1 menit, lalu klik tombol **'Clear Cache'** di menu pojok kanan atas, kemudian coba lagi.
+        """)
+    
     st.write("Silakan pilih menu analisa:")
     st.markdown("---")
 
@@ -167,3 +191,4 @@ def main_app():
 if __name__ == "__main__":
     if st.session_state.logged_in: main_app()
     else: login_page()
+
