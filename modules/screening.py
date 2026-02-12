@@ -42,7 +42,7 @@ def run_screening():
     session, desc = get_market_session()
     st.info(f"**Sesi Saat Ini:** {session} | {desc}")
 
-    if st.button("Mulai Screening (Sinyal ATR + RRR > 1.3x)"):
+    if st.button("Mulai Screening (Perlu Waktu +/- 2 menit)"):
         # List Top 100 Saham (Shortened for display)
         saham_list = [
             "BBCA.JK", "BBRI.JK", "BMRI.JK", "BBNI.JK", "BBTN.JK", "BRIS.JK", "ARTO.JK", "BFIN.JK", 
