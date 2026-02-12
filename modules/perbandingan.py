@@ -3,7 +3,7 @@ import pandas as pd
 from modules.data_loader import get_full_stock_data, hitung_div_yield_normal
 
 def run_perbandingan():
-    st.title("⚖️ Perbandingan Saham (Head-to-Head)")
+    st.title("⚖️ Perbandingan Saham Pro (Head-to-Head)")
     st.markdown("---")
 
     c_input1, c_input2 = st.columns(2)
