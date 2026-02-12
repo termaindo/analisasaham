@@ -65,7 +65,7 @@ def detect_patterns(df):
 
 # --- MODUL UTAMA ---
 def run_teknikal():
-    st.title("📈 Analisa Teknikal Pro (MA20 Enhanced)")
+    st.title("📈 Analisa Teknikal Pro")
     st.markdown("---")
 
     ticker_input = st.text_input("Masukkan Kode Saham:", value="BBRI").upper()
