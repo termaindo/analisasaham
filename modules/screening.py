@@ -3,10 +3,11 @@ import pandas as pd
 import numpy as np
 import pytz
 from datetime import datetime
-from modules.data_loader import get_full_stock_data # MENGGUNAKAN METODE ANTI-ERROR
+from modules.data_loader import get_full_stock_data # METODE ANTI-ERROR
 
 # --- 1. FUNGSI AUDIO ALERT ---
 def play_alert_sound():
+    """Memutar suara lonceng jika ditemukan sinyal kuat (Score > 80)"""
     audio_html = """
     <audio autoplay>
       <source src="https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3" type="audio/mpeg">
@@ -26,24 +27,25 @@ def get_vwap(df):
     return (df['Close'] * df['Volume']).cumsum() / df['Volume'].cumsum()
 
 def get_market_session():
+    """Menentukan status sesi pasar saat ini"""
     tz = pytz.timezone('Asia/Jakarta')
     now = datetime.now(tz)
     curr_time = now.hour + now.minute/60
-    if now.weekday() >= 5: return "WEEKEND", "Data penutupan Jumat terakhir."
-    if curr_time < 9.0: return "PRE_MARKET", "Pasar belum buka."
-    elif 9.0 <= curr_time <= 16.0: return "LIVE_MARKET", "Pasar sedang berjalan."
-    else: return "POST_MARKET", "Pasar tutup."
+    if now.weekday() >= 5: return "AKHIR PEKAN", "Menampilkan data penutupan Jumat terakhir."
+    if curr_time < 9.0: return "PRA-PASAR", "Pasar belum dibuka."
+    elif 9.0 <= curr_time <= 16.0: return "PASAR LIVE", "Sesi perdagangan sedang berlangsung."
+    else: return "PASCA-PASAR", "Pasar sudah ditutup."
 
 # --- 3. PROGRAM UTAMA ---
 def run_screening():
-    st.title("🔔 High Prob. Breakout Screener")
+    st.title("🔔 Penyaringan Saham Trading Harian Potensial")
     st.markdown("---")
 
     session, desc = get_market_session()
-    st.info(f"**Sesi Saat Ini:** {session} | {desc}")
+    st.info(f"**Status Sesi:** {session} | {desc}")
 
-    if st.button("Mulai Screening (Perlu Waktu +/- 2 menit)"):
-        # List Top 100 Saham (Shortened for display)
+    if st.button("Mulai Pemindaian (RRR > 1.3x)"):
+        # Daftar Saham Pilihan
         saham_list = [
             "BBCA.JK", "BBRI.JK", "BMRI.JK", "BBNI.JK", "BBTN.JK", "BRIS.JK", "ARTO.JK", "BFIN.JK", 
             "BREN.JK", "TPIA.JK", "BRPT.JK", "PGEO.JK", "AMMN.JK", "TLKM.JK", "ISAT.JK", "EXCL.JK", 
@@ -52,12 +54,7 @@ def run_screening():
             "MBMA.JK", "ICBP.JK", "INDF.JK", "UNVR.JK", "AMRT.JK", "CPIN.JK", "MYOR.JK", "ACES.JK", 
             "MAPI.JK", "CTRA.JK", "SMRA.JK", "BSDE.JK", "PWON.JK", "PANI.JK", "ASII.JK", "UNTR.JK", 
             "KLBF.JK", "JSMR.JK", "ASSA.JK", "AUTO.JK", "AVIA.JK", "BBYB.JK", "BCIC.JK", "BDMN.JK",
-            "BEBS.JK", "BIRD.JK", "BKSL.JK", "BMTR.JK", "BNGA.JK", "BNLI.JK", "BSIM.JK", "BUMI.JK",
-            "CPRO.JK", "DMMX.JK", "DOID.JK", "ENRG.JK", "ERAA.JK", "ESSA.JK", "FORU.JK", "HEAL.JK",
-            "IMAS.JK", "INKP.JK", "INTP.JK", "JPFA.JK", "KIAS.JK", "LPKR.JK", "LPPF.JK", "LSIP.JK",
-            "MAIN.JK", "MAPA.JK", "MIKA.JK", "MLPL.JK", "MNCN.JK", "MPPA.JK", "NATO.JK", "RAJA.JK",
-            "SAME.JK", "SCMA.JK", "SIDO.JK", "SILO.JK", "SMGR.JK", "SSMS.JK", "TAPG.JK", "TKIM.JK",
-            "TOSL.JK", "TYRE.JK", "WIKA.JK", "WOOD.JK"
+            "BIRD.JK", "BNGA.JK", "ESSA.JK", "HEAL.JK", "IMAS.JK", "INKP.JK", "INTP.JK", "SIDO.JK"
         ]
 
         hasil_lolos = []
@@ -67,7 +64,7 @@ def run_screening():
         for i, ticker in enumerate(saham_list):
             progress_bar.progress((i + 1) / len(saham_list))
             try:
-                # --- PAKAI DATA_LOADER (ANTI-ERROR) ---
+                # --- METODE ANTI-ERROR (PANGGIL DATA_LOADER) ---
                 data = get_full_stock_data(ticker)
                 df = data['history']
                 
@@ -80,7 +77,7 @@ def run_screening():
                 curr = df['Close'].iloc[-1]
                 avg_vol = df['Volume'].tail(20).mean()
                 
-                # --- KALKULASI ATR (VOLATILITAS) ---
+                # --- KALKULASI ATR (AVERAGE TRUE RANGE) ---
                 high_low = df['High'] - df['Low']
                 high_close = np.abs(df['High'] - df['Close'].shift())
                 low_close = np.abs(df['Low'] - df['Close'].shift())
@@ -89,13 +86,13 @@ def run_screening():
                 df['ATR'] = true_range.rolling(14).mean()
                 atr_val = df['ATR'].iloc[-1]
 
-                # --- SCORING MOMENTUM ---
+                # --- PENILAIAN MOMENTUM (SCORING) ---
                 score = 0
                 reasons = []
 
-                if (df['Volume'].iloc[-1] / avg_vol) > 1.5: score += 20; reasons.append("Vol Spike")
+                if (df['Volume'].iloc[-1] / avg_vol) > 1.5: score += 20; reasons.append("Lonjakan Volume")
                 vwap_val = get_vwap(df).iloc[-1]
-                if curr > vwap_val: score += 20; reasons.append("Above VWAP")
+                if curr > vwap_val: score += 20; reasons.append("Di atas VWAP")
                 rsi_val = calculate_rsi(df['Close']).iloc[-1]
                 if 50 < rsi_val < 70: score += 20; reasons.append(f"RSI {rsi_val:.0f}")
                 
@@ -103,19 +100,19 @@ def run_screening():
                 chg = ((curr - prev_close)/prev_close)*100
                 if chg > 1.5: score += 20; reasons.append(f"Naik {chg:.1f}%")
 
-                # --- PENENTUAN SL & TP MENGGUNAKAN ATR ---
-                # Stop Loss = Harga - 1.5x ATR (Lebih responsif dibanding persen statis)
-                supp = int(curr - (1.5 * atr_val))
-                risk_pct = ((curr - supp) / curr) * 100
+                # --- PENENTUAN SL & TP BERBASIS ATR ---
+                # Stop Loss = Harga - 1.5x ATR
+                sl = int(curr - (1.5 * atr_val))
+                risk_pct = ((curr - sl) / curr) * 100
                 
-                # Take Profit = Harga + 3.0x ATR (Memberikan RRR 1:2)
-                target_price = int(curr + (3.0 * atr_val))
-                reward_pct = ((target_price - curr) / curr) * 100
+                # Take Profit = Harga + 3.0x ATR (Memberikan Risk/Reward Ratio 1:2)
+                tp = int(curr + (3.0 * atr_val))
+                reward_pct = ((tp - curr) / curr) * 100
                 
-                # Hitung Final RRR
+                # Hitung Risk/Reward Ratio (RRR)
                 rrr = reward_pct / risk_pct if risk_pct > 0 else 0
 
-                # --- FILTER FINAL: Score & RRR ---
+                # --- PENYARINGAN AKHIR (FILTER) ---
                 if score >= 60 and rrr >= 1.3:
                     if score >= 80: 
                         high_score_found = True
@@ -125,16 +122,16 @@ def run_screening():
 
                     hasil_lolos.append({
                         "Ticker": ticker.replace(".JK", ""),
-                        "Rating": rating,
+                        "Peringkat": rating,
                         "Harga": int(curr),
                         "RSI": round(rsi_val, 1),
                         "RRR": f"{rrr:.1f}x",
-                        "Reasons": ", ".join(reasons),
-                        "Support": supp, 
-                        "Resist": target_price,
+                        "Alasan": ", ".join(reasons),
+                        "Stop Loss": sl, 
+                        "Take Profit": tp,
                         "Risk_Pct": round(risk_pct, 1), 
                         "Reward_Pct": round(reward_pct, 1),
-                        "Raw_Score": score
+                        "Skor": score
                     })
 
             except: continue
@@ -142,27 +139,27 @@ def run_screening():
         progress_bar.empty()
         
         if high_score_found:
-            st.warning("⚠️ Sinyal Kuat Terdeteksi!")
+            st.warning("⚠️ Ditemukan Saham dengan Sinyal Kuat!")
             play_alert_sound()
 
         if hasil_lolos:
-            hasil_lolos.sort(key=lambda x: x['Raw_Score'], reverse=True)
+            hasil_lolos.sort(key=lambda x: x['Skor'], reverse=True)
             df_final = pd.DataFrame(hasil_lolos)
             
-            st.success(f"Ditemukan {len(hasil_lolos)} saham potensial (Sinyal ATR)")
-            st.dataframe(df_final[["Ticker", "Rating", "Harga", "RSI", "RRR", "Reward_Pct"]], use_container_width=True)
+            st.success(f"Ditemukan {len(hasil_lolos)} saham potensial dengan kriteria teknikal ketat.")
+            st.dataframe(df_final[["Ticker", "Peringkat", "Harga", "RSI", "RRR", "Reward_Pct"]], use_container_width=True)
 
             st.markdown("---")
             for item in hasil_lolos:
-                with st.expander(f"Plan: {item['Ticker']} | Score: {item['Raw_Score']} | RRR: {item['RRR']}"):
-                    st.write(f"**Indikator:** {item['Reasons']}")
+                with st.expander(f"Trading Plan: {item['Ticker']} | Skor: {item['Skor']} | RRR: {item['RRR']}"):
+                    st.write(f"**Alasan Sinyal:** {item['Alasan']}")
                     
                     c1, c2, c3 = st.columns(3)
                     with c1:
-                        st.markdown(f"<div style='text-align:center;'>Entry<br><b>Rp {item['Harga']:,.0f}</b></div>", unsafe_allow_html=True)
+                        st.markdown(f"<div style='text-align:center;'>Entry Point<br><b>Rp {item['Harga']:,.0f}</b></div>", unsafe_allow_html=True)
                     with c2:
-                        st.markdown(f"<div style='background-color:#ffebee; color:#c62828; padding:10px; border-radius:5px; text-align:center;'><b>SL: Rp {item['Support']:,.0f}</b><br><small>Volatility Gap</small></div>", unsafe_allow_html=True)
+                        st.markdown(f"<div style='background-color:#ffebee; color:#c62828; padding:10px; border-radius:8px; text-align:center;'><b>Stop Loss: Rp {item['Stop Loss']:,.0f}</b><br><small>Berdasarkan Volatilitas ATR</small></div>", unsafe_allow_html=True)
                     with c3:
-                        st.markdown(f"<div style='background-color:#e8f5e9; color:#2e7d32; padding:10px; border-radius:5px; text-align:center;'><b>TP: Rp {item['Resist']:,.0f}</b><br><small>Target +{item['Reward_Pct']}%</small></div>", unsafe_allow_html=True)
+                        st.markdown(f"<div style='background-color:#e8f5e9; color:#2e7d32; padding:10px; border-radius:8px; text-align:center;'><b>Take Profit: Rp {item['Take Profit']:,.0f}</b><br><small>Potensi +{item['Reward_Pct']}%</small></div>", unsafe_allow_html=True)
         else:
-            st.warning("Belum ada saham yang memenuhi kriteria volatilitas ATR saat ini.")
+            st.warning("Tidak ditemukan saham yang memenuhi kriteria RRR > 1.3x pada sesi ini.")
