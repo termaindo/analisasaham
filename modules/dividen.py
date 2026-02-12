@@ -15,6 +15,7 @@ def run_dividen():
 
     if st.button(f"Analisa Dividen {ticker_input}"):
         with st.spinner("Mengevaluasi histori & kesehatan kas..."):
+            # --- STANDAR ANTI-ERROR ---
             data = get_full_stock_data(ticker)
             info = data['info']
             divs = data['dividends']
@@ -29,7 +30,6 @@ def run_dividen():
             
             # --- 1. DIVIDEND HISTORY (5 TAHUN) ---
             st.header("1. DIVIDEND HISTORY (5 TAHUN)")
-            # Mengolah data dividen per tahun
             df_div = divs.to_frame()
             df_div.index = pd.to_datetime(df_div.index).tz_localize(None)
             df_div_annual = df_div.resample('YE').sum().tail(5)
@@ -74,7 +74,6 @@ def run_dividen():
 
             # --- 4. REKOMENDASI ---
             st.header("4. REKOMENDASI")
-            # Bandingkan dengan rata-rata bunga Deposito (Asumsi 5%)
             deposito_rate = 5.0
             
             if yield_val > deposito_rate * 1.5:
@@ -86,3 +85,6 @@ def run_dividen():
             
             st.subheader(f"Status: {status}")
             st.write(f"**Entry Price (untuk Mencapai Yield setara Deposito {deposito_rate}%):** Rp {est_dps / (deposito_rate/100):,.0f} ")
+            
+            # INFO TAMBAHAN SESUAI PERMINTAAN
+            st.write(f"**Harga Saham Saat Ini:** Rp {curr_price:,.0f}")
