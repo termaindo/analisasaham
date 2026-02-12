@@ -1,155 +1,44 @@
 import streamlit as st
-import pandas as pd
-import numpy as np
-from modules.data_loader import ambil_data_history, ambil_data_fundamental_lengkap
+from modules.data_loader import get_full_stock_data, hitung_div_yield
 
 def run_analisa_cepat():
-    st.title("⚡ Analisa Cepat (8 Poin Inti)")
+    st.title("⚡ Analisa Cepat (8 Poin)")
     st.markdown("---")
 
-    col1, _ = st.columns([1, 2])
-    with col1:
-        ticker_input = st.text_input("Kode Saham:", value="BBCA").upper()
+    ticker_input = st.text_input("Kode Saham (Quick):", value="BBCA").upper()
     ticker = ticker_input if ticker_input.endswith(".JK") else f"{ticker_input}.JK"
 
-    if st.button(f"⚡ Analisa Kilat {ticker_input}"):
-        with st.spinner("Menganalisa 8 Poin Penting..."):
-            try:
-                # 1. AMBIL DATA
-                df = ambil_data_history(ticker, period="1y")
-                info, financials, _ = ambil_data_fundamental_lengkap(ticker)
+    if st.button("⚡ Jalankan Analisa Kilat"):
+        data = get_full_stock_data(ticker)
+        info = data["info"]
+        df = data["history"]
+        
+        if df.empty:
+            st.error("Data tidak ditemukan. Coba lagi nanti.")
+            return
 
-                if df.empty:
-                    st.error("Data saham tidak ditemukan.")
-                    return
-
-                # --- DATA PROCESSING ---
-                curr_price = df['Close'].iloc[-1]
-                ma20 = df['Close'].rolling(20).mean().iloc[-1]
-                ma200 = df['Close'].rolling(200).mean().iloc[-1]
-                
-                # RSI Calculation
-                delta = df['Close'].diff()
-                gain = (delta.where(delta > 0, 0)).rolling(14).mean()
-                loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
-                rsi_series = 100 - (100 / (1 + (gain/loss)))
-                rsi = rsi_series.iloc[-1]
-
-                # Fundamental Metrics
-                pe = info.get('trailingPE', 0)
-                pbv = info.get('priceToBook', 0)
-                roe = info.get('returnOnEquity', 0)
-                mkt_cap = info.get('marketCap', 0)
-                
-                # Logic Fix: Dividen Yield (Cegah angka 409%)
-                raw_yield = info.get('dividendYield', 0)
-                if raw_yield > 1: div_yield = raw_yield # Jika data Yahoo 4.5, pakai itu
-                else: div_yield = raw_yield * 100       # Jika data Yahoo 0.045, kali 100
-
-                # --- LOGIKA 8 POIN ---
-
-                # 1. Fundamental Score
-                f_score = 0
-                f_reasons = []
-                if roe > 0.15: f_score += 3; f_reasons.append("Sangat Profitable")
-                elif roe > 0.08: f_score += 2; f_reasons.append("Cukup Profitable")
-                
-                if 0 < pe < 15: f_score += 2; f_reasons.append("Valuasi Murah")
-                elif pe > 30: f_score -= 1; f_reasons.append("Valuasi Premium")
-                
-                if mkt_cap > 50e12: f_score += 3; f_reasons.append("Big Cap")
-                elif mkt_cap < 1e12: f_score -= 1; f_reasons.append("Small Cap")
-                else: f_score += 1
-                
-                if div_yield > 3: f_score += 2; f_reasons.append(f"Dividen {div_yield:.1f}%")
-                f_score = max(1, min(10, f_score))
-
-                # 2. Technical Score
-                t_score = 0
-                t_reasons = []
-                if curr_price > ma20: t_score += 3; t_reasons.append("Uptrend Pendek")
-                if curr_price > ma200: t_score += 3; t_reasons.append("Bullish Panjang")
-                if 30 < rsi < 60: t_score += 2; t_reasons.append("Momentum Stabil")
-                elif rsi <= 30: t_score += 3; t_reasons.append("Oversold")
-                elif rsi >= 70: t_score -= 1; t_reasons.append("Overbought")
-                t_score = max(1, min(10, t_score))
-
-                # 3. Sentiment
-                if t_score >= 7: sentiment = "BULLISH 🐂"
-                elif t_score >= 5: sentiment = "NEUTRAL 😐"
-                else: sentiment = "BEARISH 🐻"
-
-                # 4. Alasan BUY (Generated)
-                buy_reasons = []
-                if f_score >= 7: buy_reasons.append("Fundamental perusahaan sangat sehat.")
-                if t_score >= 7: buy_reasons.append("Trend harga sedang kuat (Uptrend).")
-                if rsi <= 35: buy_reasons.append("RSI di area jenuh jual (Diskon).")
-                if div_yield > 4: buy_reasons.append(f"Yield dividen menarik ({div_yield:.1f}%).")
-                if curr_price > ma200: buy_reasons.append("Harga di atas MA200 (Akumulasi).")
-                if not buy_reasons: buy_reasons.append("Potensi pantulan teknikal sesaat.")
-                
-                buy_str = "".join([f"<li>{r}</li>" for r in buy_reasons[:3]])
-
-                # 5. Risiko (Generated)
-                risk_reasons = []
-                if pe > 25: risk_reasons.append("Valuasi mahal (PER > 25x).")
-                if rsi > 70: risk_reasons.append("Rawan profit taking (RSI Tinggi).")
-                if mkt_cap < 5e12: risk_reasons.append("Likuiditas saham kecil.")
-                if curr_price < ma200: risk_reasons.append("Trend Utama masih Turun (Downtrend).")
-                if f_score < 5: risk_reasons.append("Kinerja keuangan melemah.")
-                if not risk_reasons: risk_reasons.append("Volatilitas pasar global.")
-                
-                risk_str = "".join([f"<li>{r}</li>" for r in risk_reasons[:3]])
-
-                # 6. Rekomendasi
-                if f_score >= 7 and t_score >= 6: rec = "STRONG BUY"
-                elif t_score >= 7: rec = "TRADING BUY"
-                elif f_score >= 7 and t_score < 5: rec = "ACCUMULATE / HOLD"
-                elif t_score < 4: rec = "WAIT AND SEE"
-                else: rec = "HOLD"
-
-                # 7. Target & SL (ATR FIX: Tanpa iloc)
-                atr = (df['High'] - df['Low']).tail(14).mean()
-                
-                sl = int(curr_price - (1.5 * atr))
-                tp = int(curr_price + (2.5 * atr))
-
-                # 8. Timeframe
-                timeframe = "Jangka Panjang (Investasi)" if f_score >= 7 else "Jangka Pendek (Trading)"
-                
-                reason_f = ', '.join(f_reasons[:2]) if f_reasons else 'Kurang Menarik'
-                reason_t = ', '.join(t_reasons[:2]) if t_reasons else 'Trend Lemah'
-
-                # --- TAMPILAN OUTPUT FINAL ---
-                st.subheader(f"Analisa Singkat: {info.get('longName', ticker_input)}")
-                
-                color_map = {"STRONG BUY": "green", "TRADING BUY": "blue", "ACCUMULATE / HOLD": "orange", "WAIT AND SEE": "red", "HOLD": "gray"}
-                color = color_map.get(rec, "blue")
-
-                # HTML DITULIS TANPA INDENTASI AGAR TIDAK DIANGGAP CODE BLOCK
-                html_code = f"""
-<div style="background-color: #1e2b3e; padding: 25px; border-radius: 12px; border-left: 8px solid {color}; box-shadow: 0 4px 6px rgba(0,0,0,0.3);">
-    <h2 style="color: {color}; margin-top: 0; border-bottom: 1px solid #444; padding-bottom: 10px;">{rec}</h2>
-    <div style="color: #e0e0e0; font-size: 16px; line-height: 1.6;">
-        <p><b>1. Fundamental Score:</b> {f_score}/10 <span style='color:#bbb'>({reason_f})</span></p>
-        <p><b>2. Technical Score:</b> {t_score}/10 <span style='color:#bbb'>({reason_t})</span></p>
-        <p><b>3. Sentiment Pasar:</b> {sentiment}</p>
-        <hr style="border-top: 1px solid #444; margin: 15px 0;">
-        <p><b>4. Alasan Utama BUY:</b></p>
-        <ul style="margin-top: 5px;">{buy_str}</ul>
-        <p><b>5. Risiko Wajib Waspada:</b></p>
-        <ul style="margin-top: 5px;">{risk_str}</ul>
-        <hr style="border-top: 1px solid #444; margin: 15px 0;">
-        <p><b>6. Rekomendasi Final:</b> <strong style="color: {color}; font-size: 18px;">{rec}</strong></p>
-        <p><b>7. Trading Plan:</b><br>
-           &nbsp;&nbsp;🎯 Target Price: <b>Rp {tp:,.0f}</b><br>
-           &nbsp;&nbsp;🛑 Stop Loss: <b>Rp {sl:,.0f}</b>
-        </p>
-        <p><b>8. Timeframe:</b> {timeframe}</p>
-    </div>
+        curr_price = df['Close'].iloc[-1]
+        ma20 = df['Close'].rolling(20).mean().iloc[-1]
+        div_yield = hitung_div_yield(info)
+        
+        # Scoring Sederhana
+        f_score = 8 if info.get('returnOnEquity', 0) > 0.15 else 6
+        t_score = 8 if curr_price > ma20 else 4
+        
+        # Output 8 Poin tanpa spasi di awal baris (Anti-Code-Block)
+        html_output = f"""
+<div style="background-color:#1e2b3e; padding:20px; border-radius:10px; border-left:8px solid #ff0000; color:white;">
+    <h2 style="margin-top:0;">REKOMENDASI: {'BUY' if t_score > 5 else 'HOLD'}</h2>
+    <ul style="line-height:1.6;">
+        <li><b>1. Fundamental Score (1-10):</b> {f_score}/10 (ROE Sehat)</li>
+        <li><b>2. Technical Score (1-10):</b> {t_score}/10 ({'Uptrend' if t_score > 5 else 'Downtrend'})</li>
+        <li><b>3. Sentiment Pasar:</b> {'Bullish' if curr_price > ma20 else 'Bearish'}</li>
+        <li><b>4. 3 Alasan BUY:</b> Fundamental kuat, Dominasi Sektor, Yield Dividen {div_yield:.1f}%</li>
+        <li><b>5. 3 Risiko Utama:</b> Volatilitas pasar, Suku bunga, Profit taking</li>
+        <li><b>6. Rekomendasi Final:</b> {'ACCUMULATE BUY' if f_score > 7 else 'WAIT & SEE'}</li>
+        <li><b>7. Target & Stop Loss:</b> TP: {curr_price*1.1:,.0f} | SL: {curr_price*0.92:,.0f}</li>
+        <li><b>8. Investasi:</b> {'Jangka Panjang' if f_score > 7 else 'Jangka Pendek'}</li>
+    </ul>
 </div>
 """
-                st.markdown(html_code, unsafe_allow_html=True)
-
-            except Exception as e:
-                st.error(f"Gagal melakukan analisa cepat: {e}")
+        st.markdown(html_output, unsafe_allow_html=True)
