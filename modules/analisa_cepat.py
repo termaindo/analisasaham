@@ -84,7 +84,7 @@ def run_analisa_cepat():
                 if curr_price > ma200: buy_reasons.append("Harga di atas MA200 (Akumulasi).")
                 if not buy_reasons: buy_reasons.append("Potensi pantulan teknikal sesaat.")
                 
-                # HTML String Preparation (Agar tidak error syntax)
+                # HTML String Preparation
                 buy_str = "".join([f"<li>{r}</li>" for r in buy_reasons[:3]])
 
                 # 5. Risiko (Generated)
@@ -106,15 +106,16 @@ def run_analisa_cepat():
                 elif t_score < 4: rec = "WAIT AND SEE"
                 else: rec = "HOLD"
 
-                # 7. Target & SL
-                atr = (df['High'] - df['Low']).tail(14).mean().iloc[-1]
+                # 7. Target & SL (ATR FIX)
+                # PERBAIKAN: .mean() sudah menghasilkan angka, tidak perlu .iloc[-1]
+                atr = (df['High'] - df['Low']).tail(14).mean()
+                
                 sl = int(curr_price - (1.5 * atr))
                 tp = int(curr_price + (2.5 * atr))
 
                 # 8. Timeframe & Variabel Penjelas
                 timeframe = "Jangka Panjang (Investasi)" if f_score >= 7 else "Jangka Pendek (Trading)"
                 
-                # Variabel Teks Aman (Pengganti ternary operator yang error)
                 reason_f = ', '.join(f_reasons[:2]) if f_reasons else 'Kurang Menarik'
                 reason_t = ', '.join(t_reasons[:2]) if t_reasons else 'Trend Lemah'
 
