@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
+import textwrap  # Library untuk memperbaiki tampilan HTML
 from modules.data_loader import ambil_data_history, ambil_data_fundamental_lengkap
 
 def run_analisa_cepat():
@@ -40,7 +41,13 @@ def run_analisa_cepat():
                 pbv = info.get('priceToBook', 0)
                 roe = info.get('returnOnEquity', 0)
                 mkt_cap = info.get('marketCap', 0)
-                div_yield = info.get('dividendYield', 0) * 100 if info.get('dividendYield') else 0
+                
+                # Fix Dividen Yield (Kadang Yahoo error kasih angka 400%)
+                raw_yield = info.get('dividendYield', 0)
+                if raw_yield > 1: # Jika datanya > 1 (misal 4.09), berarti sudah persen
+                    div_yield = raw_yield
+                else: # Jika datanya desimal (misal 0.04), kali 100
+                    div_yield = raw_yield * 100
 
                 # --- LOGIKA 8 POIN ---
 
@@ -84,7 +91,6 @@ def run_analisa_cepat():
                 if curr_price > ma200: buy_reasons.append("Harga di atas MA200 (Akumulasi).")
                 if not buy_reasons: buy_reasons.append("Potensi pantulan teknikal sesaat.")
                 
-                # HTML String Preparation
                 buy_str = "".join([f"<li>{r}</li>" for r in buy_reasons[:3]])
 
                 # 5. Risiko (Generated)
@@ -96,7 +102,6 @@ def run_analisa_cepat():
                 if f_score < 5: risk_reasons.append("Kinerja keuangan melemah.")
                 if not risk_reasons: risk_reasons.append("Volatilitas pasar global.")
                 
-                # HTML String Preparation
                 risk_str = "".join([f"<li>{r}</li>" for r in risk_reasons[:3]])
 
                 # 6. Rekomendasi
@@ -107,7 +112,7 @@ def run_analisa_cepat():
                 else: rec = "HOLD"
 
                 # 7. Target & SL (ATR FIX)
-                # PERBAIKAN: .mean() sudah menghasilkan angka, tidak perlu .iloc[-1]
+                # Pastikan menggunakan .mean() saja tanpa .iloc[-1]
                 atr = (df['High'] - df['Low']).tail(14).mean()
                 
                 sl = int(curr_price - (1.5 * atr))
@@ -119,39 +124,41 @@ def run_analisa_cepat():
                 reason_f = ', '.join(f_reasons[:2]) if f_reasons else 'Kurang Menarik'
                 reason_t = ', '.join(t_reasons[:2]) if t_reasons else 'Trend Lemah'
 
-                # --- TAMPILAN OUTPUT FINAL ---
+                # --- TAMPILAN OUTPUT FINAL (TEXTWRAP DEDENT) ---
                 st.subheader(f"Analisa Singkat: {info.get('longName', ticker_input)}")
                 
                 color_map = {"STRONG BUY": "green", "TRADING BUY": "blue", "ACCUMULATE / HOLD": "orange", "WAIT AND SEE": "red", "HOLD": "gray"}
                 color = color_map.get(rec, "blue")
 
-                html_content = f"""
-                <div style="background-color: #1e2b3e; padding: 25px; border-radius: 12px; border-left: 8px solid {color};">
-                    <h2 style="color: {color}; margin-top: 0; border-bottom: 1px solid #444; padding-bottom: 10px;">{rec}</h2>
-                    
-                    <ul style="line-height: 1.8; padding-left: 20px;">
-                        <li><b>1. Fundamental Score:</b> {f_score}/10 <span style='color:gray'>({reason_f})</span></li>
-                        <li><b>2. Technical Score:</b> {t_score}/10 <span style='color:gray'>({reason_t})</span></li>
-                        <li><b>3. Sentiment Pasar:</b> {sentiment}</li>
-                        <br>
-                        <li><b>4. Alasan Utama BUY:</b>
-                            <ul>{buy_str}</ul>
-                        </li>
-                        <br>
-                        <li><b>5. Risiko Wajib Waspada:</b>
-                            <ul>{risk_str}</ul>
-                        </li>
-                        <br>
-                        <li><b>6. Rekomendasi Final:</b> <b>{rec}</b></li>
-                        <li><b>7. Trading Plan:</b>
-                            <br>🎯 Target Price: <b>Rp {tp:,.0f}</b>
-                            <br>🛑 Stop Loss: <b>Rp {sl:,.0f}</b>
-                        </li>
-                        <li><b>8. Timeframe:</b> {timeframe}</li>
-                    </ul>
-                </div>
-                """
-                st.markdown(html_content, unsafe_allow_html=True)
+                # KUNCI PERBAIKAN: Gunakan textwrap.dedent agar HTML dirender benar
+                html_code = textwrap.dedent(f"""
+                    <div style="background-color: #1e2b3e; padding: 25px; border-radius: 12px; border-left: 8px solid {color}; box-shadow: 0 4px 6px rgba(0,0,0,0.3);">
+                        <h2 style="color: {color}; margin-top: 0; border-bottom: 1px solid #444; padding-bottom: 10px;">{rec}</h2>
+                        
+                        <ul style="line-height: 1.8; padding-left: 20px; color: #e0e0e0;">
+                            <li><b>1. Fundamental Score:</b> {f_score}/10 <span style='color:gray'>({reason_f})</span></li>
+                            <li><b>2. Technical Score:</b> {t_score}/10 <span style='color:gray'>({reason_t})</span></li>
+                            <li><b>3. Sentiment Pasar:</b> {sentiment}</li>
+                            <br>
+                            <li><b>4. Alasan Utama BUY:</b>
+                                <ul>{buy_str}</ul>
+                            </li>
+                            <br>
+                            <li><b>5. Risiko Wajib Waspada:</b>
+                                <ul>{risk_str}</ul>
+                            </li>
+                            <br>
+                            <li><b>6. Rekomendasi Final:</b> <b>{rec}</b></li>
+                            <li><b>7. Trading Plan:</b>
+                                <br>🎯 Target Price: <b>Rp {tp:,.0f}</b>
+                                <br>🛑 Stop Loss: <b>Rp {sl:,.0f}</b>
+                            </li>
+                            <li><b>8. Timeframe:</b> {timeframe}</li>
+                        </ul>
+                    </div>
+                """)
+                
+                st.markdown(html_code, unsafe_allow_html=True)
 
             except Exception as e:
                 st.error(f"Gagal melakukan analisa cepat: {e}")
