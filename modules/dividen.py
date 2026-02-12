@@ -85,4 +85,4 @@ def run_dividen():
                 status = "KURANG MENARIK (Yield di bawah Deposito)"
             
             st.subheader(f"Status: {status}")
-            st.write(f"**Entry Price Ideal:** Rp {est_dps / (deposito_rate/100):,.0f} (Untuk mendapatkan Yield setara Deposito {deposito_rate}%)")
+            st.write(f"**Entry Price (untuk Mencapai Yield setara Deposito {deposito_rate}%):** Rp {est_dps / (deposito_rate/100):,.0f} ")
