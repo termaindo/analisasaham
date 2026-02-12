@@ -27,39 +27,33 @@ LINK_LYNK_ID = "https://lynk.id/hahastoresby"
 # --- CSS CUSTOM (Tampilan Tombol Merah & Layout) ---
 st.markdown("""
 <style>
-    /* CSS yang sudah ada untuk tombol merah (Biarkan saja) */
-    div.stLinkButton > a {
-        background-color: #ff0000 !important;
-        color: white !important;
-        border: none !important;
-        font-weight: bold !important;
-    }
-    div.stLinkButton > a:hover {
-        background-color: #cc0000 !important;
-        color: white !important;
-    }
-
-    /* --- TAMBAHAN BARU UNTUK SIDEBAR --- */
-    /* 1. Menyembunyikan ikon panah/segitiga bawaan Streamlit */
-    button[kind="header"] > svg {
+    /* 1. SEMBUNYIKAN tombol Fork dan GitHub di pojok kanan agar tidak membingungkan */
+    [data-testid="stHeaderActionElements"] {
         display: none !important;
     }
 
-    /* 2. Menambahkan ikon Hamburger (☰) dan tulisan "MENU" */
-    button[kind="header"]::before {
-        content: "☰ MENU";  /* Unicode untuk tiga garis + teks */
-        font-size: 1.1rem;
-        font-weight: 700;  /* Bold */
-        color: white;      /* Warna teks putih agar kontras dengan background gelap */
-        margin-right: 10px;
+    /* 2. TARGETKAN hanya tombol Sidebar (biasanya di kiri atas) */
+    /* Kita hilangkan ikon panah aslinya */
+    button[data-testid="stBaseButton-header"] svg {
+        display: none !important;
     }
 
-    /* 3. (Opsional) Mengubah warna tombol saat disorot mouse agar lebih interaktif */
-    button[kind="header"]:hover {
-        color: #ff0000 !important; /* Berubah merah saat di-hover */
+    /* 3. UBAH tombol tersebut menjadi "☰ MENU" */
+    button[data-testid="stBaseButton-header"]::before {
+        content: "☰ MENU";
+        font-size: 1rem;
+        font-weight: bold;
+        color: white; /* Sesuaikan warna teks */
+        padding: 5px 10px;
+        border: 1px solid #444;
+        border-radius: 5px;
+        background-color: #1e1e1e; /* Warna latar tombol */
     }
-    button[kind="header"]:hover::before {
-         color: #ff0000 !important;
+
+    /* Efek ketika tombol disorot (hover) */
+    button[data-testid="stBaseButton-header"]:hover::before {
+        color: #ff0000;
+        border-color: #ff0000;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -143,4 +137,5 @@ else:
         
     elif pilihan_menu == "⚖️ 5. Perbandingan 2 Saham":
         perbandingan.run_perbandingan()
+
 
