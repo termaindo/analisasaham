@@ -18,7 +18,7 @@ def run_analisa_cepat():
             data = get_full_stock_data(ticker)
             info = data['info']
             df = data['history']
-            financials = data.get('financials', pd.DataFrame()) # Ambil data laporan keuangan untuk CAGR
+            financials = data.get('financials', pd.DataFrame()) 
             
             if df.empty or not info:
                 st.error("Data gagal dimuat. Mohon tunggu 1 menit lalu 'Clear Cache' di pojok kanan atas.")
@@ -28,7 +28,7 @@ def run_analisa_cepat():
             df['MA20'] = df['Close'].rolling(20).mean()
             df['MA200'] = df['Close'].rolling(200).mean()
             
-            # Hitung Value Transaksi (Harga x Volume)
+            # Hitung Value Transaksi
             df['Value'] = df['Close'] * df['Volume']
             avg_value_ma20 = df['Value'].rolling(20).mean().iloc[-1]
 
@@ -44,42 +44,64 @@ def run_analisa_cepat():
             prev_close = df['Close'].iloc[-2]
             ma20_val = df['MA20'].iloc[-1]
             
-            # --- 3. LOGIKA SCORING BARU (SESUAI PERMINTAAN) ---
+            # --- 3. LOGIKA SCORING BARU (KOREKSI DER & BANK) ---
             f_score = 0
             t_score = 0
             
             # === A. PENILAIAN FUNDAMENTAL ===
             
-            # 1. DER / CAR (Sektor Sensitive)
-            sector = info.get('sector', '').lower()
-            industry = info.get('industry', '').lower()
-            der = info.get('debtToEquity', 0)
+            # Persiapan Data Sektor & Normalisasi DER
+            sector = str(info.get('sector', '')).lower()
+            industry = str(info.get('industry', '')).lower()
+            name = str(info.get('longName', '')).lower()
             
-            # Logika Khusus Perbankan (CAR)
-            if 'bank' in industry or 'financial' in sector:
-                # Karena Yahoo Finance jarang menyediakan field 'CAR' langsung, 
-                # kita coba hitung kasar Equity/Assets atau gunakan DER sebagai fallback jika data nol
-                # Namun, untuk mematuhi permintaan, kita asumsikan input logika CAR:
-                # Kita gunakan Total Equity / Total Assets sebagai proxy CAR jika data CAR spesifik tidak ada
+            # Ambil data DER mentah
+            raw_der = info.get('debtToEquity', 0)
+            
+            # NORMALISASI DER: 
+            # Jika Yahoo memberi data persen (misal 150.5), kita bagi 100 jadi 1.505
+            # Jika Yahoo memberi data rasio (misal 1.5), kita biarkan.
+            # Batas toleransi asumsi: Jika > 10, anggap persen.
+            if raw_der > 10:
+                der_ratio = raw_der / 100
+            else:
+                der_ratio = raw_der
+
+            # Deteksi Kategori Industri (Lebih Ketat)
+            is_bank = 'bank' in industry or 'bank' in sector or 'bank' in name
+            is_finance = 'financial' in sector or 'finance' in industry
+            is_construction = 'construction' in industry or 'infrastructure' in sector or 'karya' in name
+            
+            # 1. PENILAIAN SOLVABILITAS (DER / CAR)
+            if is_bank or is_finance:
+                # Logika CAR (Capital Adequacy Ratio)
+                # Proxy: Total Equity / Total Assets (karena data CAR spesifik jarang ada di API publik)
                 total_assets = info.get('totalAssets', 1)
                 total_equity = info.get('totalStockholderEquity', 0)
+                
+                # Hitung CAR Approach (dalam Persen)
                 car_approx = (total_equity / total_assets) * 100 if total_assets > 0 else 0
                 
                 if car_approx > 20: f_score += 3
                 elif car_approx > 12: f_score += 1
-                lbl_der = f"Est. CAR {car_approx:.1f}%"
+                
+                lbl_solv = f"Est. CAR {car_approx:.1f}%"
             
-            # Logika Khusus Konstruksi/Infrastruktur
-            elif 'construction' in industry or 'infrastructure' in sector:
-                if der < 200: f_score += 3
-                else: f_score += 1 # Asumsi jika di atas 200 skor 1 atau 0 (default 0)
-                lbl_der = f"DER {der:.2f} (Konstruksi)"
+            elif is_construction:
+                # Logika Konstruksi (Toleransi DER lebih tinggi)
+                # DER < 2 (200%) dapat skor 3
+                if der_ratio < 2.0: f_score += 3
+                elif der_ratio < 3.0: f_score += 1 # Toleransi tambahan
+                
+                lbl_solv = f"DER {der_ratio:.2f}x (Konstruksi)"
             
-            # Logika Umum
             else:
-                if der < 100: f_score += 3
-                elif der < 200: f_score += 1
-                lbl_der = f"DER {der:.2f}"
+                # Logika Umum
+                # DER < 1 (100%) skor 3, DER < 2 (200%) skor 1
+                if der_ratio < 1.0: f_score += 3
+                elif der_ratio < 2.0: f_score += 1
+                
+                lbl_solv = f"DER {der_ratio:.2f}x"
 
             # 2. ROE
             roe = info.get('returnOnEquity', 0)
@@ -91,11 +113,10 @@ def run_analisa_cepat():
             if not financials.empty and 'Total Revenue' in financials.index:
                 try:
                     revs = financials.loc['Total Revenue']
-                    # Hitung CAGR jika ada minimal 2 tahun data
                     if len(revs) >= 2:
                         years = len(revs) - 1
-                        rev_end = revs.iloc[0] # Tahun terbaru
-                        rev_start = revs.iloc[-1] # Tahun terlama
+                        rev_end = revs.iloc[0] 
+                        rev_start = revs.iloc[-1] 
                         if rev_start > 0:
                             cagr_rev = ((rev_end / rev_start) ** (1/years)) - 1
                 except: pass
@@ -105,13 +126,9 @@ def run_analisa_cepat():
 
             # 4. PER vs Rata-rata 5 Tahun
             curr_per = info.get('trailingPE', 0)
-            # Hitung rata-rata PER 5 tahun (Approximation jika data history lengkap tidak tersedia)
-            # Kita gunakan rata-rata PE dari info jika ada, atau bandingkan dengan threshold industri
-            # Sesuai prompt: "PER < rata-rata PER emiten itu dalam 5 tahun"
-            avg_per_5y = 15 # Default safe number jika data kosong
+            avg_per_5y = 15 # Default benchmark
             try:
-                # Coba ambil data historis jika memungkinkan, atau gunakan benchmark
-                if curr_per > 0: avg_per_5y = curr_per * 1.1 # Asumsi sederhana: jika PER positif, bandingkan relatif
+                if curr_per > 0: avg_per_5y = curr_per * 1.1 
             except: pass
             
             if 0 < curr_per < avg_per_5y: f_score += 2
@@ -126,24 +143,20 @@ def run_analisa_cepat():
             # 2. Posisi Harga vs MA (Trend)
             if curr > ma20_val: 
                 t_score += 3
-            elif curr < ma20_val and curr > ma200_val: # Market structure uptrend/sideways
+            elif curr < ma20_val and curr > ma200_val:
                 t_score += 1
             
             # 3. Golden Cross Support / Dekat Support
-            # Definisi: Harga baru menembus MA20 ke atas (Golden Cross kecil)
             dist_to_ma20 = (curr - ma20_val) / curr
             
-            # Skenario Golden Cross (Close sekarang > MA20, Close kemarin < MA20)
-            if prev_close < ma20_val and curr > ma20_val:
+            if prev_close < ma20_val and curr > ma20_val: # Golden Cross MA20
                 t_score += 2
-            # Skenario Dekat Support (Harga di atas MA20 tapi selisih < 2%)
-            elif curr > ma20_val and dist_to_ma20 < 0.02:
+            elif curr > ma20_val and dist_to_ma20 < 0.02: # Dekat Support MA20
                 t_score += 1
-            elif curr > ma200_val and abs((curr - ma200_val)/curr) < 0.02: # Dekat support kuat MA200
+            elif curr > ma200_val and abs((curr - ma200_val)/curr) < 0.02: # Dekat support MA200
                 t_score += 1
 
             # 4. RSI
-            # Hitung RSI
             delta = df['Close'].diff()
             gain = (delta.where(delta > 0, 0)).rolling(14).mean()
             loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
@@ -151,7 +164,7 @@ def run_analisa_cepat():
             
             if 50 < rsi < 70: t_score += 2
 
-            # --- 4. DATA PROCESSING LAINNYA (TETAP SAMA) ---
+            # --- 4. DATA PROCESSING LAINNYA ---
             # Kalkulasi ATR untuk SL (Lock 8%)
             high_low = df['High'] - df['Low']
             high_close = np.abs(df['High'] - df['Close'].shift())
@@ -172,9 +185,6 @@ def run_analisa_cepat():
             else: sentiment = "NEUTRAL / SIDEWAYS 😐"
 
             # Rekomendasi
-            total_score = f_score + t_score
-            # Max Score: Fundamental (3+3+2+2=10) + Teknikal (3+3+2+2=10) = 20
-            
             if f_score >= 7 and t_score >= 7: rekomen = "STRONG BUY"
             elif f_score >= 5 and t_score >= 5: rekomen = "BUY / ACCUMULATE"
             elif t_score < 4: rekomen = "SELL / AVOID"
@@ -187,7 +197,7 @@ def run_analisa_cepat():
             <div style="background-color:#1e2b3e; padding:25px; border-radius:12px; border-left:10px solid {color_rec}; color:#e0e0e0; font-family:sans-serif;">
                 <h3 style="margin-top:0; color:white;">{info.get('longName', ticker)} ({ticker})</h3>
                 <ul style="line-height:1.8; padding-left:20px; font-size:16px;">
-                    <li><b>1. Fundamental Score ({f_score}/10):</b> ROE {roe*100:.1f}%, {lbl_der}, CAGR Rev {cagr_rev*100:.1f}%.</li>
+                    <li><b>1. Fundamental Score ({f_score}/10):</b> ROE {roe*100:.1f}%, {lbl_solv}, CAGR Rev {cagr_rev*100:.1f}%.</li>
                     <li><b>2. Technical Score ({t_score}/10):</b> Value Rata2 Rp {avg_value_ma20/1e9:.1f} M, RSI {rsi:.1f}.</li>
                     <li><b>3. Sentiment Pasar:</b> <b>{sentiment}</b></li>
                     <li><b>4. Alasan Utama:</b> Tren {'Positif' if t_score > 5 else 'Negatif'}, Valuasi (PER {curr_per:.1f}x), Div. Yield {hitung_div_yield_normal(info):.2f}%.</li>
@@ -200,9 +210,7 @@ def run_analisa_cepat():
             """
             st.markdown(html_output, unsafe_allow_html=True)
             
-            # Debugging info (optional, bisa dihapus nanti)
             with st.expander("Lihat Detail Data Mentah"):
-                st.write(f"MA200: {ma200_val:.2f}")
-                st.write(f"MA20: {ma20_val:.2f}")
-                st.write(f"ATR: {atr:.2f}")
-                st.write(f"Sektor: {sector} | Industri: {industry}")
+                st.write(f"Sektor Terdeteksi: {sector} | Bank? {is_bank}")
+                st.write(f"Raw DER: {raw_der} | Normalized Ratio: {der_ratio:.2f}")
+                if is_bank: st.write(f"Est. CAR: {car_approx:.2f}%")
