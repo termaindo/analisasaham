@@ -9,10 +9,10 @@ def run_analisa_cepat():
 
     col_inp, _ = st.columns([1, 2])
     with col_inp:
-        ticker_input = st.text_input("Kode Saham (Quick Check):", value="BBCA").upper()
+        ticker_input = st.text_input("Kode Saham (Quick Scan):", value="BBCA").upper()
     ticker = ticker_input if ticker_input.endswith(".JK") else f"{ticker_input}.JK"
 
-    if st.button("🚀 Jalankan Analisa"):
+    if st.button(f"Jalankan Analisa {ticker_input}"):
         with st.spinner("Mengkalkulasi indikator teknikal & fundamental..."):
             # --- 1. STANDAR ANTI-ERROR ---
             data = get_full_stock_data(ticker)
