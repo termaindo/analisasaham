@@ -53,12 +53,22 @@ def run_screening():
     session, status_desc = get_market_session()
     st.info(f"**Status Sesi:** {session} | {status_desc}")
 
-    if st.button("Mulai Pemindaian Radar (VWAP & Breakout Focus)"):
-        # List Top 60-80 Saham Teraktif
+    if st.button("Mulai Pemindaian Radar"):
+        # List Top 100 Saham Teraktif
         saham_list = [
-            "BBCA.JK", "BBRI.JK", "BMRI.JK", "BBNI.JK", "ASII.JK", "TLKM.JK", "UNTR.JK", "ADRO.JK", 
-            "ITMG.JK", "PTBA.JK", "ANTM.JK", "MDKA.JK", "INCO.JK", "GOTO.JK", "BRIS.JK", "BREN.JK",
-            "TPIA.JK", "AMMN.JK", "PGAS.JK", "MEDC.JK", "AKRA.JK", "HRUM.JK", "CPIN.JK", "ICBP.JK"
+            "BBCA.JK", "BBRI.JK", "BMRI.JK", "BBNI.JK", "BBTN.JK", "BRIS.JK", "ARTO.JK", "BFIN.JK", 
+            "BREN.JK", "TPIA.JK", "BRPT.JK", "PGEO.JK", "AMMN.JK", "TLKM.JK", "ISAT.JK", "EXCL.JK", 
+            "TOWR.JK", "MTEL.JK", "GOTO.JK", "BUKA.JK", "EMTK.JK", "ADRO.JK", "ANTM.JK", "MDKA.JK", 
+            "PTBA.JK", "INCO.JK", "PGAS.JK", "MEDC.JK", "AKRA.JK", "HRUM.JK", "ITMG.JK", "TINS.JK", 
+            "MBMA.JK", "ICBP.JK", "INDF.JK", "UNVR.JK", "AMRT.JK", "CPIN.JK", "MYOR.JK", "ACES.JK", 
+            "MAPI.JK", "CTRA.JK", "SMRA.JK", "BSDE.JK", "PWON.JK", "PANI.JK", "ASII.JK", "UNTR.JK", 
+            "KLBF.JK", "JSMR.JK", "ASSA.JK", "AUTO.JK", "AVIA.JK", "BBYB.JK", "BCIC.JK", "BDMN.JK",
+            "BEBS.JK", "BIRD.JK", "BKSL.JK", "BMTR.JK", "BNGA.JK", "BNLI.JK", "BSIM.JK", "BUMI.JK",
+            "CPRO.JK", "DMMX.JK", "DOID.JK", "ENRG.JK", "ERAA.JK", "ESSA.JK", "FORU.JK", "HEAL.JK",
+            "IMAS.JK", "INKP.JK", "INTP.JK", "JPFA.JK", "KIAS.JK", "LPKR.JK", "LPPF.JK", "LSIP.JK",
+            "MAIN.JK", "MAPA.JK", "MIKA.JK", "MLPL.JK", "MNCN.JK", "MPPA.JK", "NATO.JK", "RAJA.JK",
+            "SAME.JK", "SCMA.JK", "SIDO.JK", "SILO.JK", "SMGR.JK", "SSMS.JK", "TAPG.JK", "TKIM.JK",
+            "TOSL.JK", "TYRE.JK", "WIKA.JK", "WOOD.JK"
         ] # Daftar dapat diperluas
 
         hasil_lolos = []
