@@ -53,7 +53,7 @@ def run_screening():
     session, status_desc = get_market_session()
     st.info(f"**Status Sesi:** {session} | {status_desc}")
 
-    if st.button("Mulai Pemindaian Radar"):
+    if st.button("Mulai Pemindaian Radar (perlu waktu +/- 2 menit)"):
         # List Top 100 Saham Teraktif
         saham_list = [
             "BBCA.JK", "BBRI.JK", "BMRI.JK", "BBNI.JK", "BBTN.JK", "BRIS.JK", "ARTO.JK", "BFIN.JK", 
