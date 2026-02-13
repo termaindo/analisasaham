@@ -101,15 +101,14 @@ def login_page():
 def show_dashboard():
     st.markdown(f"### 👋 Halo Sobat <span style='color:#ff0000'>{st.session_state.user_name}</span>!", unsafe_allow_html=True)
     
-    with st.expander("📖 Panduan Penggunaan & Istilah (Baca Ini Dulu)"):
+    with st.expander("📖 3 Langkah Mudah Memakai Aplikasi "Expert Stock Pro" (Baca Ini Dulu)"):
         st.markdown("""
 #### **3 Langkah Mudah Memakai Aplikasi "Expert Stock Pro"**
-*        
+
 #### **1. Cara Mulai Analisa**
 * Pilih menu di bawah. Masukkan kode saham (Contoh: `BBRI` atau `BBRI.JK`).
 #### **2. Klik tombol "Mulai Jalankan / Analisa" di bagian bawah.**
-#### **3. Kembali ke "Menu Utama"**
-* Setelah selesai membaca hasil analisa, dan Sobat <span style='color:#ff0000'>{st.session_state.user_name}</span>!" ingin kembali ke "Menu Utama", maka klik tombol "Menu Utama" di bagian atas.
+#### **3. Klik tombol "Menu Utama" di bagian atas Menu Analisa, untuk kembali ke Halaman Depan**
         """)
     
     # JUDUL MENCOLOK (EXPERT STOCK PRO)
@@ -179,4 +178,5 @@ if __name__ == "__main__":
         main_app()
     else:
         login_page()
+
 
