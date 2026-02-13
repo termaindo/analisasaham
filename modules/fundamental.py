@@ -99,42 +99,4 @@ def run_fundamental():
 
             v1, v2, v3 = st.columns(3)
             v1.metric("PER vs Rata-rata 5th", f"{curr_pe:.2f}x", f"Rata-rata: {mean_pe_5y:.1f}x")
-            v2.metric("PBV vs Rata-rata 5th", f"{curr_pbv:.2f}x", f"Rata-rata: {mean_pbv_5y:.1f}x")
-            v3.metric("Dividend Yield", f"{div_yield:.2f}%")
-            
-            status = "UNDERVALUED" if curr_price < fair_price else "OVERVALUED"
-            st.success(f"🎯 **Harga Wajar Saat Ini: Rp {fair_price:,.0f}** | Status: **{status}**")
-
-            # --- 4. PROSPEK BISNIS ---
-            st.header("4. PROSPEK BISNIS")
-            st.write("• **Outlook:** Sektor ini berpotensi menguat seiring stabilitas makroekonomi.")
-            st.write("• **Growth Catalyst:** Digitalisasi operasional dan ekspansi pasar regional.")
-            st.write("• **Risk Factors:** Fluktuasi harga komoditas dan perubahan regulasi sektoral.")
-
-            # --- 5. REKOMENDASI & TRADING PLAN ---
-            st.header("5. REKOMENDASI")
-            
-            # Kalkulasi SL Berbasis ATR (LOCK MAX 8%)
-            atr = (history['High'] - history['Low']).tail(14).mean()
-            sl_raw = curr_price - (1.5 * atr)
-            sl_final = max(sl_raw, curr_price * 0.92) # KUNCI RESIKO 8%
-            
-            target_short = fair_price if fair_price > curr_price else curr_price * 1.15
-            target_long = target_short * 1.25
-            
-            sig = "BUY" if curr_price < fair_price else "HOLD"
-            
-            st.subheader(f"Keputusan: **{sig}**")
-            
-            r1, r2, r3 = st.columns(3)
-            with r1:
-                st.write("**Target Jangka Pendek:**")
-                st.markdown(f"### Rp {target_short:,.0f}")
-            with r2:
-                st.write("**Target Jangka Panjang:**")
-                st.markdown(f"### Rp {target_long:,.0f}")
-            with r3:
-                st.write("**Stop Loss (Max 8%):**")
-                st.error(f"Rp {sl_final:,.0f}")
-            
-            st.caption(f"Proteksi Modal: {'ATR 1.5x' if sl_final == sl_raw else 'Maksimal 8% Lock'}")
+            v2.metric("PBV vs Rata-rata 5th", f"{curr_pbv:.2f}x", f"Rata-rata: {mean_pbv
