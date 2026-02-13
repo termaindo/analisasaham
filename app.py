@@ -103,14 +103,13 @@ def show_dashboard():
     
     with st.expander("📖 Panduan Penggunaan & Istilah (Baca Ini Dulu)"):
         st.markdown("""
+#### **3 Langkah Mudah Memakai Aplikasi "Expert Stock Pro"**
+*        
 #### **1. Cara Mulai Analisa**
 * Pilih menu di bawah. Masukkan kode saham (Contoh: `BBRI` atau `BBRI.JK`).
-#### **2. Memahami Grafik**
-* 🟡 **MA20 Kuning:** Tren pendek. 🟣 **MA200 Ungu:** Tren panjang.
-#### **3. Strategi ATR**
-* SL & TP dihitung otomatis berdasarkan volatilitas, dengan **batas risiko maksimal 8%**.
-#### **4. Tips Anti-Error**
-* Jika data tidak muncul, tunggu 1 menit lalu gunakan tombol **Clear Cache** di pojok kanan atas.
+#### **2. Klik tombol "Mulai Jalankan / Analisa" di bagian bawah.**
+#### **3. Kembali ke "Menu Utama"**
+* Setelah selesai membaca hasil analisa, dan Sobat <span style='color:#ff0000'>{st.session_state.user_name}</span>!" ingin kembali ke "Menu Utama", maka klik tombol "Menu Utama" di bagian atas.
         """)
     
     # JUDUL MENCOLOK (EXPERT STOCK PRO)
@@ -180,3 +179,4 @@ if __name__ == "__main__":
         main_app()
     else:
         login_page()
+
