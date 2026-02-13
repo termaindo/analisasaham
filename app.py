@@ -101,7 +101,7 @@ def login_page():
 def show_dashboard():
     st.markdown(f"### 👋 Halo Sobat <span style='color:#ff0000'>{st.session_state.user_name}</span>!", unsafe_allow_html=True)
     
-    with st.expander("📖 3 Langkah Mudah Memakai Aplikasi "Expert Stock Pro" (Baca Ini Dulu)"):
+    with st.expander("📖 3 Langkah Mudah Memakai Aplikasi Expert Stock Pro (Baca Ini Dulu)"):
         st.markdown("""
 #### **3 Langkah Mudah Memakai Aplikasi "Expert Stock Pro"**
 
@@ -178,6 +178,7 @@ if __name__ == "__main__":
         main_app()
     else:
         login_page()
+
 
 
 
