@@ -81,7 +81,7 @@ def login_page():
     with col2:
         st.markdown("<br><br><h1 style='text-align: center; color: #ff0000;'>🔒 EXPERT STOCK PRO</h1>", unsafe_allow_html=True)
         with st.form("login_form"):
-            nama = st.text_input("👤 Nama Panggilan", placeholder="Contoh: Sobat Musa")
+            nama = st.text_input("👤 Silakan Masukkan Nama Panggilan Anda", placeholder="Contoh: Rudi")
             pw = st.text_input("🔑 Password Akses", type="password")
             if st.form_submit_button("MASUK SISTEM", use_container_width=True):
                 try: correct = st.secrets["PASSWORD_RAHASIA"]
@@ -178,6 +178,7 @@ if __name__ == "__main__":
         main_app()
     else:
         login_page()
+
 
 
 
