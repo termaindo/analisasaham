@@ -106,7 +106,7 @@ def show_dashboard():
 #### **3 Langkah Mudah Memakai Aplikasi "Expert Stock Pro"**
 
 #### **1. Cara Mulai Analisa**
-* Pilih menu di bawah. Masukkan kode saham (Contoh: `BBRI` atau `BBRI.JK`).
+* Pilih menu di bawah. Masukkan kode saham (Contoh: `BBRI` atau `BBRI.JK`), lalu tekan ENTER.
 #### **2. Klik tombol "Mulai Jalankan / Analisa" di bagian bawah.**
 #### **3. Klik tombol "Menu Utama" di bagian atas Menu Analisa, untuk kembali ke Halaman Depan**
         """)
@@ -178,6 +178,7 @@ if __name__ == "__main__":
         main_app()
     else:
         login_page()
+
 
 
 
