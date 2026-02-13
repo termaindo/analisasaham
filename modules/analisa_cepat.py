@@ -4,7 +4,7 @@ import numpy as np
 from modules.data_loader import get_full_stock_data, hitung_div_yield_normal
 
 def run_analisa_cepat():
-    st.title("⚡ Analisa Cepat Pro (Scoring System V2)")
+    st.title("⚡ Analisa Cepat Pro (8 Poin Inti)")
     st.markdown("---")
 
     col_inp, _ = st.columns([1, 2])
@@ -13,149 +13,110 @@ def run_analisa_cepat():
     ticker = ticker_input if ticker_input.endswith(".JK") else f"{ticker_input}.JK"
 
     if st.button("🚀 Jalankan Analisa"):
-        with st.spinner("Menghitung Skor Fundamental & Teknikal..."):
-            # --- STANDAR ANTI-ERROR ---
+        with st.spinner("Mengkalkulasi indikator teknikal & fundamental..."):
+            # --- 1. STANDAR ANTI-ERROR ---
             data = get_full_stock_data(ticker)
             info = data['info']
             df = data['history']
             
             if df.empty or not info:
-                st.error("Data gagal dimuat. Mohon tunggu 1 menit lalu 'Clear Cache'.")
+                st.error("Data gagal dimuat. Mohon tunggu 1 menit lalu 'Clear Cache' di pojok kanan atas.")
                 return
 
-            # --- DATA PROCESSING (INDIKATOR UTAMA) ---
+            # --- 2. PERBAIKAN ERROR 'MA200' ---
+            # Kita harus menghitung indikator ini SECARA MANUAL di sini
+            df['MA20'] = df['Close'].rolling(20).mean()
+            df['MA200'] = df['Close'].rolling(200).mean() # <--- INI PERBAIKANNYA
+            
+            # Cek ketersediaan data MA200
+            if pd.isna(df['MA200'].iloc[-1]):
+                ma200_val = 0
+                status_ma200 = "Data Kurang (N/A)"
+            else:
+                ma200_val = df['MA200'].iloc[-1]
+                status_ma200 = "Valid"
+
             curr = df['Close'].iloc[-1]
+            ma20_val = df['MA20'].iloc[-1]
             
-            # Moving Averages
-            ma20 = df['Close'].rolling(20).mean().iloc[-1]
-            ma200 = df['MA200'].iloc[-1] if 'MA200' in df.columns else df['Close'].rolling(200).mean().iloc[-1]
+            # --- 3. LOGIKA SCORING YANG DIPERKUAT ---
             
-            # ATR untuk Stop Loss
-            atr = (df['High'] - df['Low']).tail(14).mean()
+            # A. Skor Fundamental (0-10)
+            roe = info.get('returnOnEquity', 0)
+            der = info.get('debtToEquity', 0)
+            per = info.get('trailingPE', 0)
             
-            # RSI (Relative Strength Index) untuk Momentum
+            f_score = 0
+            if roe > 0.15: f_score += 4      # ROE Bagus (>15%)
+            elif roe > 0.08: f_score += 2
+            
+            if der < 100: f_score += 3       # Utang Aman (DER < 1x)
+            elif der < 200: f_score += 1
+            
+            if 0 < per < 25: f_score += 3    # Valuasi Wajar
+            elif per > 0: f_score += 1
+
+            # B. Skor Teknikal (0-10)
+            t_score = 0
+            if curr > ma20_val: t_score += 4 # Short Term Uptrend
+            if curr > ma200_val and ma200_val > 0: t_score += 4 # Long Term Uptrend
+            
+            # Cek RSI
             delta = df['Close'].diff()
             gain = (delta.where(delta > 0, 0)).rolling(14).mean()
             loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
-            rs = gain / loss
-            rsi = 100 - (100 / (1 + rs)).iloc[-1]
+            rsi = 100 - (100 / (1 + (gain/loss))).iloc[-1]
+            
+            if 50 < rsi < 70: t_score += 2   # Momentum Kuat tapi belum Overbought
 
-            # Rata-rata Transaksi Harian (Value) - Cek Likuiditas
-            avg_val_5d = (df['Close'] * df['Volume']).rolling(5).mean().iloc[-1]
-
-            # --- LOGIKA STOP LOSS (Tetap Mempertahankan Standar Lama) ---
+            # --- 4. DATA PROCESSING LAINNYA ---
+            # Kalkulasi ATR untuk SL (Lock 8%)
+            high_low = df['High'] - df['Low']
+            high_close = np.abs(df['High'] - df['Close'].shift())
+            low_close = np.abs(df['Low'] - df['Close'].shift())
+            ranges = pd.concat([high_low, high_close, low_close], axis=1)
+            atr = ranges.max(axis=1).rolling(14).mean().iloc[-1]
+            
             sl_raw = curr - (1.5 * atr)
-            sl_final = max(sl_raw, curr * 0.92)
+            sl_final = max(sl_raw, curr * 0.92) # KUNCI MAX LOSS 8%
             metode_sl = "ATR (1.5x)" if sl_final == sl_raw else "Max Risk 8%"
+            
             tp = int(curr + (curr - sl_final) * 2.5) # RRR 1:2.5
-
-            # ==============================================================================
-            # 1. SISTEM SCORING FUNDAMENTAL (Weighted)
-            # ==============================================================================
-            # Data Fetching dengan Safety Default
-            roe = info.get('returnOnEquity', 0) if info.get('returnOnEquity') else 0
-            der = info.get('debtToEquity', 0) if info.get('debtToEquity') else 100 # Default moderate
-            per = info.get('trailingPE', 0) if info.get('trailingPE') else 0
-            pbv = info.get('priceToBook', 0) if info.get('priceToBook') else 0
-            rev_growth = info.get('revenueGrowth', 0) if info.get('revenueGrowth') else 0
             
-            f_points = 0
-            f_reasons = []
+            # Tentukan Sentimen
+            if curr > ma20_val and curr > ma200_val: sentiment = "BULLISH (Sangat Kuat) 🐂"
+            elif curr > ma20_val: sentiment = "MILD BULLISH (Jangka Pendek) 🐃"
+            elif curr < ma200_val: sentiment = "BEARISH (Hati-hati) 🐻"
+            else: sentiment = "NEUTRAL / SIDEWAYS 😐"
 
-            # A. Solvabilitas (Fatalitas Tinggi) - Bobot 25%
-            # Note: Yahoo Finance biasanya return DER dalam persen (misal 150 = 1.5x)
-            if der < 100: 
-                f_points += 25
-                f_reasons.append("Hutang Aman (DER < 1x)")
-            elif der < 200:
-                f_points += 10
-            else:
-                f_reasons.append("Hutang Tinggi (DER > 2x)")
+            # Rekomendasi
+            if f_score >= 7 and t_score >= 6: rekomen = "STRONG BUY"
+            elif f_score >= 5 and t_score >= 5: rekomen = "BUY / ACCUMULATE"
+            elif t_score < 4: rekomen = "SELL / AVOID"
+            else: rekomen = "HOLD / WAIT"
 
-            # B. Profitabilitas (Mesin Uang) - Bobot 35%
-            if roe > 0.15:
-                f_points += 35
-                f_reasons.append(f"Profitabilitas Super (ROE {roe*100:.1f}%)")
-            elif roe > 0.08:
-                f_points += 15
-                f_reasons.append("Profitabilitas Moderat")
-            else:
-                f_reasons.append("Profitabilitas Rendah")
+            color_rec = "#00ff00" if "BUY" in rekomen else "#ffcc00" if "HOLD" in rekomen else "#ff0000"
 
-            # C. Valuasi (Mahal/Murah) - Bobot 20%
-            if per > 0 and per < 15:
-                f_points += 20
-                f_reasons.append("Valuasi Wajar/Murah")
-            elif per > 30:
-                f_points += 0
-                f_reasons.append("Valuasi Mahal")
-            else:
-                f_points += 10
-
-            # D. Pertumbuhan (Growth) - Bobot 20%
-            if rev_growth > 0:
-                f_points += 20
-            else:
-                f_reasons.append("Revenue Negatif/Stagnan")
-
-            f_score = int(f_points / 10) # Skala 1-10
-            f_score_color = "#00ff00" if f_score >= 7 else "#ffcc00" if f_score >= 5 else "#ff0000"
-
-            # ==============================================================================
-            # 2. SISTEM SCORING TEKNIKAL (Weighted)
-            # ==============================================================================
-            t_points = 0
-            t_reasons = []
-
-            # A. Likuiditas (Fatalitas Utama) - Bobot 20%
-            # Ambang batas likuiditas: 2 Miliar per hari
-            is_liquid = avg_val_5d > 2_000_000_000 
-            if is_liquid:
-                t_points += 20
-            else:
-                t_reasons.append("❗ Saham Kurang Likuid (<2M)")
-
-            # B. Tren Utama (Market Structure) - Bobot 40%
-            if curr > ma200:
-                t_points += 40
-                t_reasons.append("Major Uptrend (Diatas MA200)")
-            else:
-                t_reasons.append("Major Downtrend (Dibawah MA200)")
-
-            # C. Momentum Jangka Pendek - Bobot 20%
-            if curr > ma20:
-                t_points += 20
-                t_reasons.append("Momentum Kuat (Diatas MA20)")
-            else:
-                t_reasons.append("Koreksi Jangka Pendek")
-
-            # D. Indikator Osilator (RSI) - Bobot 20%
-            if 40 <= rsi <= 70:
-                t_points += 20 # Zona ideal
-            elif rsi < 30:
-                t_points += 15
-                t_reasons.append("Oversold (Potensi Rebound)")
-            elif rsi > 70:
-                t_points += 5
-                t_reasons.append("Overbought (Hati-hati)")
-
-            t_score = int(t_points / 10)
-            t_score_color = "#00ff00" if t_score >= 7 else "#ffcc00" if t_score >= 5 else "#ff0000"
-
-            # --- SENTIMEN GABUNGAN ---
-            sentiment = "STRONG BULLISH 🐂" if f_score >= 7 and t_score >= 7 else \
-                        "BULLISH 🐂" if t_score >= 6 else \
-                        "BEARISH 🐻" if t_score < 4 else "NEUTRAL 😐"
-            
-            recommendation = "BUY" if f_score >= 6 and t_score >= 6 and is_liquid else \
-                             "WAIT/HOLD" if t_score >= 5 else "SELL/AVOID"
-            rec_color = "#00ff00" if recommendation == "BUY" else "#ffffff"
-
-            # String gabungan alasan untuk display ringkas
-            f_reason_str = ", ".join(f_reasons[:2]) if f_reasons else "Data Fundamental Standar"
-            t_reason_str = ", ".join(t_reasons[:2]) if t_reasons else "Teknikal Netral"
-
-            # --- TAMPILAN 8 POIN (RINGKAS & PADAT) ---
+            # --- 5. TAMPILAN OUTPUT (8 POIN INTI) ---
             html_output = f"""
-<div style="background-color:#1e2b3e; padding:25px; border-radius:12px; border-left:10px solid {rec_color}; color:#e0e0e0; font-family:sans-serif;">
-    <h3 style="margin-top:0; color:
+            <div style="background-color:#1e2b3e; padding:25px; border-radius:12px; border-left:10px solid {color_rec}; color:#e0e0e0; font-family:sans-serif;">
+                <h3 style="margin-top:0; color:white;">{info.get('longName', ticker)} ({ticker})</h3>
+                <ul style="line-height:1.8; padding-left:20px; font-size:16px;">
+                    <li><b>1. Fundamental Score ({f_score}/10):</b> Didukung oleh ROE {roe*100:.1f}% dan DER {der/100:.2f}x.</li>
+                    <li><b>2. Technical Score ({t_score}/10):</b> Harga {'di atas' if curr > ma20_val else 'di bawah'} MA20 & {'di atas' if curr > ma200_val else 'di bawah'} MA200.</li>
+                    <li><b>3. Sentiment Pasar:</b> <b>{sentiment}</b></li>
+                    <li><b>4. Alasan Utama:</b> Tren {'Positif' if t_score > 5 else 'Negatif'}, Valuasi (PER {per:.1f}x), Div. Yield {hitung_div_yield_normal(info):.2f}%.</li>
+                    <li><b>5. Risk Utama:</b> Volatilitas pasar & Potensi koreksi jika gagal bertahan di Support MA20.</li>
+                    <li><b>6. Rekomendasi Final:</b> <span style="color:{color_rec}; font-weight:bold; font-size:18px;">{rekomen}</span></li>
+                    <li><b>7. Target & Stop Loss:</b> <br>🎯 TP: Rp {tp:,.0f} | 🛑 SL: Rp {sl_final:,.0f} ({metode_sl})</li>
+                    <li><b>8. Timeframe:</b> {'Investasi Jangka Panjang' if f_score >= 8 else 'Swing Trading Pendek'}.</li>
+                </ul>
+            </div>
+            """
+            st.markdown(html_output, unsafe_allow_html=True)
+            
+            # Debugging info (optional, bisa dihapus nanti)
+            with st.expander("Lihat Detail Data Mentah"):
+                st.write(f"MA200: {ma200_val:.2f}")
+                st.write(f"MA20: {ma20_val:.2f}")
+                st.write(f"ATR: {atr:.2f}")
