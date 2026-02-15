@@ -40,10 +40,10 @@ def get_market_session():
     tz = pytz.timezone('Asia/Jakarta')
     now = datetime.now(tz)
     curr_time = now.hour + now.minute/60
-    if now.weekday() >= 5: return "AKHIR PEKAN", "Pasar Tutup."
-    if curr_time < 9.0: return "PRA-PASAR", "Menunggu pembukaan (Jam 09:00)."
-    elif 9.0 <= curr_time <= 16.0: return "LIVE MARKET", "Sesi perdagangan berjalan."
-    else: return "PASCA-PASAR", "Pasar sudah ditutup."
+    if now.weekday() >= 5: return "AKHIR PEKAN", "Pasar Tutup. Menggunakan data penutupan terakhir."
+    if curr_time < 9.0: return "PRA-PASAR", "Menunggu pembukaan. Memakai data penutupan kemarin."
+    elif 9.0 <= curr_time <= 16.0: return "LIVE MARKET", "Sesi perdagangan berjalan. Memakai data real-time."
+    else: return "PASCA-PASAR", "Pasar ditutup. Mendata kandidat untuk besok pagi."
 
 # --- 3. MODUL UTAMA ---
 def run_screening():
@@ -54,7 +54,7 @@ def run_screening():
     st.info(f"**Status Sesi:** {session} | {status_desc}")
 
     if st.button("Mulai Pemindaian Radar (perlu waktu +/- 2 menit)"):
-        # List Top 100 Saham Teraktif
+        # List Top 100 Saham Teraktif (Bisa disesuaikan)
         saham_list = [
             "BBCA.JK", "BBRI.JK", "BMRI.JK", "BBNI.JK", "BBTN.JK", "BRIS.JK", "ARTO.JK", "BFIN.JK", 
             "BREN.JK", "TPIA.JK", "BRPT.JK", "PGEO.JK", "AMMN.JK", "TLKM.JK", "ISAT.JK", "EXCL.JK", 
@@ -69,7 +69,7 @@ def run_screening():
             "MAIN.JK", "MAPA.JK", "MIKA.JK", "MLPL.JK", "MNCN.JK", "MPPA.JK", "NATO.JK", "RAJA.JK",
             "SAME.JK", "SCMA.JK", "SIDO.JK", "SILO.JK", "SMGR.JK", "SSMS.JK", "TAPG.JK", "TKIM.JK",
             "TOSL.JK", "TYRE.JK", "WIKA.JK", "WOOD.JK"
-        ] # Daftar dapat diperluas
+        ]
 
         hasil_lolos = []
         high_score_found = False
@@ -90,33 +90,41 @@ def run_screening():
                 avg_val_20 = (df['Close'] * df['Volume']).rolling(20).mean().iloc[-1]
                 avg_vol_20 = df['Volume'].rolling(20).mean().iloc[-1]
 
-                # --- 1. FILTER LIKUIDITAS (Min Rp 5 Miliar) ---
-                if avg_val_20 < 5e9: continue
+                # --- 1. FILTER LIKUIDITAS UTAMA (Min Rp 1 Miliar) ---
+                if avg_val_20 < 1e9: continue
 
-                # --- 2. PENILAIAN KONFIDENSI (SCORING) ---
+                # --- 2. PENILAIAN KONFIDENSI (SCORING MAX 100 POIN) ---
                 score = 0
                 alasan = []
 
-                # Volume Spike
-                if last['Volume'] > (avg_vol_20 * 1.5):
-                    score += 20; alasan.append("Volume Tinggi (1.5x Avg)")
+                # A. Relative Volume (20 Poin): Volume meningkat
+                if last['Volume'] > (avg_vol_20 * 1.2): # Filter volume naik >20%
+                    score += 20; alasan.append("Volume Breakout")
                 
-                # Gap Up Detection
-                gap_pct = ((last['Open'] - prev['Close']) / prev['Close']) * 100
-                if gap_pct > 0.5:
-                    score += 20; alasan.append(f"Gap Up {gap_pct:.1f}%")
-
-                # VWAP & EMA Analysis
+                # B. VWAP Alignment (20 Poin): Harga di atas VWAP
                 if curr_price > last['VWAP']:
-                    score += 15; alasan.append("Above VWAP")
-                if last['EMA9'] > last['EMA21']:
-                    score += 15; alasan.append("EMA 9/21 Golden Cross")
-                if last['RSI'] > 50:
-                    score += 10; alasan.append("RSI Momentum > 50")
+                    score += 20; alasan.append("Above VWAP")
                 
-                # Breakout Yesterday's High
-                if curr_price > prev['High']:
-                    score += 20; alasan.append("Breakout High Kemarin")
+                # C. RSI Momentum (20 Poin): Rentang 50 - 70
+                if 50 <= last['RSI'] <= 70:
+                    score += 20; alasan.append(f"RSI Ideal ({last['RSI']:.0f})")
+                    
+                # D. EMA 9/21 Cross (20 Poin): Tren jangka pendek bullish
+                if last['EMA9'] > last['EMA21']:
+                    score += 20; alasan.append("EMA Golden Cross")
+                    
+                # E. Price Action/Gap (10 Poin): Kenaikan > 2%
+                change_pct = ((curr_price - prev['Close']) / prev['Close']) * 100
+                if change_pct > 2.0:
+                    score += 10; alasan.append(f"Strong Move +{change_pct:.1f}%")
+                    
+                # F. Value MA20 (10 Poin): Transaksi > Rp 5 Miliar
+                if avg_val_20 > 5e9:
+                    score += 10; alasan.append("High Liquidity (>5M)")
+
+                # Filter tambahan: Breakout Yesterday's High (Syarat Opsional masuk Watchlist)
+                if curr_price > prev['High'] and "Breakout High" not in alasan:
+                    alasan.append("Breakout Prev High")
 
                 # --- 3. TRADING PLAN & LOCK RISK 8% ---
                 atr_sl = curr_price - (1.5 * last['ATR'])
@@ -129,6 +137,7 @@ def run_screening():
                 risk_pct = ((curr_price - sl_final) / curr_price) * 100
                 reward_pct = ((tp_target - curr_price) / curr_price) * 100
 
+                # Lolos jika Skor mencukupi dan Reward sepadan
                 if score >= 60 and rrr >= 1.5:
                     conf = "High" if score >= 80 else "Medium"
                     if conf == "High": high_score_found = True
@@ -142,8 +151,8 @@ def run_screening():
                         "Signal": ", ".join(alasan),
                         "Stop Loss": int(sl_final),
                         "Take Profit": int(tp_target),
-                        "Risk_Pct": round(risk_pct, 1),     # Tambahan Data
-                        "Reward_Pct": round(reward_pct, 1), # Tambahan Data
+                        "Risk_Pct": round(risk_pct, 1),      
+                        "Reward_Pct": round(reward_pct, 1), 
                         "Skor": score
                     })
             except: continue
@@ -166,7 +175,6 @@ def run_screening():
                     st.write(f"**Indikator:** {item['Signal']}")
                     c1, c2, c3 = st.columns(3)
                     c1.metric("Entry", f"Rp {item['Harga']}")
-                    # Menambahkan Persentase di Belakang Angka Rupiah
                     c2.error(f"Stop Loss\n\nRp {item['Stop Loss']} (-{item['Risk_Pct']}%)")
                     c3.success(f"Take Profit\n\nRp {item['Take Profit']} (+{item['Reward_Pct']}%)")
-                    st.caption(f"Risk/Reward: {item['RRR']} | Timeframe: 15m/60m Swing")
+                    st.caption(f"Risk/Reward: {item['RRR']} | Disarankan pantau Timeframe 5m/15m")
