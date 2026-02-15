@@ -34,6 +34,9 @@ def calculate_day_indicators(df):
     low_close = np.abs(df['Low'] - df['Close'].shift())
     df['ATR'] = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1).rolling(14).mean()
     
+    # MA 200 (Long-term Trend Filter)
+    df['MA200'] = df['Close'].rolling(window=200).mean()
+    
     return df
 
 def get_market_session():
@@ -54,7 +57,7 @@ def run_screening():
     st.info(f"**Status Sesi:** {session} | {status_desc}")
 
     if st.button("Mulai Pemindaian Radar (perlu waktu +/- 2 menit)"):
-        # List Top 100 Saham Teraktif (Bisa disesuaikan)
+        # List Top 100 Saham Teraktif
         saham_list = [
             "BBCA.JK", "BBRI.JK", "BMRI.JK", "BBNI.JK", "BBTN.JK", "BRIS.JK", "ARTO.JK", "BFIN.JK", 
             "BREN.JK", "TPIA.JK", "BRPT.JK", "PGEO.JK", "AMMN.JK", "TLKM.JK", "ISAT.JK", "EXCL.JK", 
@@ -97,33 +100,37 @@ def run_screening():
                 score = 0
                 alasan = []
 
-                # A. Relative Volume (20 Poin): Volume meningkat
-                if last['Volume'] > (avg_vol_20 * 1.2): # Filter volume naik >20%
+                # A. Relative Volume (20 Poin)
+                if last['Volume'] > (avg_vol_20 * 1.2): 
                     score += 20; alasan.append("Volume Breakout")
                 
-                # B. VWAP Alignment (20 Poin): Harga di atas VWAP
+                # B. VWAP Alignment (20 Poin)
                 if curr_price > last['VWAP']:
                     score += 20; alasan.append("Above VWAP")
                 
-                # C. RSI Momentum (20 Poin): Rentang 50 - 70
+                # C. RSI Momentum (20 Poin)
                 if 50 <= last['RSI'] <= 70:
                     score += 20; alasan.append(f"RSI Ideal ({last['RSI']:.0f})")
                     
-                # D. EMA 9/21 Cross (20 Poin): Tren jangka pendek bullish
+                # D. EMA 9/21 Cross (10 Poin)
                 if last['EMA9'] > last['EMA21']:
-                    score += 20; alasan.append("EMA Golden Cross")
+                    score += 10; alasan.append("EMA Golden Cross")
                     
-                # E. Price Action/Gap (10 Poin): Kenaikan > 2%
+                # E. Harga >= MA200 (10 Poin)
+                if pd.notna(last['MA200']) and curr_price >= last['MA200']:
+                    score += 10; alasan.append("Above MA200 (Uptrend)")
+                    
+                # F. Price Action/Gap (10 Poin)
                 change_pct = ((curr_price - prev['Close']) / prev['Close']) * 100
                 if change_pct > 2.0:
                     score += 10; alasan.append(f"Strong Move +{change_pct:.1f}%")
                     
-                # F. Value MA20 (10 Poin): Transaksi > Rp 5 Miliar
+                # G. Value MA20 (10 Poin)
                 if avg_val_20 > 5e9:
                     score += 10; alasan.append("High Liquidity (>5M)")
 
-                # Filter tambahan: Breakout Yesterday's High (Syarat Opsional masuk Watchlist)
-                if curr_price > prev['High'] and "Breakout High" not in alasan:
+                # Filter opsional masuk Watchlist
+                if curr_price > prev['High'] and "Breakout Prev High" not in alasan:
                     alasan.append("Breakout Prev High")
 
                 # --- 3. TRADING PLAN & LOCK RISK 8% ---
