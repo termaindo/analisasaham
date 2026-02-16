@@ -4,6 +4,7 @@ import numpy as np
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from modules.data_loader import get_full_stock_data
+from modules.universe import is_syariah  # Import fungsi pengecekan syariah
 
 # --- FUNGSI ANALISA TEKNIKAL MENDALAM ---
 def calculate_technical_pro(df):
@@ -37,6 +38,14 @@ def calculate_technical_pro(df):
     low_close = np.abs(df['Low'] - df['Close'].shift())
     df['ATR'] = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1).rolling(14).mean()
     
+    # --- TAMBAHAN INDIKATOR UNTUK SCORING 100 POIN ---
+    df['Vol_MA20'] = df['Volume'].rolling(20).mean()
+    df['Typical_Price'] = (df['High'] + df['Low'] + df['Close']) / 3
+    df['VWAP_20'] = (df['Typical_Price'] * df['Volume']).rolling(20).sum() / df['Volume'].rolling(20).sum()
+    df['EMA9'] = df['Close'].ewm(span=9, adjust=False).mean()
+    df['EMA21'] = df['Close'].ewm(span=21, adjust=False).mean()
+    df['Value'] = df['Close'] * df['Volume']
+    
     return df
 
 def run_teknikal():
@@ -57,6 +66,13 @@ def run_teknikal():
             if df.empty or len(df) < 200:
                 st.error("Data tidak mencukupi untuk analisa MA200. Mohon coba saham lain.")
                 return
+
+            # --- CEK STATUS SYARIAH ---
+            clean_ticker = ticker_input.replace(".JK", "")
+            status_syariah = "[Syariah]" if is_syariah(clean_ticker) else "[Non-Syariah]"
+            
+            # Menampilkan header hasil analisa beserta status syariah
+            st.subheader(f"Hasil Analisa: {clean_ticker} {status_syariah}")
 
             df = calculate_technical_pro(df)
             last = df.iloc[-1]
@@ -87,14 +103,55 @@ def run_teknikal():
             tp3 = int(curr_price + (risk_amount * 3.5))
             rrr = round((tp2 - curr_price) / (curr_price - sl_final), 1)
 
-            # Konfirmasi Sinyal
+            # ==========================================
+            # KONFIRMASI SINYAL (LOGIKA SCORING 100 POIN)
+            # ==========================================
+            curr_vol = last['Volume'] if not pd.isna(last['Volume']) else 0
+            avg_vol_20 = last['Vol_MA20'] if not pd.isna(last['Vol_MA20']) else 0
+            vwap_val = last['VWAP_20'] if not pd.isna(last['VWAP_20']) else curr_price
+            ema9_val = last['EMA9']
+            ema21_val = last['EMA21']
+            avg_value_ma20 = df['Value'].rolling(20).mean().iloc[-1]
+            prev_close_1 = df['Close'].iloc[-2]
+
             score = 0
-            if curr_price > last['MA20']: score += 1
-            if last['MACD'] > last['Signal_Line']: score += 1
-            if 40 < last['RSI'] < 70: score += 1
+            # 1. Relative Volume (20 Poin)
+            if curr_vol > avg_vol_20: score += 20
+            # 2. VWAP Alignment (20 Poin)
+            if curr_price > vwap_val: score += 20
+            # 3. RSI Momentum (20 Poin)
+            if 50 < last['RSI'] < 70: score += 20
+            # 4. EMA 9/21 Cross (20 Poin)
+            if ema9_val > ema21_val: score += 20
+            # 5. Price Action/Gap (10 Poin)
+            if (curr_price - prev_close_1) / prev_close_1 > 0.02: score += 10
+            # 6. Value MA20 (10 Poin)
+            if avg_value_ma20 > 5e9: score += 10
+
+            # Mapping Rekomendasi
+            if score >= 70:
+                signal = "STRONG BUY"
+                confidence = "High"
+            elif score >= 50:
+                signal = "BUY"
+                confidence = "Medium"
+            elif score >= 40:
+                signal = "HOLD"
+                confidence = "Medium"
+            else:
+                signal = "SELL"
+                confidence = "Low"
+
+            # --- LOGIKA RENTANG ENTRY (SUPPORT DINAMIS) ---
+            entry_atas = curr_price
+            support_dinamis = max(vwap_val, last['MA20'])
+            batas_diskon_2pct = curr_price * 0.98
             
-            signal = "BUY" if score >= 2 and main_trend == "UPTREND" else "HOLD" if score >= 1 else "SELL"
-            confidence = "High" if score == 3 else "Medium" if score == 2 else "Low"
+            if support_dinamis < curr_price:
+                entry_bawah = max(support_dinamis, batas_diskon_2pct)
+            else:
+                entry_bawah = batas_diskon_2pct
+            # ==========================================
 
             # --- VISUALISASI CHART ---
             fig = make_subplots(rows=3, cols=1, shared_xaxes=True, vertical_spacing=0.03, row_heights=[0.6, 0.2, 0.2])
@@ -144,11 +201,17 @@ def run_teknikal():
             st.subheader("5. TRADING SIGNAL & PLAN")
             s1, s2, s3 = st.columns(3)
             with s1:
-                st.metric("SINYAL", signal, f"Conf: {confidence}")
-                st.write(f"**Entry Zone:** Rp {curr_price:,.0f} - {int(curr_price*1.01):,.0f}")
+                st.metric("SINYAL", signal, f"Score: {score}/100 | Conf: {confidence}")
+                st.write(f"**Entry Zone:** Rp {int(entry_bawah):,.0f} - Rp {int(entry_atas):,.0f}")
             with s2:
                 st.error(f"**STOP LOSS**\n\n**Rp {sl_final:,.0f}**\n(Metode: {metode_sl})")
             with s3:
                 st.success(f"**TAKE PROFIT**\n\nTP1: {tp1}\nTP2: {tp2}\nTP3: {tp3}")
             
             st.caption(f"Risk/Reward: 1 : {rrr} | Style: Swing Trading | Max Risk Locked: 8.0%")
+
+            # --- DISCLAIMER ---
+            st.markdown("---")
+            st.warning("""
+            **DISCLAIMER:** Semua informasi, analisa teknikal, dan sinyal trading yang disediakan di modul ini hanya untuk tujuan edukasi dan informasi. Ini bukan merupakan rekomendasi, ajakan, atau nasihat keuangan untuk membeli atau menjual saham tertentu. Keputusan investasi sepenuhnya berada di tangan Anda. Harap lakukan riset Anda sendiri (*Do Your Own Research*) dan pertimbangkan profil risiko sebelum mengambil keputusan di pasar modal.
+            """)
