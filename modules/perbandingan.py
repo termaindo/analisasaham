@@ -78,7 +78,7 @@ def run_perbandingan():
             st.markdown("---")
             st.header("💡 KESIMPULAN")
             
-            # Logika penentuan Pilihan #1 (Contoh sederhana: ROE vs PER)
+            # Logika penentuan Pilihan #1
             if i1.get('returnOnEquity', 0) > i2.get('returnOnEquity', 0):
                 p1, p2 = tk1, tk2
                 r1 = "Efisiensi mencetak laba (ROE) lebih tinggi."
@@ -106,3 +106,11 @@ def run_perbandingan():
                 reason = f"{p1} secara keseluruhan memiliki skor kualitas (ROE & Margin) terbaik."
 
             st.success(f"**JAWABAN:** {best}. **ALASAN:** {reason}")
+
+            # --- PERNYATAAN DISCLAIMER (PENAMBAHAN BARU) ---
+            st.markdown("<br><br>", unsafe_allow_html=True)
+            st.divider()
+            st.caption(f"⚠️ **Sanggahan (Disclaimer):** Analisis perbandingan antara {tk1} dan {tk2} ini dihasilkan secara otomatis untuk tujuan edukasi dan informasi semata. "
+                       "Ini bukan merupakan perintah beli atau jual. Keputusan investasi sepenuhnya berada di tangan Anda. "
+                       "Kinerja masa lalu tidak menjamin hasil di masa depan. Selalu lakukan analisis fundamental dan teknikal mandiri (DYOR) "
+                       "sebelum menempatkan modal pada instrumen saham.")
