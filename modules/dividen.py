@@ -2,20 +2,11 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
-# Asumsi module data_loader sudah memiliki fungsi get_full_stock_data dan hitung_div_yield_normal
-from modules.data_loader import get_full_stock_data, hitung_div_yield_normal
 
-def cek_syariah_dummy(ticker):
-    """
-    Fungsi simulasi untuk mengecek status syariah. 
-    Idealnya data ini ditarik dari API/Database ISSI (Indeks Saham Syariah Indonesia) OJK.
-    """
-    # Contoh list statis saham syariah populer di IHSG
-    syariah_list = ['ITMG', 'PTBA', 'ADRO', 'UNTR', 'ICBP', 'INDF', 'TLKM', 'KLBF', 'SIDO']
-    kode = ticker.replace(".JK", "")
-    if kode in syariah_list:
-        return "✅ Ya (Masuk Daftar Efek Syariah)"
-    return "❌ Tidak / Perlu Konfirmasi OJK"
+# Import dari data_loader
+from modules.data_loader import get_full_stock_data, hitung_div_yield_normal
+# Import fungsi is_syariah dari universe (Single Source of Truth)
+from modules.universe import is_syariah
 
 def run_dividen():
     st.title("💰 Analisa Dividen Pro (Passive Income Investing)")
@@ -24,7 +15,11 @@ def run_dividen():
     col_inp, _ = st.columns([1, 2])
     with col_inp:
         ticker_input = st.text_input("Kode Saham (Dividend Check):", value="ITMG").upper()
+    
+    # Format ticker untuk Yahoo Finance (.JK)
     ticker = ticker_input if ticker_input.endswith(".JK") else f"{ticker_input}.JK"
+    # Format kode bersih untuk pengecekan di universe.py (tanpa .JK)
+    kode_bersih = ticker_input.replace(".JK", "").upper()
 
     if st.button(f"Analisa Dividen {ticker_input}"):
         with st.spinner("Mengevaluasi histori, kesehatan kas, dan kelayakan scoring..."):
@@ -40,7 +35,12 @@ def run_dividen():
             curr_price = info.get('currentPrice', 0)
             sector = info.get('sector', 'Sektor Tidak Diketahui')
             company_name = info.get('longName', ticker_input)
-            status_syariah = cek_syariah_dummy(ticker)
+            
+            # Cek status syariah menggunakan Single Source of Truth dari universe.py
+            if is_syariah(kode_bersih):
+                status_syariah = "✅ Ya (Masuk Daftar Efek Syariah ISSI)"
+            else:
+                status_syariah = "❌ Tidak / Perlu Konfirmasi OJK"
             
             # --- HEADER INFO ---
             st.subheader(f"{company_name} ({ticker_input})")
@@ -163,18 +163,4 @@ def run_dividen():
             st.write(f"**Target Entry Price (Mengejar Yield {deposito_rate}%):** Rp {entry_price:,.0f}")
             st.write(f"**Harga Saham Saat Ini:** Rp {curr_price:,.0f}")
             
-            if curr_price < entry_price and entry_price > 0:
-                st.success(f"✅ **Saran:** Harga saat ini lebih murah dari target entry. Pertimbangkan untuk **Buy** guna mengunci yield tinggi.")
-            elif entry_price == 0:
-                st.warning("⚠️ **Saran:** Data DPS tidak mencukupi untuk menghitung target harga.")
-            else:
-                st.warning(f"⏳ **Saran:** Harga saat ini cukup premium. Disarankan **Wait and See** menunggu koreksi mendekati Rp {entry_price:,.0f}.")
-                
-            # --- 6. DISCLAIMER ---
-            st.markdown("---")
-            st.caption("""
-            **DISCLAIMER:**
-            Data dan analisa yang disajikan di atas dihasilkan secara otomatis berdasarkan histori laporan keuangan dan algoritma perhitungan. 
-            Informasi ini ditujukan murni untuk keperluan edukasi dan referensi, bukan merupakan paksaan, ajakan, atau rekomendasi mutlak untuk membeli atau menjual saham tertentu. 
-            Investasi saham mengandung risiko (*Capital Loss*). Keputusan transaksi sepenuhnya berada di tangan investor. Lakukan riset mandiri (*Do Your Own Research*) dan pertimbangkan toleransi risiko Anda sebelum berinvestasi.
-            """)
+            if curr_price < entry_price and entry_price >
