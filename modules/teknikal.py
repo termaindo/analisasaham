@@ -3,8 +3,15 @@ import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
-from modules.data_loader import get_full_stock_data
-from modules.universe import is_syariah  # --- MODIFIKASI: Memanggil fungsi dari universe.py ---
+
+# --- MENGGUNAKAN RELATIVE IMPORT SEBAGAI PENGAMAN ---
+try:
+    from modules.data_loader import get_full_stock_data
+    from modules.universe import is_syariah
+except ModuleNotFoundError:
+    # Fallback jika dipanggil dari internal folder
+    from .data_loader import get_full_stock_data
+    from .universe import is_syariah
 
 # --- FUNGSI ANALISA TEKNIKAL MENDALAM ---
 def calculate_technical_pro(df):
