@@ -4,7 +4,7 @@ import numpy as np
 import plotly.graph_objects as go
 
 # Import dari data_loader & universe
-from modules.data_loader import get_full_stock_data, hitung_div_yield_normal
+from modules.data_loader import get_full_stock_data, hit_div_yield_normal
 from modules.universe import is_syariah
 
 def run_dividen():
@@ -19,7 +19,7 @@ def run_dividen():
     ticker = ticker_input if ticker_input.endswith(".JK") else f"{ticker_input}.JK"
     kode_bersih = ticker_input.replace(".JK", "").upper()
 
-    if st.button(f"Analisa Dividen {ticker_input}"):
+    if st.button(f"Jalankan Analisa Dividen {ticker_input}"):
         with st.spinner("Mengevaluasi fundamental & kelayakan dividen..."):
             data = get_full_stock_data(ticker)
             info = data['info']
@@ -35,10 +35,18 @@ def run_dividen():
             sector = info.get('sector', 'Sektor Tidak Diketahui')
             company_name = info.get('longName', ticker_input)
             
-            # --- HEADER: IDENTITAS SAHAM ---
-            st.subheader(f"{ticker_input} - {company_name}")
-            status_syr = "✅ Ya (Daftar Efek Syariah)" if is_syariah(kode_bersih) else "❌ Tidak / Non-Syariah"
-            st.write(f"**Sektor:** {sector} | **Kategori Syariah:** {status_syr}")
+            # --- HEADER: IDENTITAS SAHAM (Style Match: Teknikal Pro) ---
+            status_syr_icon = "✅" if is_syariah(kode_bersih) else "❌"
+            status_syr_text = "Syariah" if is_syariah(kode_bersih) else "Non-Syariah"
+
+            st.markdown(f"""
+                <div style="text-align: center; padding: 10px;">
+                    <h2 style="color: #2ECC71; margin-bottom: 0;">🏢 {ticker_input} - {company_name}</h2>
+                    <p style="color: #A0A0A0; font-size: 1.1em;">
+                        Sektor: {sector} | {status_syr_icon} {status_syr_text}
+                    </p>
+                </div>
+            """, unsafe_allow_html=True)
             st.markdown("---")
 
             # --- 1. HISTORY DAN PERTUMBUHAN DIVIDEN ---
@@ -97,9 +105,9 @@ def run_dividen():
             with col_fin1:
                 st.write("**Kualitas Kas (FCF):**")
                 if fcf > 0:
-                    st.success(f"✅ Positif (Rp {fcf:,.0f})")
+                    st.success(f"✅ Positif (Dana Dividen Aman)")
                 else:
-                    st.error("❌ Negatif (Waspada Kas)")
+                    st.error("❌ Negatif (Waspada Utang untuk Dividen)")
             with col_fin2:
                 st.write("**Debt to Equity Ratio (DER):**")
                 if der < 1.0:
@@ -114,10 +122,13 @@ def run_dividen():
             sl_final = max(curr_price - (1.5 * atr), curr_price * 0.92)
             
             p1, p2 = st.columns(2)
-            p1.info(f"**Estimasi DPS:** Rp {est_dps:,.0f}\n\n**Potential Yield:** {(est_dps/curr_price)*100:.2f}%")
-            p2.error(f"**Stop Loss (Lock 8%):**\n\nRp {sl_final:,.0f}")
+            with p1:
+                st.info(f"**Estimasi DPS Mendatang:**\n\nRp {est_dps:,.0f} / Lembar")
+                st.write(f"**Potential Yield:** {(est_dps/curr_price)*100:.2f}%")
+            with p2:
+                st.error(f"**Stop Loss Level (Lock 8%):**\n\nRp {sl_final:,.0f}")
 
-            # --- INTEGRASI SCORING (Summary) ---
+            # --- EVALUASI SCORING ---
             st.markdown("---")
             total_score = 0
             if yield_val > 6: total_score += 25
@@ -125,7 +136,7 @@ def run_dividen():
             if fcf > 0: total_score += 25
             if cagr > 0 and roe > 10: total_score += 25
             
-            st.write(f"### Skor Kelayakan: {total_score}/100")
+            st.write(f"### Skor Kelayakan Dividen: {total_score}/100")
             st.progress(total_score / 100)
 
             # --- 5. REKOMENDASI ---
@@ -134,22 +145,23 @@ def run_dividen():
             entry_price = est_dps / (deposito_rate/100) if est_dps > 0 else 0
             
             if curr_price < entry_price and total_score >= 75:
-                status = "SANGAT LAYAK (Underpriced & Fundamental Kuat)"
-                saran = "✅ Harga saat ini di bawah nilai wajar yield. Pertimbangkan untuk akumulasi."
+                status = "SANGAT LAYAK (Top Pick)"
+                saran = "✅ Harga saat ini sangat menarik dengan dukungan fundamental kuat."
             elif curr_price < entry_price:
-                status = "LAYAK (Harga Murah)"
-                saran = "✅ Harga menarik, namun perhatikan catatan fundamental di atas."
+                status = "LAYAK (Underpriced)"
+                saran = "✅ Harga murah, pertimbangkan akumulasi bertahap."
             else:
                 status = "TUNGGU KOREKSI (Overpriced)"
-                saran = f"⏳ Harga saat ini premium. Disarankan menunggu di area Rp {entry_price:,.0f}."
+                saran = f"⏳ Harga saat ini sudah premium. Tunggu di area Rp {entry_price:,.0f}."
             
             st.subheader(f"Status: {status}")
-            st.write(f"**Target Entry:** Rp {entry_price:,.0f} | **Harga Saat Ini:** Rp {curr_price:,.0f}")
+            st.write(f"**Target Entry Price:** Rp {entry_price:,.0f} | **Harga Saat Ini:** Rp {curr_price:,.0f}")
             st.info(saran)
 
             # --- DISCLAIMER ---
             st.markdown("---")
             st.caption("""
-            **DISCLAIMER:** Data ini bersifat edukasi. Keputusan investasi sepenuhnya ada di tangan Anda. 
-            Perhatikan risiko penurunan harga saham (*Capital Loss*) meskipun emiten membagikan dividen tinggi.
+            **DISCLAIMER:** Data dan analisa ini dihasilkan secara otomatis untuk tujuan edukasi. 
+            Investasi saham memiliki risiko capital loss. Keputusan beli/jual sepenuhnya adalah tanggung jawab investor. 
+            Lakukan riset mandiri (DYOR) sebelum mengambil keputusan.
             """)
