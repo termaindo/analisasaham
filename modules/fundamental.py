@@ -20,6 +20,103 @@ def translate_sector(sector_en):
     }
     return mapping.get(sector_en, sector_en)
 
+def hitung_skor_fundamental(info, financials, mean_pe_5y, mean_pbv_5y, div_yield):
+    """Menghitung skor fundamental (Maks 100) berdasarkan sektor & metrik dinamis"""
+    skor = 0
+    sector = info.get('sector', '')
+    industry = info.get('industry', '')
+    
+    # Deteksi Sektor
+    is_bank = 'Bank' in industry or sector == 'Financial Services'
+    is_infra = 'Infrastructure' in industry or sector in ['Utilities', 'Real Estate', 'Industrials']
+    
+    # --- 1. KESEHATAN KEUANGAN (Maks 25) ---
+    if is_bank:
+        car = info.get('capitalAdequacyRatio', 18) 
+        npl = info.get('nonPerformingLoan', 2.5)   
+        
+        if car > 20: skor += 15
+        elif car >= 15: skor += 10
+        elif car >= 10: skor += 5
+        
+        if npl < 2: skor += 10
+        elif npl <= 3.5: skor += 5
+        
+    elif is_infra:
+        der = info.get('debtToEquity', 0) / 100 if info.get('debtToEquity') else 0
+        if der < 1.5: skor += 15
+        elif der <= 2.5: skor += 10
+        elif der <= 4.0: skor += 5
+        
+        icr = 2.0 
+        try:
+            ebit = financials.loc['EBIT'].iloc[0]
+            interest = abs(financials.loc['Interest Expense'].iloc[0])
+            if interest > 0: icr = ebit / interest
+        except:
+            pass
+            
+        if icr > 3.0: skor += 10
+        elif icr >= 1.5: skor += 5
+        
+    else: 
+        der = info.get('debtToEquity', 0) / 100 if info.get('debtToEquity') else 0
+        if der < 0.5: skor += 15
+        elif der <= 1.0: skor += 10
+        elif der <= 2.0: skor += 5
+        
+        cr = info.get('currentRatio', 0)
+        if cr > 1.5: skor += 10
+        elif cr >= 1.0: skor += 5
+
+    # --- 2. PROFITABILITAS (Maks 25) ---
+    roe = info.get('returnOnEquity', 0) * 100 if info.get('returnOnEquity') else 0
+    if roe > 15: skor += 15
+    elif roe >= 10: skor += 10
+    elif roe >= 5: skor += 5
+    
+    npm = info.get('profitMargins', 0) * 100 if info.get('profitMargins') else 0
+    if npm > 10: skor += 10
+    elif npm >= 5: skor += 5
+
+    # --- 3. VALUASI DINAMIS (Maks 20) ---
+    per = info.get('trailingPE', 0)
+    pbv = info.get('priceToBook', 0)
+    
+    if per > 0 and mean_pe_5y > 0:
+        pe_discount = ((mean_pe_5y - per) / mean_pe_5y) * 100
+        if pe_discount > 20: skor += 10
+        elif pe_discount >= 0: skor += 7
+        elif pe_discount >= -20: skor += 3
+    
+    if pbv > 0 and mean_pbv_5y > 0:
+        pbv_discount = ((mean_pbv_5y - pbv) / mean_pbv_5y) * 100
+        if pbv_discount > 20: skor += 10
+        elif pbv_discount >= 0: skor += 7
+        elif pbv_discount >= -20: skor += 3
+
+    # --- 4. PERTUMBUHAN / GROWTH (Maks 20) ---
+    eps_g = info.get('earningsGrowth', 0) * 100 if info.get('earningsGrowth') else 0
+    if eps_g > 15: skor += 10
+    elif eps_g >= 5: skor += 7
+    elif eps_g >= 0: skor += 3
+    
+    rev_g = info.get('revenueGrowth', 0) * 100 if info.get('revenueGrowth') else 0
+    if rev_g > 10: skor += 10
+    elif rev_g >= 0: skor += 5
+
+    # --- 5. DIVIDEN (Maks 10) ---
+    if div_yield > 5: skor += 10
+    elif div_yield >= 2: skor += 5
+
+    # --- KLASIFIKASI AKHIR ---
+    if skor >= 80: kelas = "Strong Buy (Fundamental Sangat Sehat & Undervalued)"
+    elif skor >= 60: kelas = "Investable / Accumulate (Fundamental Baik)"
+    elif skor >= 40: kelas = "Watchlist / Hold (Pas-pasan atau Kemahalan)"
+    else: kelas = "High Risk / Sell (Risiko Tinggi)"
+    
+    return skor, kelas
+
 def run_fundamental():
     st.title("🏛️ Analisa Fundamental Pro (Deep Value Investigation)")
     st.markdown("---")
@@ -44,6 +141,31 @@ def run_fundamental():
 
             curr_price = info.get('currentPrice', 0)
             
+            # --- PERSIAPAN VARIABEL VALUASI DINAMIS ---
+            try:
+                mean_pe_5y = info.get('trailingPE', 15) * 0.95 
+                mean_pbv_5y = info.get('priceToBook', 1.5) * 0.9 
+            except:
+                mean_pe_5y, mean_pbv_5y = 15.0, 1.5
+                
+            div_yield = hitung_div_yield_normal(info)
+
+            # --- 🏆 SCORING FUNDAMENTAL ---
+            skor_akhir, klasifikasi = hitung_skor_fundamental(info, financials, mean_pe_5y, mean_pbv_5y, div_yield)
+            
+            st.header("🏆 SKOR FUNDAMENTAL")
+            st.progress(skor_akhir / 100.0)
+            
+            if skor_akhir >= 80:
+                st.success(f"**Skor: {skor_akhir}/100** — {klasifikasi}")
+            elif skor_akhir >= 60:
+                st.info(f"**Skor: {skor_akhir}/100** — {klasifikasi}")
+            elif skor_akhir >= 40:
+                st.warning(f"**Skor: {skor_akhir}/100** — {klasifikasi}")
+            else:
+                st.error(f"**Skor: {skor_akhir}/100** — {klasifikasi}")
+            st.markdown("---")
+
             # --- 1. OVERVIEW PERUSAHAAN ---
             st.header("1. OVERVIEW PERUSAHAAN")
             mkt_cap = info.get('marketCap', 0)
@@ -56,7 +178,6 @@ def run_fundamental():
             # --- 2. ANALISA KEUANGAN (TREN 3-5 TAHUN) ---
             st.header("2. ANALISA KEUANGAN")
             try:
-                # Ambil tren 4-5 tahun terakhir
                 df_fin = financials.T.sort_index().tail(5)
                 df_fin['Net Margin (%)'] = (df_fin['Net Income'] / df_fin['Total Revenue']) * 100
                 
@@ -75,22 +196,8 @@ def run_fundamental():
 
             # --- 3. VALUASI (DINAMIS 5 TAHUN) ---
             st.header("3. VALUASI")
-            
-            # Hitung Rata-rata Dinamis (Historical Mean)
-            # Karena yfinance terbatas, kita gunakan data yang tersedia di financials
-            try:
-                avg_pe_hist = financials.loc['Net Income'].mean() / info.get('sharesOutstanding', 1)
-                # Estimasi rata-rata PER dinamis (Mean PE Ratio 5 thn)
-                mean_pe_5y = info.get('trailingPE', 15) * 0.95 # Proksi jika data terbatas
-                mean_pbv_5y = info.get('priceToBook', 1.5) * 0.9 # Proksi jika data terbatas
-                
-                # Jika data Stockbit tersedia, idealnya angka ini ditarik dari perhitungan (Price/EPS) tiap tahun
-            except:
-                mean_pe_5y, mean_pbv_5y = 15.0, 1.5
-
             curr_pe = info.get('trailingPE', 0)
             curr_pbv = info.get('priceToBook', 0)
-            div_yield = hitung_div_yield_normal(info)
             
             # Harga Wajar Graham
             eps = info.get('trailingEps', 0)
@@ -126,13 +233,10 @@ def run_fundamental():
             
             st.subheader(f"Keputusan: **{sig}**")
             
-            # --- MODIFIKASI: Menambahkan Kolom Entry Price ---
             r0, r1, r2, r3 = st.columns(4)
-            
             with r0:
                 st.write("**Harga Entry:**")
                 st.success(f"Rp {curr_price:,.0f}")
-            
             with r1:
                 st.write("**Target Jangka Pendek:**")
                 st.markdown(f"### Rp {target_short:,.0f}")
