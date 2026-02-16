@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 from modules.data_loader import get_full_stock_data, hitung_div_yield_normal
+from modules.universe import is_syariah  # --- MODIFIKASI: Memanggil fungsi dari universe.py ---
 
 def translate_sector(sector_en):
     """Menerjemahkan sektor ke Bahasa Indonesia"""
@@ -172,6 +173,14 @@ def run_fundamental():
             posisi = "Market Leader" if mkt_cap > 150e12 else "Challenger" if mkt_cap > 20e12 else "Niche Player"
             
             st.write(f"**Bisnis Utama:** Emiten bergerak di sektor **{translate_sector(info.get('sector'))}**.")
+            
+            # --- MODIFIKASI: Menggunakan fungsi is_syariah dari universe.py ---
+            if is_syariah(ticker_input):
+                teks_syariah = "✅ **Masuk Daftar Efek Syariah (ISSI)**"
+            else:
+                teks_syariah = "❓ **Belum/Bukan Efek Syariah**"
+            st.write(f"**Kategori Syariah:** {teks_syariah}")
+            
             st.write(f"**Posisi Industri:** Bertindak sebagai **{posisi}** dengan Market Cap Rp {mkt_cap/1e12:,.1f} Triliun.")
             st.write(f"**Competitive Advantage:** Memiliki skala ekonomi kuat dan dominasi distribusi di pasar domestik.")
 
@@ -221,8 +230,13 @@ def run_fundamental():
             # --- 5. REKOMENDASI & TRADING PLAN ---
             st.header("5. REKOMENDASI")
             
-            # Kalkulasi SL Berbasis ATR (LOCK MAX 8%)
-            atr = (history['High'] - history['Low']).tail(14).mean()
+            # --- MODIFIKASI: Kalkulasi Support Dinamis untuk Rentang Entry (Max 3%) ---
+            atr = (history['High'] - history['Low']).tail(14).mean() if not history.empty else (curr_price * 0.02)
+            
+            # Support dihitung dari Harga saat ini dikurangi ATR, tetapi penurunannya dikunci maksimal 3%
+            support_dinamis = curr_price - atr
+            batas_bawah_entry = max(support_dinamis, curr_price * 0.97)
+            
             sl_raw = curr_price - (1.5 * atr)
             sl_final = max(sl_raw, curr_price * 0.92) # KUNCI RESIKO 8%
             
@@ -235,8 +249,8 @@ def run_fundamental():
             
             r0, r1, r2, r3 = st.columns(4)
             with r0:
-                st.write("**Harga Entry:**")
-                st.success(f"Rp {curr_price:,.0f}")
+                st.write("**Area Entry Ideal:**")
+                st.success(f"Rp {batas_bawah_entry:,.0f} - Rp {curr_price:,.0f}")
             with r1:
                 st.write("**Target Jangka Pendek:**")
                 st.markdown(f"### Rp {target_short:,.0f}")
@@ -248,3 +262,9 @@ def run_fundamental():
                 st.error(f"Rp {sl_final:,.0f}")
             
             st.caption(f"Proteksi Modal: {'ATR 1.5x' if sl_final == sl_raw else 'Maksimal 8% Lock'}")
+
+            # --- MODIFIKASI: Pernyataan Disclaimer di akhir laporan ---
+            st.markdown("---")
+            st.caption("""
+            ⚠️ **DISCLAIMER:** Segala informasi, analisa fundamental, dan *trading plan* yang disajikan oleh modul aplikasi ini semata-mata bersifat informatif dan edukatif, serta dihasilkan oleh algoritma berdasarkan data historis yang tersedia. Modul ini bukan merupakan paksaan, ajakan, ataupun rekomendasi mutlak untuk melakukan transaksi jual/beli saham. Keputusan investasi dan segala risiko kerugian sepenuhnya berada di tangan Anda. Kinerja masa lalu tidak menjamin hasil di masa depan.
+            """)
