@@ -1,13 +1,25 @@
 # universe.py (Updated with Benchmarks)
 
 # Dictionary Saham berdasarkan Sektor
+# Dictionary Saham berdasarkan Sektor (Update Feb 2026)
+# Gabungan: Kompas100, JII70, IDX80, IDXG30, IDXQ30, IDXHIDIV20
 UNIVERSE_SAHAM = {
     "BANKING": ["BBCA", "BBRI", "BMRI", "BBNI", "BBTN", "BRIS", "BTPS", "ARTO", "BBYB", "BDMN", "BNGA"],
-    "ENERGY_MINING": ["AADI", "ADRO", "ADMR", "ANTM", "BREN", "BUMI", "BRMS", "CUAN", "DSSA", "ELSA", "ENRG", "HRUM", "INCO", "INDY", "ITMG", "MEDC", "PGAS", "PGEO", "PTBA", "RATU", "SGER", "TOBA", "TINS", "MBMA", "MDKA", "AMMN"],
+    
+    "ENERGY_MINING": ["AADI", "ADRO", "ADMR", "ANTM", "BREN", "BUMI", "BRMS", "CUAN", "DSSA", "ELSA", 
+        "ENRG", "HRUM", "INCO", "INDY", "ITMG", "MEDC", "PGAS", "PGEO", "PTBA", "RATU", 
+        "SGER", "TOBA", "TINS", "MBMA", "MDKA", "AMMN"],
+    
     "INFRASTRUCTURE": ["TLKM", "ISAT", "EXCL", "MTEL", "JSMR", "TBIG", "TOWR", "WIFI", "INET", "WIKA", "ADHI", "PTPP"],
-    "BASIC_INDUSTRIAL": ["ASII", "ARCI", "BRPT", "CPIN", "DSNG", "INKP", "INTP", "JPFA", "NCKL", "SMGR", "TPIA", "TKIM", "UNTR", "AVIA", "AUTO"],
-    "CONSUMER_HEALTH": ["AMRT", "CMRY", "GOTO", "HEAL", "ICBP", "INDF", "KLBF", "MIKA", "MYOR", "SIDO", "SILO", "UNVR", "ACES", "ERAA", "FILM", "MAPA", "MAPI", "HMSP", "MNCN", "BIRD", "MPMX"],
+    
+    "BASIC_INDUSTRIAL": ["ASII", "ARCI", "BRPT", "CPIN", "DSNG", "INKP", "INTP", "JPFA", "NCKL", 
+        "SMGR", "TPIA", "TKIM", "UNTR", "AVIA", "AUTO"],
+    
+    "CONSUMER_HEALTH": ["AMRT", "CMRY", "GOTO", "HEAL", "ICBP", "INDF", "KLBF", "MIKA", "MYOR", "SIDO", 
+        "SILO", "UNVR", "ACES", "ERAA", "FILM", "MAPA", "MAPI", "HMSP", "MNCN", "BIRD", "MPMX"],
+    
     "PROPERTY": ["BSDE", "CTRA", "PANI", "PWON", "SMRA", "BKSL", "ASRI"],
+    
     "AGRI_MARITIME": ["LSIP", "SMDR", "SRTG"]
 }
 
