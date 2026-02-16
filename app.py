@@ -171,13 +171,14 @@ def main_app():
             elif m == "perbandingan" and mod_perbandingan: mod_perbandingan.run_perbandingan()
             else: st.error("Modul tidak ditemukan di folder 'modules'.")
         except Exception as e:
-            st.error(f"Terjadi kesalahan sistem: {e}")
-
+            st.error(f"Error sistem saat memuat modul: {e}")
+    
 if __name__ == "__main__":
     if st.session_state.logged_in:
         main_app()
     else:
         login_page()
+
 
 
 
