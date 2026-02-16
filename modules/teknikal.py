@@ -1,10 +1,22 @@
+import sys
+import os
+
+# --- PENGATURAN PATH ROOT ---
+# Memastikan Python selalu mengenali folder utama project
+current_dir = os.path.dirname(os.path.abspath(__file__))
+parent_dir = os.path.dirname(current_dir)
+if parent_dir not in sys.path:
+    sys.path.append(parent_dir)
+
 import streamlit as st
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
+
+# Sekarang pemanggilan 'modules.' dijamin tidak akan error
 from modules.data_loader import get_full_stock_data
-from modules.universe import is_syariah  # Import fungsi pengecekan syariah
+from modules.universe import is_syariah
 
 # --- FUNGSI ANALISA TEKNIKAL MENDALAM ---
 def calculate_technical_pro(df):
