@@ -299,4 +299,14 @@ def run_analisa_cepat():
             st.markdown(html_output, unsafe_allow_html=True)
             
             with st.expander("Lihat Detail Data Mentah"):
-                st.write(f"Sektor Terdeteksi: {sector.title()} | Bank? {is_
+                st.write(f"Sektor Terdeteksi: {sector.title()} | Bank? {is_bank}")
+                st.write(f"Raw DER: {raw_der} | Normalized Ratio: {der_ratio:.2f}")
+                st.write(f"Support Dinamis (VWAP/MA20): Rp {int(support_dinamis):,.0f}")
+                
+                if is_bank: 
+                    st.write(f"CAR Terpakai: {car_approx:.2f}% ({'Hasil Scraping' if car_scraped is not None else 'Estimasi Proxy'})")
+                    st.write(f"NPL Terpakai: {npl_approx:.2f}% ({'Hasil Scraping' if npl_scraped is not None else 'Estimasi Proxy'})")
+
+            # --- 6. DISCLAIMER ---
+            st.markdown("---")
+            st.caption("⚠️ **DISCLAIMER:** Laporan analisa ini dihasilkan secara otomatis menggunakan perhitungan algoritma indikator teknikal dan fundamental. Seluruh informasi yang disajikan bukan merupakan ajakan, rekomendasi pasti, atau paksaan untuk membeli/menjual saham. Keputusan investasi dan trading sepenuhnya menjadi tanggung jawab pribadi masing-masing investor. Selalu terapkan manajemen risiko yang baik dan *Do Your Own Research* (DYOR).")
