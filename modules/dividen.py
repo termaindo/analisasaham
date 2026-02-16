@@ -4,7 +4,8 @@ import numpy as np
 import plotly.graph_objects as go
 
 # Import dari data_loader & universe
-from modules.data_loader import get_full_stock_data, hit_div_yield_normal
+# PERBAIKAN: Pastikan nama fungsi adalah 'hitung_div_yield_normal'
+from modules.data_loader import get_full_stock_data, hitung_div_yield_normal
 from modules.universe import is_syariah
 
 def run_dividen():
@@ -19,7 +20,7 @@ def run_dividen():
     ticker = ticker_input if ticker_input.endswith(".JK") else f"{ticker_input}.JK"
     kode_bersih = ticker_input.replace(".JK", "").upper()
 
-    if st.button(f"Jalankan Analisa Dividen {ticker_input}"):
+    if st.button(f"Jalankan Analisa Lengkap {ticker_input}"):
         with st.spinner("Mengevaluasi fundamental & kelayakan dividen..."):
             data = get_full_stock_data(ticker)
             info = data['info']
@@ -40,14 +41,14 @@ def run_dividen():
             status_syr_text = "Syariah" if is_syariah(kode_bersih) else "Non-Syariah"
 
             st.markdown(f"""
-                <div style="text-align: center; padding: 10px;">
-                    <h2 style="color: #2ECC71; margin-bottom: 0;">🏢 {ticker_input} - {company_name}</h2>
-                    <p style="color: #A0A0A0; font-size: 1.1em;">
-                        Sektor: {sector} | {status_syr_icon} {status_syr_text}
+                <div style="text-align: center; padding: 20px; background-color: #1E1E1E; border-radius: 10px; border: 1px solid #333;">
+                    <h1 style="color: #2ECC71; margin-bottom: 5px; font-size: 2.5em;">🏢 {ticker_input} - {company_name}</h1>
+                    <p style="color: #A0A0A0; font-size: 1.2em; margin-top: 0;">
+                        Sektor: {sector} | <span style="color: white;">{status_syr_icon} {status_syr_text}</span>
                     </p>
                 </div>
             """, unsafe_allow_html=True)
-            st.markdown("---")
+            st.markdown("<br>", unsafe_allow_html=True)
 
             # --- 1. HISTORY DAN PERTUMBUHAN DIVIDEN ---
             st.header("1. History & Pertumbuhan Dividen")
@@ -66,6 +67,7 @@ def run_dividen():
                 if awal > 0:
                     cagr = ((akhir / awal) ** (1 / (len(df_div_annual)-1))) - 1
             
+            # Menggunakan nama fungsi yang benar: hitung_div_yield_normal
             yield_val = hitung_div_yield_normal(info)
             payout = info.get('payoutRatio', 0) * 100
             
@@ -107,7 +109,7 @@ def run_dividen():
                 if fcf > 0:
                     st.success(f"✅ Positif (Dana Dividen Aman)")
                 else:
-                    st.error("❌ Negatif (Waspada Utang untuk Dividen)")
+                    st.error("❌ Negatif (Waspada Kas Operasional)")
             with col_fin2:
                 st.write("**Debt to Equity Ratio (DER):**")
                 if der < 1.0:
