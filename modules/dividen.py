@@ -163,4 +163,18 @@ def run_dividen():
             st.write(f"**Target Entry Price (Mengejar Yield {deposito_rate}%):** Rp {entry_price:,.0f}")
             st.write(f"**Harga Saham Saat Ini:** Rp {curr_price:,.0f}")
             
-            if curr_price < entry_price and entry_price >
+            if curr_price < entry_price and entry_price > 0:
+                st.success(f"✅ **Saran:** Harga saat ini lebih murah dari target entry. Pertimbangkan untuk **Buy** guna mengunci yield tinggi.")
+            elif entry_price == 0:
+                st.warning("⚠️ **Saran:** Data DPS tidak mencukupi untuk menghitung target harga.")
+            else:
+                st.warning(f"⏳ **Saran:** Harga saat ini cukup premium. Disarankan **Wait and See** menunggu koreksi mendekati Rp {entry_price:,.0f}.")
+                
+            # --- 6. DISCLAIMER ---
+            st.markdown("---")
+            st.caption("""
+            **DISCLAIMER:**
+            Data dan analisa yang disajikan di atas dihasilkan secara otomatis berdasarkan histori laporan keuangan dan algoritma perhitungan. 
+            Informasi ini ditujukan murni untuk keperluan edukasi dan referensi, bukan merupakan paksaan, ajakan, atau rekomendasi mutlak untuk membeli atau menjual saham tertentu. 
+            Investasi saham mengandung risiko (*Capital Loss*). Keputusan transaksi sepenuhnya berada di tangan investor. Lakukan riset mandiri (*Do Your Own Research*) dan pertimbangkan toleransi risiko Anda sebelum berinvestasi.
+            """)
