@@ -69,49 +69,21 @@ def run_teknikal():
             # --- STANDAR ANTI-ERROR ---
             data = get_full_stock_data(ticker)
             df = data['history']
+            info = data.get('info', {})
             
             if df.empty or len(df) < 200:
                 st.error("Data tidak mencukupi untuk analisa MA200. Mohon coba saham lain.")
                 return
 
-            # --- CEK STATUS SYARIAH ---
-            clean_ticker = ticker_input.replace(".JK", "")
-            status_syariah = "[Syariah]" if is_syariah(clean_ticker) else "[Non-Syariah]"
-            
-            # Menampilkan header hasil analisa beserta status syariah
-            st.subheader(f"Hasil Analisa: {clean_ticker} {status_syariah}")
-
+            # --- PERSIAPAN DATA TEKNIKAL AWAL ---
             df = calculate_technical_pro(df)
             last = df.iloc[-1]
             prev = df.iloc[-5] # Untuk cek momentum 1 minggu lalu
             curr_price = last['Close']
             atr = last['ATR']
 
-            # --- 1. TREND ANALYSIS (Timeframe Check) ---
-            main_trend = "UPTREND" if curr_price > last['MA200'] else "DOWNTREND"
-            # Simulasi Weekly/Monthly berdasarkan kemiringan MA
-            weekly_trend = "Bullish" if last['MA50'] > prev['MA50'] else "Bearish"
-            res_level = df['High'].tail(20).max()
-            sup_level = df['Low'].tail(20).min()
-
-            # --- 2. INDIKATOR TEKNIKAL & 3. PATTERN ---
-            # Deteksi Divergence Sederhana
-            is_div = "Terdeteksi (Bullish)" if (curr_price < prev['Close'] and last['RSI'] > prev['RSI']) else "Tidak Terdeteksi"
-            
-            # --- 5. TRADING SIGNAL & ATR SL (LOCK 8%) ---
-            sl_raw = curr_price - (1.5 * atr)
-            # LOGIKA KUNCI 8%
-            sl_final = max(sl_raw, curr_price * 0.92)
-            metode_sl = "ATR (1.5x)" if sl_final == sl_raw else "Hard Cap (8%)"
-            
-            risk_amount = curr_price - sl_final
-            tp1 = int(curr_price + (risk_amount * 1.5))
-            tp2 = int(curr_price + (risk_amount * 2.5))
-            tp3 = int(curr_price + (risk_amount * 3.5))
-            rrr = round((tp2 - curr_price) / (curr_price - sl_final), 1)
-
             # ==========================================
-            # KONFIRMASI SINYAL (LOGIKA SCORING 100 POIN)
+            # KALKULASI SKOR (Dipindah ke atas untuk UI)
             # ==========================================
             curr_vol = last['Volume'] if not pd.isna(last['Volume']) else 0
             avg_vol_20 = last['Vol_MA20'] if not pd.isna(last['Vol_MA20']) else 0
@@ -138,16 +110,68 @@ def run_teknikal():
             # Mapping Rekomendasi
             if score >= 70:
                 signal = "STRONG BUY"
-                confidence = "High"
+                confidence = "Tinggi"
             elif score >= 50:
                 signal = "BUY"
-                confidence = "Medium"
+                confidence = "Menengah"
             elif score >= 40:
                 signal = "HOLD"
-                confidence = "Medium"
+                confidence = "Menengah"
             else:
                 signal = "SELL"
-                confidence = "Low"
+                confidence = "Rendah"
+
+            # ==========================================
+            # TAMPILAN HEADER (MIRIP FUNDAMENTAL.PY)
+            # ==========================================
+            clean_ticker = ticker_input.replace(".JK", "")
+            nama_perusahaan = info.get('longName', clean_ticker)
+            status_syariah = "✅ Syariah" if is_syariah(clean_ticker) else "✖️ Non-Syariah"
+
+            # Menampilkan Kode dan Nama Perusahaan
+            st.markdown(f"<h2 style='text-align: center; color: #4ade80;'>🏢 {clean_ticker} - {nama_perusahaan}</h2>", unsafe_allow_html=True)
+            st.markdown(f"<h5 style='text-align: center; margin-top: -15px; color: #a3a3a3;'>Kategori: {status_syariah}</h5>", unsafe_allow_html=True)
+            st.write("")
+            
+            # Menampilkan Bar Skor
+            st.header("🏆 SKOR TEKNIKAL")
+            st.progress(score / 100.0)
+            
+            teks_hasil = f"**Skor: {score}/100** — Sinyal: {signal} (Kepercayaan Data: {confidence})"
+            
+            if score >= 70:
+                st.success(teks_hasil)
+            elif score >= 50:
+                st.info(teks_hasil)
+            elif score >= 40:
+                st.warning(teks_hasil)
+            else:
+                st.error(teks_hasil)
+            
+            st.markdown("---")
+
+            # --- 1. TREND ANALYSIS (Timeframe Check) ---
+            main_trend = "UPTREND" if curr_price > last['MA200'] else "DOWNTREND"
+            # Simulasi Weekly/Monthly berdasarkan kemiringan MA
+            weekly_trend = "Bullish" if last['MA50'] > prev['MA50'] else "Bearish"
+            res_level = df['High'].tail(20).max()
+            sup_level = df['Low'].tail(20).min()
+
+            # --- 2. INDIKATOR TEKNIKAL & 3. PATTERN ---
+            # Deteksi Divergence Sederhana
+            is_div = "Terdeteksi (Bullish)" if (curr_price < prev['Close'] and last['RSI'] > prev['RSI']) else "Tidak Terdeteksi"
+            
+            # --- 5. TRADING SIGNAL & ATR SL (LOCK 8%) ---
+            sl_raw = curr_price - (1.5 * atr)
+            # LOGIKA KUNCI 8%
+            sl_final = max(sl_raw, curr_price * 0.92)
+            metode_sl = "ATR (1.5x)" if sl_final == sl_raw else "Hard Cap (8%)"
+            
+            risk_amount = curr_price - sl_final
+            tp1 = int(curr_price + (risk_amount * 1.5))
+            tp2 = int(curr_price + (risk_amount * 2.5))
+            tp3 = int(curr_price + (risk_amount * 3.5))
+            rrr = round((tp2 - curr_price) / (curr_price - sl_final), 1)
 
             # --- LOGIKA RENTANG ENTRY (SUPPORT DINAMIS) ---
             entry_atas = curr_price
@@ -158,7 +182,6 @@ def run_teknikal():
                 entry_bawah = max(support_dinamis, batas_diskon_2pct)
             else:
                 entry_bawah = batas_diskon_2pct
-            # ==========================================
 
             # --- VISUALISASI CHART ---
             fig = make_subplots(rows=3, cols=1, shared_xaxes=True, vertical_spacing=0.03, row_heights=[0.6, 0.2, 0.2])
@@ -208,7 +231,8 @@ def run_teknikal():
             st.subheader("5. TRADING SIGNAL & PLAN")
             s1, s2, s3 = st.columns(3)
             with s1:
-                st.metric("SINYAL", signal, f"Score: {score}/100 | Conf: {confidence}")
+                # Disederhanakan karena Skor dan Sinyal sudah tampil besar di atas
+                st.metric("SINYAL", signal)
                 st.write(f"**Entry Zone:** Rp {int(entry_bawah):,.0f} - Rp {int(entry_atas):,.0f}")
             with s2:
                 st.error(f"**STOP LOSS**\n\n**Rp {sl_final:,.0f}**\n(Metode: {metode_sl})")
