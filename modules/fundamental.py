@@ -1,270 +1,237 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
+import requests
+from bs4 import BeautifulSoup
 from modules.data_loader import get_full_stock_data, hitung_div_yield_normal
-from modules.universe import is_syariah  # --- MODIFIKASI: Memanggil fungsi dari universe.py ---
+from modules.universe import is_syariah # --- Integrasi Modul Universe ---
 
-def translate_sector(sector_en):
-    """Menerjemahkan sektor ke Bahasa Indonesia"""
-    mapping = {
-        "Financial Services": "Jasa Keuangan",
-        "Basic Materials": "Bahan Baku & Tambang",
-        "Energy": "Energi",
-        "Communication Services": "Telekomunikasi",
-        "Consumer Cyclical": "Konsumsi Siklikal",
-        "Consumer Defensive": "Konsumsi Non-Siklikal",
-        "Healthcare": "Kesehatan",
-        "Industrials": "Industri",
-        "Real Estate": "Properti",
-        "Technology": "Teknologi",
-        "Utilities": "Utilitas"
-    }
-    return mapping.get(sector_en, sector_en)
-
-def hitung_skor_fundamental(info, financials, mean_pe_5y, mean_pbv_5y, div_yield):
-    """Menghitung skor fundamental (Maks 100) berdasarkan sektor & metrik dinamis"""
-    skor = 0
-    sector = info.get('sector', '')
-    industry = info.get('industry', '')
-    
-    # Deteksi Sektor
-    is_bank = 'Bank' in industry or sector == 'Financial Services'
-    is_infra = 'Infrastructure' in industry or sector in ['Utilities', 'Real Estate', 'Industrials']
-    
-    # --- 1. KESEHATAN KEUANGAN (Maks 25) ---
-    if is_bank:
-        car = info.get('capitalAdequacyRatio', 18) 
-        npl = info.get('nonPerformingLoan', 2.5)   
+# --- FUNGSI FALLBACK SCRAPING RASIO BANK ---
+def get_bank_ratios_fallback(ticker):
+    """
+    Mencoba melakukan scraping data CAR dan NPL dari portal finansial.
+    Mengembalikan tuple (car_val, npl_val). Jika gagal, mengembalikan (None, None).
+    """
+    clean_ticker = ticker.replace(".JK", "").upper()
+    car_val, npl_val = None, None
+    try:
+        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
+        url = f"https://www.idnfinancials.com/{clean_ticker}/financial-ratios"
+        res = requests.get(url, headers=headers, timeout=5)
         
-        if car > 20: skor += 15
-        elif car >= 15: skor += 10
-        elif car >= 10: skor += 5
+        if res.status_code == 200:
+            tables = pd.read_html(res.text)
+            for df in tables:
+                if len(df.columns) > 1:
+                    for _, row in df.iterrows():
+                        col_name = str(row[0]).lower()
+                        if 'capital adequacy' in col_name or 'car' in col_name:
+                            car_val = pd.to_numeric(str(row[1]).replace('%', '').strip(), errors='coerce')
+                        elif 'non-performing' in col_name or 'npl' in col_name:
+                            npl_val = pd.to_numeric(str(row[1]).replace('%', '').strip(), errors='coerce')
+    except Exception:
+        pass
         
-        if npl < 2: skor += 10
-        elif npl <= 3.5: skor += 5
-        
-    elif is_infra:
-        der = info.get('debtToEquity', 0) / 100 if info.get('debtToEquity') else 0
-        if der < 1.5: skor += 15
-        elif der <= 2.5: skor += 10
-        elif der <= 4.0: skor += 5
-        
-        icr = 2.0 
-        try:
-            ebit = financials.loc['EBIT'].iloc[0]
-            interest = abs(financials.loc['Interest Expense'].iloc[0])
-            if interest > 0: icr = ebit / interest
-        except:
-            pass
-            
-        if icr > 3.0: skor += 10
-        elif icr >= 1.5: skor += 5
-        
-    else: 
-        der = info.get('debtToEquity', 0) / 100 if info.get('debtToEquity') else 0
-        if der < 0.5: skor += 15
-        elif der <= 1.0: skor += 10
-        elif der <= 2.0: skor += 5
-        
-        cr = info.get('currentRatio', 0)
-        if cr > 1.5: skor += 10
-        elif cr >= 1.0: skor += 5
+    return car_val, npl_val
+# -----------------------------------------------------
 
-    # --- 2. PROFITABILITAS (Maks 25) ---
-    roe = info.get('returnOnEquity', 0) * 100 if info.get('returnOnEquity') else 0
-    if roe > 15: skor += 15
-    elif roe >= 10: skor += 10
-    elif roe >= 5: skor += 5
-    
-    npm = info.get('profitMargins', 0) * 100 if info.get('profitMargins') else 0
-    if npm > 10: skor += 10
-    elif npm >= 5: skor += 5
-
-    # --- 3. VALUASI DINAMIS (Maks 20) ---
-    per = info.get('trailingPE', 0)
-    pbv = info.get('priceToBook', 0)
-    
-    if per > 0 and mean_pe_5y > 0:
-        pe_discount = ((mean_pe_5y - per) / mean_pe_5y) * 100
-        if pe_discount > 20: skor += 10
-        elif pe_discount >= 0: skor += 7
-        elif pe_discount >= -20: skor += 3
-    
-    if pbv > 0 and mean_pbv_5y > 0:
-        pbv_discount = ((mean_pbv_5y - pbv) / mean_pbv_5y) * 100
-        if pbv_discount > 20: skor += 10
-        elif pbv_discount >= 0: skor += 7
-        elif pbv_discount >= -20: skor += 3
-
-    # --- 4. PERTUMBUHAN / GROWTH (Maks 20) ---
-    eps_g = info.get('earningsGrowth', 0) * 100 if info.get('earningsGrowth') else 0
-    if eps_g > 15: skor += 10
-    elif eps_g >= 5: skor += 7
-    elif eps_g >= 0: skor += 3
-    
-    rev_g = info.get('revenueGrowth', 0) * 100 if info.get('revenueGrowth') else 0
-    if rev_g > 10: skor += 10
-    elif rev_g >= 0: skor += 5
-
-    # --- 5. DIVIDEN (Maks 10) ---
-    if div_yield > 5: skor += 10
-    elif div_yield >= 2: skor += 5
-
-    # --- KLASIFIKASI AKHIR ---
-    if skor >= 80: kelas = "Strong Buy (Fundamental Sangat Sehat & Undervalued)"
-    elif skor >= 60: kelas = "Investable / Accumulate (Fundamental Baik)"
-    elif skor >= 40: kelas = "Watchlist / Hold (Pas-pasan atau Kemahalan)"
-    else: kelas = "High Risk / Sell (Risiko Tinggi)"
-    
-    return skor, kelas
-
-def run_fundamental():
-    st.title("🏛️ Analisa Fundamental Pro (Deep Value Investigation)")
+def run_analisa_cepat():
+    st.title("⚡ Analisa Cepat Pro (Scoring 100 & Dynamic Entry)")
     st.markdown("---")
 
     col_inp, _ = st.columns([1, 2])
     with col_inp:
-        ticker_input = st.text_input("Kode Saham:", value="ASII").upper()
+        ticker_input = st.text_input("Kode Saham (Quick Scan):", value="BBCA").upper()
     ticker = ticker_input if ticker_input.endswith(".JK") else f"{ticker_input}.JK"
 
-    if st.button(f"Bedah Fundamental {ticker_input}"):
-        with st.spinner("Mengkalkulasi rata-rata historis & tren keuangan..."):
-            # --- STANDAR ANTI-ERROR ---
+    if st.button(f"Jalankan Analisa {ticker_input}"):
+        with st.spinner("Mengkalkulasi indikator teknikal & fundamental..."):
+            # --- 1. STANDAR ANTI-ERROR ---
             data = get_full_stock_data(ticker)
             info = data['info']
-            financials = data['financials']
-            balance_sheet = data.get('balance_sheet', pd.DataFrame())
-            history = data['history']
+            df = data['history']
+            financials = data.get('financials', pd.DataFrame()) 
             
-            if not info or financials.empty:
-                st.error("Data tidak lengkap. Mohon tunggu sejenak atau bersihkan cache.")
+            if df.empty or not info:
+                st.error("Data gagal dimuat. Mohon tunggu 1 menit lalu 'Clear Cache' di pojok kanan atas.")
                 return
 
-            curr_price = info.get('currentPrice', 0)
+            # --- 2. DATA TEKNIKAL & INDIKATOR SCORING ---
+            df['MA20'] = df['Close'].rolling(20).mean()
+            df['MA200'] = df['Close'].rolling(200).mean()
             
-            # --- PERSIAPAN VARIABEL VALUASI DINAMIS ---
-            try:
-                mean_pe_5y = info.get('trailingPE', 15) * 0.95 
-                mean_pbv_5y = info.get('priceToBook', 1.5) * 0.9 
-            except:
-                mean_pe_5y, mean_pbv_5y = 15.0, 1.5
-                
-            div_yield = hitung_div_yield_normal(info)
+            # Hitung Value Transaksi
+            df['Value'] = df['Close'] * df['Volume']
+            avg_value_ma20 = df['Value'].rolling(20).mean().iloc[-1]
 
-            # --- 🏆 SCORING FUNDAMENTAL ---
-            skor_akhir, klasifikasi = hitung_skor_fundamental(info, financials, mean_pe_5y, mean_pbv_5y, div_yield)
-            
-            st.header("🏆 SKOR FUNDAMENTAL")
-            st.progress(skor_akhir / 100.0)
-            
-            if skor_akhir >= 80:
-                st.success(f"**Skor: {skor_akhir}/100** — {klasifikasi}")
-            elif skor_akhir >= 60:
-                st.info(f"**Skor: {skor_akhir}/100** — {klasifikasi}")
-            elif skor_akhir >= 40:
-                st.warning(f"**Skor: {skor_akhir}/100** — {klasifikasi}")
-            else:
-                st.error(f"**Skor: {skor_akhir}/100** — {klasifikasi}")
-            st.markdown("---")
+            # Indikator Teknikal Baru untuk Scoring 100 Poin
+            df['Vol_MA20'] = df['Volume'].rolling(20).mean()
+            df['Typical_Price'] = (df['High'] + df['Low'] + df['Close']) / 3
+            df['VWAP_20'] = (df['Typical_Price'] * df['Volume']).rolling(20).sum() / df['Volume'].rolling(20).sum()
+            df['EMA9'] = df['Close'].ewm(span=9, adjust=False).mean()
+            df['EMA21'] = df['Close'].ewm(span=21, adjust=False).mean()
 
-            # --- 1. OVERVIEW PERUSAHAAN ---
-            st.header("1. OVERVIEW PERUSAHAAN")
-            mkt_cap = info.get('marketCap', 0)
-            posisi = "Market Leader" if mkt_cap > 150e12 else "Challenger" if mkt_cap > 20e12 else "Niche Player"
-            
-            st.write(f"**Bisnis Utama:** Emiten bergerak di sektor **{translate_sector(info.get('sector'))}**.")
-            
-            # --- MODIFIKASI: Menggunakan fungsi is_syariah dari universe.py ---
-            if is_syariah(ticker_input):
-                teks_syariah = "✅ **Masuk Daftar Efek Syariah (ISSI)**"
-            else:
-                teks_syariah = "❓ **Belum/Bukan Efek Syariah**"
-            st.write(f"**Kategori Syariah:** {teks_syariah}")
-            
-            st.write(f"**Posisi Industri:** Bertindak sebagai **{posisi}** dengan Market Cap Rp {mkt_cap/1e12:,.1f} Triliun.")
-            st.write(f"**Competitive Advantage:** Memiliki skala ekonomi kuat dan dominasi distribusi di pasar domestik.")
+            # Kalkulasi RSI
+            delta = df['Close'].diff()
+            gain = (delta.where(delta > 0, 0)).rolling(14).mean()
+            loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
+            rsi = 100 - (100 / (1 + (gain/loss))).iloc[-1]
 
-            # --- 2. ANALISA KEUANGAN (TREN 3-5 TAHUN) ---
-            st.header("2. ANALISA KEUANGAN")
-            try:
-                df_fin = financials.T.sort_index().tail(5)
-                df_fin['Net Margin (%)'] = (df_fin['Net Income'] / df_fin['Total Revenue']) * 100
-                
-                st.write("**Tren Pendapatan & Laba Bersih:**")
-                st.line_chart(df_fin[['Total Revenue', 'Net Income']])
-                
-                f1, f2, f3 = st.columns(3)
-                f1.metric("ROE", f"{info.get('returnOnEquity', 0)*100:.2f}%")
-                f2.metric("Debt to Equity", f"{info.get('debtToEquity', 0)/100:.2f}x")
-                f3.metric("Current Ratio", f"{info.get('currentRatio', 0):.2f}x")
-                
-                eps_growth = info.get('earningsGrowth', 0) * 100
-                st.write(f"**EPS Growth Trend:** Rata-rata pertumbuhan tahunan mencapai {eps_growth:.1f}%")
-            except:
-                st.warning("Gagal memproses visualisasi tren keuangan.")
+            # Cek ketersediaan data MA200 & ekstrak nilai
+            ma200_val = 0 if pd.isna(df['MA200'].iloc[-1]) else df['MA200'].iloc[-1]
+            ma20_val = df['MA20'].iloc[-1]
+            vwap_val = df['VWAP_20'].iloc[-1] if not pd.isna(df['VWAP_20'].iloc[-1]) else df['Close'].iloc[-1]
+            
+            curr = df['Close'].iloc[-1]
+            prev_close = df['Close'].iloc[-2]
+            
+            # --- 3. SCORING FUNDAMENTAL & TEKNIKAL ---
+            f_score = 0
+            t_score = 0
+            
+            # Variabel Penghitung Konfidensi
+            total_metrik_fun = 7
+            metrik_tersedia = 0
+            
+            # === A. PENILAIAN FUNDAMENTAL (Skala 100 Poin) ===
+            sector = str(info.get('sector', '')).lower()
+            industry = str(info.get('industry', '')).lower()
+            name = str(info.get('longName', '')).lower()
+            
+            is_bank = 'bank' in industry or 'bank' in sector or 'bank' in name or sector == 'financial services'
+            is_infra = 'infrastructure' in industry or sector in ['utilities', 'real estate', 'industrials'] or 'construction' in industry or 'karya' in name
+            
+            raw_der = info.get('debtToEquity', 0)
+            der_ratio = raw_der / 100 if raw_der > 10 else raw_der
 
-            # --- 3. VALUASI (DINAMIS 5 TAHUN) ---
-            st.header("3. VALUASI")
-            curr_pe = info.get('trailingPE', 0)
+            lbl_solv = ""
+            car_approx, npl_approx = 0, 0
+            car_scraped, npl_scraped = None, None
+
+            # 1. KESEHATAN KEUANGAN (Maks 25)
+            if is_bank:
+                car_scraped, npl_scraped = get_bank_ratios_fallback(ticker)
+                
+                # Cek ketersediaan data untuk konfidensi
+                if car_scraped is not None or info.get('capitalAdequacyRatio'): metrik_tersedia += 1
+                
+                npl_approx = npl_scraped if (npl_scraped is not None and not pd.isna(npl_scraped)) else info.get('nonPerformingLoan', 2.5)
+                if npl_approx < 2: f_score += 10
+                elif npl_approx <= 3.5: f_score += 5
+                
+                if car_scraped is not None and not pd.isna(car_scraped):
+                    car_approx = car_scraped
+                    lbl_solv = f"CAR (Asli) {car_approx:.1f}% | NPL {npl_approx:.1f}%"
+                else:
+                    total_assets = info.get('totalAssets', 1)
+                    total_equity = info.get('totalStockholderEquity', 0)
+                    car_approx = (total_equity / total_assets) * 100 if total_assets > 0 else info.get('capitalAdequacyRatio', 18)
+                    lbl_solv = f"Est. CAR {car_approx:.1f}% | NPL {npl_approx:.1f}%"
+                    
+                if car_approx > 20: f_score += 15
+                elif car_approx >= 15: f_score += 10
+                elif car_approx >= 10: f_score += 5
+                
+            elif is_infra:
+                if info.get('debtToEquity') is not None: metrik_tersedia += 1
+                if der_ratio < 1.5: f_score += 15
+                elif der_ratio <= 2.5: f_score += 10
+                elif der_ratio <= 4.0: f_score += 5
+                
+                icr = 2.0
+                try:
+                    ebit = financials.loc['EBIT'].iloc[0]
+                    interest = abs(financials.loc['Interest Expense'].iloc[0])
+                    if interest > 0: icr = ebit / interest
+                except: pass
+                
+                if icr > 3.0: f_score += 10
+                elif icr >= 1.5: f_score += 5
+                lbl_solv = f"DER {der_ratio:.2f}x | ICR {icr:.1f}x"
+                
+            else: # Sektor Umum
+                if info.get('debtToEquity') is not None: metrik_tersedia += 1
+                if der_ratio < 0.5: f_score += 15
+                elif der_ratio <= 1.0: f_score += 10
+                elif der_ratio <= 2.0: f_score += 5
+                
+                cr = info.get('currentRatio', 0)
+                if cr > 1.5: f_score += 10
+                elif cr >= 1.0: f_score += 5
+                lbl_solv = f"DER {der_ratio:.2f}x | CR {cr:.2f}x"
+
+            # 2. PROFITABILITAS (Maks 25)
+            if info.get('returnOnEquity') is not None: metrik_tersedia += 1
+            roe = info.get('returnOnEquity', 0) * 100 if info.get('returnOnEquity') else 0
+            if roe > 15: f_score += 15
+            elif roe >= 10: f_score += 10
+            elif roe >= 5: f_score += 5
+            
+            if info.get('profitMargins') is not None: metrik_tersedia += 1
+            npm = info.get('profitMargins', 0) * 100 if info.get('profitMargins') else 0
+            if npm > 10: f_score += 10
+            elif npm >= 5: f_score += 5
+
+            # 3. VALUASI DINAMIS (Maks 20)
+            if info.get('trailingPE') is not None: metrik_tersedia += 1
+            curr_per = info.get('trailingPE', 0)
+            
+            if info.get('priceToBook') is not None: metrik_tersedia += 1
             curr_pbv = info.get('priceToBook', 0)
             
-            # Harga Wajar Graham
-            eps = info.get('trailingEps', 0)
-            bvps = info.get('bookValue', 0)
-            fair_price = np.sqrt(22.5 * eps * bvps) if (eps > 0 and bvps > 0) else curr_price
+            mean_pe_5y = info.get('trailingPE', 15) * 0.95 
+            mean_pbv_5y = info.get('priceToBook', 1.5) * 0.9 
+            
+            if curr_per > 0 and mean_pe_5y > 0:
+                pe_discount = ((mean_pe_5y - curr_per) / mean_pe_5y) * 100
+                if pe_discount > 20: f_score += 10
+                elif pe_discount >= 0: f_score += 7
+                elif pe_discount >= -20: f_score += 3
+            
+            if curr_pbv > 0 and mean_pbv_5y > 0:
+                pbv_discount = ((mean_pbv_5y - curr_pbv) / mean_pbv_5y) * 100
+                if pbv_discount > 20: f_score += 10
+                elif pbv_discount >= 0: f_score += 7
+                elif pbv_discount >= -20: f_score += 3
 
-            v1, v2, v3 = st.columns(3)
-            v1.metric("PER vs Rata-rata 5th", f"{curr_pe:.2f}x", f"Rata-rata: {mean_pe_5y:.1f}x")
-            v2.metric("PBV vs Rata-rata 5th", f"{curr_pbv:.2f}x", f"Rata-rata: {mean_pbv_5y:.1f}x")
-            v3.metric("Dividend Yield", f"{div_yield:.2f}%")
+            # 4. PERTUMBUHAN / GROWTH (Maks 20)
+            if info.get('earningsGrowth') is not None: metrik_tersedia += 1
+            eps_g = info.get('earningsGrowth', 0) * 100 if info.get('earningsGrowth') else 0
+            if eps_g > 15: f_score += 10
+            elif eps_g >= 5: f_score += 7
+            elif eps_g >= 0: f_score += 3
             
-            status = "UNDERVALUED" if curr_price < fair_price else "OVERVALUED"
-            st.success(f"🎯 **Harga Wajar Saat Ini: Rp {fair_price:,.0f}** | Status: **{status}**")
+            cagr_rev = 0
+            if not financials.empty and 'Total Revenue' in financials.index:
+                try:
+                    revs = financials.loc['Total Revenue']
+                    if len(revs) >= 2:
+                        years = len(revs) - 1
+                        cagr_rev = ((revs.iloc[0] / revs.iloc[-1]) ** (1/years)) - 1
+                except: pass
+            
+            if info.get('revenueGrowth') is not None or cagr_rev != 0: metrik_tersedia += 1
+            rev_g = cagr_rev * 100 if cagr_rev != 0 else (info.get('revenueGrowth', 0) * 100 if info.get('revenueGrowth') else 0)
+            if rev_g > 10: f_score += 10
+            elif rev_g >= 0: f_score += 5
 
-            # --- 4. PROSPEK BISNIS ---
-            st.header("4. PROSPEK BISNIS")
-            st.write("• **Outlook:** Sektor ini berpotensi menguat seiring stabilitas makroekonomi.")
-            st.write("• **Growth Catalyst:** Digitalisasi operasional dan ekspansi pasar regional.")
-            st.write("• **Risk Factors:** Fluktuasi harga komoditas dan perubahan regulasi sektoral.")
+            # 5. DIVIDEN (Maks 10)
+            div_yield = hitung_div_yield_normal(info)
+            if div_yield > 5: f_score += 10
+            elif div_yield >= 2: f_score += 5
 
-            # --- 5. REKOMENDASI & TRADING PLAN ---
-            st.header("5. REKOMENDASI")
-            
-            # --- MODIFIKASI: Kalkulasi Support Dinamis untuk Rentang Entry (Max 3%) ---
-            atr = (history['High'] - history['Low']).tail(14).mean() if not history.empty else (curr_price * 0.02)
-            
-            # Support dihitung dari Harga saat ini dikurangi ATR, tetapi penurunannya dikunci maksimal 3%
-            support_dinamis = curr_price - atr
-            batas_bawah_entry = max(support_dinamis, curr_price * 0.97)
-            
-            sl_raw = curr_price - (1.5 * atr)
-            sl_final = max(sl_raw, curr_price * 0.92) # KUNCI RESIKO 8%
-            
-            target_short = fair_price if fair_price > curr_price else curr_price * 1.15
-            target_long = target_short * 1.25
-            
-            sig = "BUY" if curr_price < fair_price else "HOLD"
-            
-            st.subheader(f"Keputusan: **{sig}**")
-            
-            r0, r1, r2, r3 = st.columns(4)
-            with r0:
-                st.write("**Area Entry Ideal:**")
-                st.success(f"Rp {batas_bawah_entry:,.0f} - Rp {curr_price:,.0f}")
-            with r1:
-                st.write("**Target Jangka Pendek:**")
-                st.markdown(f"### Rp {target_short:,.0f}")
-            with r2:
-                st.write("**Target Jangka Panjang:**")
-                st.markdown(f"### Rp {target_long:,.0f}")
-            with r3:
-                st.write("**Stop Loss (Max 8%):**")
-                st.error(f"Rp {sl_final:,.0f}")
-            
-            st.caption(f"Proteksi Modal: {'ATR 1.5x' if sl_final == sl_raw else 'Maksimal 8% Lock'}")
+            # --- KALKULASI LEVEL KONFIDENSI ---
+            konfidensi_pct = (metrik_tersedia / total_metrik_fun) * 100
+            if konfidensi_pct >= 85:
+                label_konfidensi = f"<span style='color:#00ff00;'>Tinggi 🟢 ({konfidensi_pct:.0f}%)</span>"
+            elif konfidensi_pct >= 50:
+                label_konfidensi = f"<span style='color:#ffcc00;'>Sedang 🟡 ({konfidensi_pct:.0f}%)</span>"
+            else:
+                label_konfidensi = f"<span style='color:#ff0000;'>Rendah 🔴 ({konfidensi_pct:.0f}%) - Hati-hati data bolong</span>"
 
-            # --- MODIFIKASI: Pernyataan Disclaimer di akhir laporan ---
-            st.markdown("---")
-            st.caption("""
-            ⚠️ **DISCLAIMER:** Segala informasi, analisa fundamental, dan *trading plan* yang disajikan oleh modul aplikasi ini semata-mata bersifat informatif dan edukatif, serta dihasilkan oleh algoritma berdasarkan data historis yang tersedia. Modul ini bukan merupakan paksaan, ajakan, ataupun rekomendasi mutlak untuk melakukan transaksi jual/beli saham. Keputusan investasi dan segala risiko kerugian sepenuhnya berada di tangan Anda. Kinerja masa lalu tidak menjamin hasil di masa depan.
-            """)
+            # === B. PENILAIAN TEKNIKAL (Skala 100 Poin) ===
+            t_score = 0
+
+            # 1. Relative Volume (20 Poin)
+            curr_vol = df['Volume'].iloc[-1] if not pd.isna(df['Volume'].iloc[-1]) else 0
+            avg_vol_20 = df['Vol_MA20'].iloc[-1] if not pd.isna(df['Vol_MA2
