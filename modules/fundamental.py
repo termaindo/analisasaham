@@ -234,4 +234,107 @@ def run_analisa_cepat():
 
             # 1. Relative Volume (20 Poin)
             curr_vol = df['Volume'].iloc[-1] if not pd.isna(df['Volume'].iloc[-1]) else 0
-            avg_vol_20 = df['Vol_MA20'].iloc[-1] if not pd.isna(df['Vol_MA2
+            avg_vol_20 = df['Vol_MA20'].iloc[-1] if not pd.isna(df['Vol_MA20'].iloc[-1]) else 0
+            if curr_vol > avg_vol_20: t_score += 20
+
+            # 2. VWAP Alignment (20 Poin)
+            if curr > vwap_val: t_score += 20
+
+            # 3. RSI Momentum (20 Poin)
+            if 50 < rsi < 70: t_score += 20
+
+            # 4. EMA 9/21 Cross (20 Poin)
+            ema9_val = df['EMA9'].iloc[-1]
+            ema21_val = df['EMA21'].iloc[-1]
+            if ema9_val > ema21_val: t_score += 20
+
+            # 5. Price Action/Gap (10 Poin)
+            if (curr - prev_close) / prev_close > 0.02: t_score += 10
+
+            # 6. Value MA20 (10 Poin)
+            if avg_value_ma20 > 5e9: t_score += 10
+
+
+            # --- 4. DATA PROCESSING LAINNYA & RENTANG ENTRY ---
+            # Kalkulasi ATR untuk SL (Lock 8%)
+            high_low = df['High'] - df['Low']
+            high_close = np.abs(df['High'] - df['Close'].shift())
+            low_close = np.abs(df['Low'] - df['Close'].shift())
+            ranges = pd.concat([high_low, high_close, low_close], axis=1)
+            atr = ranges.max(axis=1).rolling(14).mean().iloc[-1]
+            
+            sl_raw = curr - (1.5 * atr)
+            sl_final = max(sl_raw, curr * 0.92) # KUNCI MAX LOSS 8%
+            
+            # LOGIKA RENTANG ENTRY (Support Dinamis, Batas Diskon Maksimal 3%)
+            entry_atas = curr
+            support_dinamis = max(vwap_val, ma20_val)
+            batas_diskon_3pct = curr * 0.97
+            
+            if support_dinamis < curr:
+                entry_bawah = max(support_dinamis, batas_diskon_3pct)
+            else:
+                entry_bawah = batas_diskon_3pct
+                
+            avg_entry = (entry_atas + entry_bawah) / 2
+            
+            tp = int(avg_entry + (avg_entry - sl_final) * 2.5) # RRR 1:2.5
+            risk_pct = ((avg_entry - sl_final) / avg_entry) * 100
+            reward_pct = ((tp - avg_entry) / avg_entry) * 100
+            
+            # Tentukan Sentimen
+            if curr > ma20_val and curr > ma200_val: sentiment = "BULLISH (Sangat Kuat) 🐂"
+            elif curr > ma20_val: sentiment = "MILD BULLISH (Jangka Pendek) 🐃"
+            elif curr < ma200_val: sentiment = "BEARISH (Hati-hati) 🐻"
+            else: sentiment = "NEUTRAL / SIDEWAYS 😐"
+
+            # Rekomendasi 
+            if f_score >= 80 and t_score >= 70: rekomen = "STRONG BUY"
+            elif f_score >= 60 and t_score >= 50: rekomen = "BUY / ACCUMULATE"
+            elif t_score < 40 or f_score < 40: rekomen = "SELL / AVOID"
+            else: rekomen = "HOLD / WAIT"
+
+            color_rec = "#00ff00" if "BUY" in rekomen else "#ffcc00" if "HOLD" in rekomen else "#ff0000"
+            status_syariah_teks = "✅ Masuk Daftar ISSI" if is_syariah(ticker_input) else "❌ Belum/Bukan Efek Syariah"
+
+            # --- 5. TAMPILAN OUTPUT ---
+            html_output = f"""
+            <div style="background-color:#1e2b3e; padding:25px; border-radius:12px; border-left:10px solid {color_rec}; color:#e0e0e0; font-family:sans-serif;">
+                <h3 style="margin-top:0; color:white; margin-bottom:5px;">{info.get('longName', ticker)} ({ticker})</h3>
+                <p style="margin-top:0; font-size:14px; color:#b0bec5; margin-bottom:15px;">
+                    Sektor: <b>{sector.title()}</b> | Kategori Syariah: <b>{status_syariah_teks}</b>
+                </p>
+                <ul style="line-height:1.8; padding-left:20px; font-size:16px;">
+                    <li><b>1. Fundamental Score ({f_score}/100):</b> ROE {roe:.1f}%, {lbl_solv}, EPS Grw {eps_g:.1f}%, Rev Grw {rev_g:.1f}%.
+                        <br><span style="font-size:14px;"><i>Tingkat Kepercayaan Data: {label_konfidensi}</i></span>
+                    </li>
+                    <li><b>2. Technical Score ({t_score}/100):</b> Value Rata2 Rp {avg_value_ma20/1e9:.1f} M, RSI {rsi:.1f}.</li>
+                    <li><b>3. Sentiment Pasar:</b> <b>{sentiment}</b></li>
+                    <li><b>4. Alasan Utama:</b> Tren {'Positif' if t_score >= 50 else 'Negatif'}, Valuasi (PER {curr_per:.1f}x), Div. Yield {div_yield:.2f}%.</li>
+                    <li><b>5. Risk Utama:</b> Volatilitas pasar & Potensi koreksi jika gagal bertahan di area Support.</li>
+                    <li><b>6. Rekomendasi Final:</b> <span style="color:{color_rec}; font-weight:bold; font-size:18px;">{rekomen}</span></li>
+                    <li><b>7. Trading Plan:</b><br>
+                        • Harga Sekarang: Rp {int(curr):,.0f}<br>
+                        • Usulan Entry: Rp {int(entry_bawah):,.0f} - Rp {int(entry_atas):,.0f} (Maks -3%)<br>
+                        • Titik TP: Rp {tp:,.0f} (Potensi Reward: +{reward_pct:.1f}%)<br>
+                        • Titik SL: Rp {sl_final:,.0f} (Batas Risiko: -{risk_pct:.1f}%)
+                    </li>
+                    <li><b>8. Timeframe:</b> {'Investasi Jangka Panjang' if f_score >= 80 else 'Swing Trading Pendek'}.</li>
+                </ul>
+            </div>
+            """
+            st.markdown(html_output, unsafe_allow_html=True)
+            
+            with st.expander("Lihat Detail Data Mentah"):
+                st.write(f"Sektor Terdeteksi: {sector.title()} | Bank? {is_bank}")
+                st.write(f"Raw DER: {raw_der} | Normalized Ratio: {der_ratio:.2f}")
+                st.write(f"Support Dinamis (VWAP/MA20): Rp {int(support_dinamis):,.0f}")
+                st.write(f"Metrik Fundamental Tersedia: {metrik_tersedia} dari {total_metrik_fun} indikator")
+                
+                if is_bank: 
+                    st.write(f"CAR Terpakai: {car_approx:.2f}% ({'Hasil Scraping' if car_scraped is not None else 'Estimasi Proxy'})")
+                    st.write(f"NPL Terpakai: {npl_approx:.2f}% ({'Hasil Scraping' if npl_scraped is not None else 'Estimasi Proxy'})")
+
+            # --- 6. DISCLAIMER ---
+            st.markdown("---")
+            st.caption("⚠️ **DISCLAIMER:** Laporan analisa ini dihasilkan secara otomatis menggunakan perhitungan algoritma indikator teknikal dan fundamental. Seluruh informasi yang disajikan bukan merupakan ajakan, rekomendasi pasti, atau paksaan untuk membeli/menjual saham. Keputusan investasi dan trading sepenuhnya menjadi tanggung jawab pribadi masing-masing investor. Selalu terapkan manajemen risiko yang baik dan *Do Your Own Research* (DYOR).")
