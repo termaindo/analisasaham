@@ -7,92 +7,68 @@ st.set_page_config(
     page_title="Expert Stock Pro",
     page_icon="📈",
     layout="wide",
-    initial_sidebar_state="collapsed"
+    initial_sidebar_state="expanded"
 )
 
-# --- 2. SISTEM KEAMANAN (STREAMLIT SECRETS) ---
-# Diasumsikan Bapak menyimpan kode di Secrets dengan nama: ACCESS_CODE
-KODE_AKSES_VALID = st.secrets["ACCESS_CODE"]
+# --- 2. SISTEM AKSES (GERBANG KONVERSI) ---
+# Ganti 'RAHASIA123' dengan sistem validasi Bapak atau input dari Lynk.id
+KODE_AKSES_BENAR = "CUANPRO" 
 
 if 'authenticated' not in st.session_state:
     st.session_state['authenticated'] = False
 
 def check_access():
-    if st.session_state.input_user_kode == KODE_AKSES_VALID:
+    if st.session_state['input_kode'] == KODE_AKSES_BENAR:
         st.session_state['authenticated'] = True
+        st.success("Akses Diterima! Membuka Dashboard...")
+        st.rerun()
     else:
-        st.error("⚠️ Kode akses salah. Pastikan Anda menyalin kode dengan benar dari Lynk.id.")
+        st.error("Kode akses salah atau sudah kadaluwarsa.")
 
-# --- 3. HALAMAN GERBANG (HIGH CONVERSION COPYWRITING) ---
+# --- TAMPILAN HALAMAN JUALAN (KONTEN KONVERSI) ---
 if not st.session_state['authenticated']:
-    # Centering content with CSS
     st.markdown("""
-        <style>
-        .main-container {
-            text-align: center;
-            padding: 3rem;
-            border-radius: 15px;
-            background: linear-gradient(145deg, #1e1e1e, #252525);
-            border: 1px solid #2ECC71;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
-        }
-        .cta-button {
-            background-color: #2ECC71 !important;
-            color: white !important;
-            font-weight: bold !important;
-            padding: 15px 30px !important;
-            text-decoration: none !important;
-            border-radius: 8px !important;
-            display: inline-block;
-            margin-top: 20px;
-        }
-        </style>
-    """, unsafe_allow_html=True)
-
-    st.markdown("""
-        <div class="main-container">
-            <h1 style="color: #2ECC71;">💰 Berhenti Menebak, Mulai Menang.</h1>
-            <p style="font-size: 1.3em; color: #ecf0f1;">
-                Ubah cara Anda menganalisa pasar dengan <b>Expert Stock Pro</b>.<br>
-                Satu dashboard untuk keputusan investasi yang presisi, cepat, dan objektif.
-            </p>
+        <div style="text-align: center; padding: 20px; background-color: #1E1E1E; border-radius: 15px; border: 1px solid #2ECC71;">
+            <h1 style="color: #2ECC71; margin-bottom: 10px;">🚀 Level Up Analisa Saham Anda ke Standar Institusi!</h1>
+            <p style="font-size: 1.2em; color: #FFFFFF;">Berhenti menebak arah pasar. Gunakan data, bukan perasaan.</p>
         </div>
     """, unsafe_allow_html=True)
 
-    col1, col2 = st.columns([1, 1], gap="large")
+    col_left, col_right = st.columns([1, 1])
 
-    with col1:
-        st.markdown("### 🛠️ Apa yang Anda Dapatkan?")
+    with col_left:
         st.markdown("""
-        * 🚀 **Screening Instant:** Temukan saham 'salah harga' sebelum bandar bergerak.
-        * 📊 **Teknikal Pro:** Indikator otomatis yang sudah dikalibrasi untuk market IHSG.
-        * 💎 **Dividend Hunter:** Kalkulator proyeksi passive income yang akurat.
-        * 🛡️ **Risk Manager:** Level Stop Loss & Target Price yang dihitung secara matematis.
+        ### 🧐 Mengapa Expert Stock Pro?
+        Banyak trader rugi karena **telat entry** atau **salah pilih emiten** akibat data yang berantakan. Kami menyatukan semuanya untuk Anda:
         
-        *Didisain khusus untuk investor yang ingin hasil profesional tanpa harus pusing melihat ratusan tab browser.*
+        * ✅ **6 Modul Analisa Premium:** Dari Teknikal Pro hingga Kalkulator Dividen.
+        * ✅ **Screening Otomatis:** Temukan saham *undervalued* dalam hitungan detik.
+        * ✅ **Risk Management:** Fitur Stop Loss & Target Price otomatis di setiap analisa.
+        * ✅ **Data Real-Time:** Akses langsung ke data pasar Bursa Efek Indonesia.
+        
+        **Jangan biarkan peluang cuan lewat begitu saja hanya karena Anda kurang tools.**
         """)
 
-    with col2:
-        st.write("### 🔑 Akses Dashboard")
-        st.text_input("Masukkan Kode Akses Anda:", type="password", key="input_user_kode", placeholder="Paste kode di sini...")
-        st.button("Buka Akses Sekarang", on_click=check_access, use_container_width=True)
+    with col_right:
+        st.info("### 🔑 Masukkan Kode Akses")
+        st.text_input("Kode unik Anda:", type="password", key="input_kode")
+        st.button("Buka Akses Dashboard", on_click=check_access, use_container_width=True)
         
         st.markdown("---")
         st.markdown("""
-            <div style="text-align: center;">
-                <p style="margin-bottom: 10px;">Belum punya kode akses atau masa aktif habis?</p>
-                <a href="https://lynk.id/musa_tanaja" target="_blank" class="cta-button">
-                    DAPATKAN KODE AKSES INSTAN DI SINI
-                </a>
-                <p style="font-size: 0.8em; color: #95a5a6; margin-top: 15px;">
-                    ⚡ Pembayaran otomatis & kode dikirim detik ini juga via Lynk.id
-                </p>
-            </div>
+        <div style="text-align: center;">
+            <p style="color: #A0A0A0;">Belum punya kode akses?</p>
+            <a href="https://lynk.id/musa_tanaja" target="_blank">
+                <button style="background-color: #2ECC71; color: white; padding: 12px 24px; border: none; border-radius: 8px; cursor: pointer; width: 100%; font-weight: bold; font-size: 1.1em;">
+                    DAPATKAN KODE AKSES SEKARANG (PROMO TERBATAS)
+                </button>
+            </a>
+            <p style="font-size: 0.8em; color: #888; margin-top: 10px;">💳 Aktivasi Instan via Lynk.id</p>
+        </div>
         """, unsafe_allow_html=True)
-    
-    st.stop() # Mengunci semua fitur di bawah agar tidak dimuat sebelum login
+    st.stop() # Hentikan eksekusi kode di bawah jika belum login
 
-# --- 4. IMPORT MODUL (HANYA JIKA SUDAH AUTHENTICATED) ---
+# --- 3. LANJUT KE LOAD MODUL (HANYA JIKA SUDAH LOGIN) ---
 def load_module(module_name):
     try:
         return importlib.import_module(f"modules.{module_name}")
@@ -100,7 +76,6 @@ def load_module(module_name):
         st.error(f"🚨 Gagal memuat {module_name}.py. Error: {e}")
         return None
 
-# Load semua modul
 mod_screening = load_module("screening")
 mod_cepat = load_module("analisa_cepat")
 mod_teknikal = load_module("teknikal")
@@ -108,6 +83,17 @@ mod_fundamental = load_module("fundamental")
 mod_dividen = load_module("dividen")
 mod_perbandingan = load_module("perbandingan")
 
-# --- 5. LOGIKA MENU (LANJUTAN KODE BAPAK) ---
-st.sidebar.title("🛡️ Expert Stock Pro")
-# ... Tambahkan navigasi menu di sini ...
+# --- 4. NAVIGATION SIDEBAR ---
+with st.sidebar:
+    st.title("🛡️ Expert Stock Pro")
+    menu = st.radio("Pilih Menu Analisa:", 
+                   ["Dashboard", "Screening Saham", "Analisa Cepat", "Teknikal Pro", "Fundamental Depth", "Dividen Hunter", "Bandingkan Emiten"])
+    
+    if st.button("Log Out"):
+        st.session_state['authenticated'] = False
+        st.rerun()
+
+# Logika navigasi menu selanjutnya...
+if menu == "Screening Saham":
+    mod_screening.run_screening()
+# ... (lanjutkan untuk menu lainnya)
