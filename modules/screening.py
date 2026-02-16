@@ -101,68 +101,40 @@ def run_screening():
                 score = 0
                 alasan = []
 
-                # A. VWAP Alignment (25 Poin)
-                if curr_price > last['VWAP']:
-                    score += 25; alasan.append("Above VWAP")
+                if curr_price > last['VWAP']: score += 25; alasan.append("Above VWAP")
+                if last['Volume'] > (avg_vol_20 * 1.2): score += 20; alasan.append("Volume Breakout")
+                if pd.notna(last['MA200']) and curr_price >= last['MA200']: score += 15; alasan.append("Uptrend (Above MA200)")
+                if avg_val_20 > 5e9: score += 10; alasan.append("Liquid (>5M)")
                 
-                # B. Relative Volume (20 Poin)
-                if last['Volume'] > (avg_vol_20 * 1.2): 
-                    score += 20; alasan.append("Volume Breakout")
-
-                # C. Harga >= MA200 (15 Poin)
-                if pd.notna(last['MA200']) and curr_price >= last['MA200']:
-                    score += 15; alasan.append("Uptrend (Above MA200)")
-                    
-                # D. Value MA20 (10 Poin)
-                if avg_val_20 > 5e9:
-                    score += 10; alasan.append("Liquid (>5M)")
-
-                # E. Price Action/Gap (10 Poin)
                 change_pct = ((curr_price - prev['Close']) / prev['Close']) * 100
-                if change_pct > 2.0:
-                    score += 10; alasan.append(f"Strong Move +{change_pct:.1f}%")
-
-                # F. EMA 9/21 Cross (10 Poin)
-                if last['EMA9'] > last['EMA21']:
-                    score += 10; alasan.append("EMA Golden Cross")
+                if change_pct > 2.0: score += 10; alasan.append(f"Strong Move +{change_pct:.1f}%")
                 
-                # G. RSI Momentum & Trend (10 Poin Total)
+                if last['EMA9'] > last['EMA21']: score += 10; alasan.append("EMA Golden Cross")
+                
                 curr_rsi = last['RSI']
                 prev_rsi = prev['RSI']
                 rsi_trend_icon = "↗️" if curr_rsi > prev_rsi else "↘️"
                 
-                if curr_rsi > 50:
-                    score += 5 
-                if curr_rsi > prev_rsi:
-                    score += 5 
-                
-                if curr_rsi > 50 or curr_rsi > prev_rsi:
-                    alasan.append("RSI Positif")
-
-                if curr_price > prev['High'] and "Breakout Prev High" not in alasan:
-                    alasan.append("Breakout Prev High")
+                if curr_rsi > 50: score += 5 
+                if curr_rsi > prev_rsi: score += 5 
+                if curr_rsi > 50 or curr_rsi > prev_rsi: alasan.append("RSI Positif")
+                if curr_price > prev['High'] and "Breakout Prev High" not in alasan: alasan.append("Breakout Prev High")
 
                 # --- 3. TRADING PLAN (RENTANG ENTRY & LOCK RISK 8%) ---
-                
-                # Menentukan Rentang Entry (Support Dinamis)
                 dynamic_support = max(last['VWAP'], last['EMA9'])
-                
-                # Kunci batas bawah penawaran maksimal 3% dari harga saat ini
                 batas_bawah_aman = curr_price * 0.97
                 entry_bawah = max(dynamic_support, batas_bawah_aman)
-                entry_bawah = min(entry_bawah, curr_price) # Pastikan tidak lebih dari harga current
+                entry_bawah = min(entry_bawah, curr_price) 
                 
-                # Stop Loss & Take Profit 
                 atr_sl = curr_price - (1.5 * last['ATR'])
-                sl_final = max(atr_sl, curr_price * 0.92) # KUNCI MAX LOSS 8%
+                sl_final = max(atr_sl, curr_price * 0.92) 
                 
-                tp_target = curr_price + (curr_price - sl_final) * 2 # RRR 1:2
+                tp_target = curr_price + (curr_price - sl_final) * 2 
                 rrr = (tp_target - curr_price) / (curr_price - sl_final) if curr_price > sl_final else 0
                 
                 risk_pct = ((curr_price - sl_final) / curr_price) * 100
                 reward_pct = ((tp_target - curr_price) / curr_price) * 100
 
-                # Panggil fungsi Syariah dari universe.py
                 status_syariah = "✅ Ya" if is_syariah(ticker_bersih) else "❌ Tidak"
 
                 # Lolos jika Skor mencukupi (>=60) dan Reward sepadan (RRR >= 1.5)
@@ -196,35 +168,61 @@ def run_screening():
             play_alert_sound()
 
         if hasil_lolos:
+            # Urutkan dan batasi MAKSIMAL 10 Saham
             hasil_lolos.sort(key=lambda x: x['Skor'], reverse=True)
-            df_res = pd.DataFrame(hasil_lolos)
+            hasil_lolos = hasil_lolos[:10] 
             
-            st.success(f"Ditemukan {len(hasil_lolos)} kandidat terbaik.")
-            
-            # Tampilkan dataframe utama yang rapi
-            st.dataframe(
-                df_res[["Ticker", "Syariah", "Conf", "Skor", "Rentang_Entry", "RSI", "RRR"]], 
-                use_container_width=True,
-                hide_index=True
-            )
+            top_3 = hasil_lolos[:3]
+            watchlist = hasil_lolos[3:]
 
-            st.markdown("---")
-            st.subheader("Detail Trading Plan")
+            st.success(f"Proses selesai. Menyaring {len(hasil_lolos)} kandidat paling potensial dari seluruh sektor.")
+
+            # --- TAMPILAN VIP UNTUK TOP 3 ---
+            st.header("🏆 TOP 3 Sinyal Utama")
+            cols = st.columns(len(top_3)) # Membagi kolom dinamis sesuai jumlah top 3
             
-            # Tampilkan rincian per saham di dalam expander
+            for idx, item in enumerate(top_3):
+                with cols[idx]:
+                    st.markdown(f"<h2 style='text-align: center; color: #1E88E5;'>{item['Ticker']}</h2>", unsafe_allow_html=True)
+                    st.markdown(f"<p style='text-align: center;'>Skor: <b>{item['Skor']}</b> ({item['Conf']}) | Syariah: {item['Syariah']}</p>", unsafe_allow_html=True)
+                    
+                    st.metric(label="Target Profit", value=f"Rp {item['Take Profit']}", delta=f"+{item['Reward_Pct']}%")
+                    st.metric(label="Batas Risiko (SL)", value=f"Rp {item['Stop Loss']}", delta=f"-{item['Risk_Pct']}%", delta_color="inverse")
+                    
+                    st.info(f"**Area Entry:**\n{item['Rentang_Entry']}")
+            
+            st.markdown("---")
+
+            # --- TAMPILAN TABEL UNTUK PERINGKAT 4 - 10 (Jika Ada) ---
+            if len(watchlist) > 0:
+                st.subheader("👀 Radar Pantauan (Peringkat 4 - 10)")
+                df_watchlist = pd.DataFrame(watchlist)
+                st.dataframe(
+                    df_watchlist[["Ticker", "Syariah", "Conf", "Skor", "Rentang_Entry", "RSI", "RRR"]], 
+                    use_container_width=True,
+                    hide_index=True
+                )
+                st.markdown("---")
+
+            # --- RINCIAN STRATEGI UNTUK SEMUA (Maks 10) ---
+            st.subheader("Detail Logika Sinyal & Trading Plan")
             for item in hasil_lolos:
-                with st.expander(f"Strategi: {item['Ticker']} (Skor: {item['Skor']} - {item['Conf']} Confidence)"):
-                    st.write(f"**Sinyal Aktif:** {item['Signal']}")
-                    st.write(f"**Status Syariah:** {item['Syariah']}")
-                    
+                with st.expander(f"Buka Rincian: {item['Ticker']} (Skor: {item['Skor']})"):
+                    st.write(f"**Indikator Aktif:** {item['Signal']}")
                     c1, c2, c3 = st.columns(3)
-                    c1.info(f"Area Entry\n\n**{item['Rentang_Entry']}**")
-                    c2.error(f"Stop Loss\n\n**Rp {item['Stop Loss']} (-{item['Risk_Pct']}%)**")
-                    c3.success(f"Take Profit\n\n**Rp {item['Take Profit']} (+{item['Reward_Pct']}%)**")
-                    
-                    st.caption(f"Risk/Reward Ratio: {item['RRR']} | Disarankan pantau Timeframe 5m/15m. Beli di area bawah rentang entry untuk memaksimalkan RRR.")
+                    c1.info(f"Rentang Penawaran\n\n**{item['Rentang_Entry']}**")
+                    c2.error(f"Stop Loss\n\n**Rp {item['Stop Loss']}**")
+                    c3.success(f"Take Profit\n\n**Rp {item['Take Profit']}**")
+                    st.caption(f"Risk/Reward Ratio: {item['RRR']} | Disarankan pantau Timeframe 5m/15m. Beli sedekat mungkin dengan batas bawah entry.")
+
         else:
             st.info("Tidak ada saham yang memenuhi kriteria ketat saat ini. Pasar mungkin sedang konsolidasi atau koreksi.")
+
+        # --- TAMPILAN DISCLAIMER DI PALING BAWAH ---
+        st.markdown("---")
+        st.caption("""
+        **⚠️ DISCLAIMER ON:** *Seluruh data, hasil analisa, dan trading plan yang disajikan dalam aplikasi ini dihasilkan oleh algoritma teknikal secara otomatis dan bertujuan sebagai informasi serta alat bantu penyaringan (screening) saham. Informasi ini BUKAN merupakan ajakan, paksaan, atau rekomendasi mutlak untuk membeli atau menjual saham tertentu. Day trading di pasar saham memiliki tingkat risiko kerugian yang tinggi (High Risk). Keputusan untuk melakukan transaksi sepenuhnya berada di tangan Anda. Gunakan manajemen risiko (Money Management) yang baik dan disiplin mematuhi batas Stop Loss Anda.*
+        """)
 
 # Untuk testing secara mandiri jika file ini di-run langsung
 if __name__ == "__main__":
