@@ -13,6 +13,23 @@ except ModuleNotFoundError:
     from .data_loader import get_full_stock_data
     from .universe import is_syariah
 
+def translate_sector(sector_en):
+    """Menerjemahkan sektor ke Bahasa Indonesia"""
+    mapping = {
+        "Financial Services": "Jasa Keuangan",
+        "Basic Materials": "Bahan Baku & Tambang",
+        "Energy": "Energi",
+        "Communication Services": "Telekomunikasi",
+        "Consumer Cyclical": "Konsumsi Siklikal",
+        "Consumer Defensive": "Konsumsi Non-Siklikal",
+        "Healthcare": "Kesehatan",
+        "Industrials": "Industri",
+        "Real Estate": "Properti",
+        "Technology": "Teknologi",
+        "Utilities": "Utilitas"
+    }
+    return mapping.get(sector_en, sector_en)
+
 # --- FUNGSI ANALISA TEKNIKAL MENDALAM ---
 def calculate_technical_pro(df):
     # 1. Moving Averages
@@ -126,11 +143,13 @@ def run_teknikal():
             # ==========================================
             clean_ticker = ticker_input.replace(".JK", "")
             nama_perusahaan = info.get('longName', clean_ticker)
+            sektor_mentah = info.get('sector', 'Sektor Tidak Diketahui')
+            sektor_id = translate_sector(sektor_mentah)
             status_syariah = "✅ Syariah" if is_syariah(clean_ticker) else "✖️ Non-Syariah"
 
             # Menampilkan Kode dan Nama Perusahaan
             st.markdown(f"<h2 style='text-align: center; color: #4ade80;'>🏢 {clean_ticker} - {nama_perusahaan}</h2>", unsafe_allow_html=True)
-            st.markdown(f"<h5 style='text-align: center; margin-top: -15px; color: #a3a3a3;'>Kategori: {status_syariah}</h5>", unsafe_allow_html=True)
+            st.markdown(f"<h5 style='text-align: center; margin-top: -15px; color: #a3a3a3;'>Sektor: {sektor_id} | {status_syariah}</h5>", unsafe_allow_html=True)
             st.write("")
             
             # Menampilkan Bar Skor
