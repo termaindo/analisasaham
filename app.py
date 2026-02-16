@@ -12,10 +12,12 @@ st.set_page_config(
 
 # --- 2. IMPORT MODUL (MODE AMAN) ---
 def load_module(module_name):
-    """Mencoba load modul, jika gagal akan return None"""
+    """Mencoba load modul, jika gagal akan tampilkan error aslinya"""
     try:
         return importlib.import_module(f"modules.{module_name}")
-    except ImportError:
+    except ImportError as e:
+        # Menampilkan pesan error asli dengan warna merah di aplikasi
+        st.error(f"🚨 Gagal memuat {module_name}.py. Error aslinya: {e}")
         return None
     except SyntaxError as e:
         st.error(f"⚠️ Error Pengetikan di {module_name}.py: {e}")
@@ -178,6 +180,7 @@ if __name__ == "__main__":
         main_app()
     else:
         login_page()
+
 
 
 
