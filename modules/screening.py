@@ -163,10 +163,10 @@ def get_market_session():
 
 # --- 3. MODUL UTAMA ---
 def run_screening():
-    st.title("🔔 Expert Stock Pro: Multi-Mode Screener")
+    st.title("🔔 Multi-Mode Screener Pro (Day Trade atau Swing Trade)")
     st.markdown("---")
 
-    trade_mode = st.radio("Pilih Strategi Trading:", ["Day Trading", "Swing Trading"], horizontal=True)
+    trade_mode = st.radio("Pilih Strategi Trading:", ["Day Trade", "Swing Trade"], horizontal=True)
     
     session, status_desc = get_market_session()
     st.info(f"**Mode Aktif:** {trade_mode} | **Sesi:** {session} ({status_desc})")
