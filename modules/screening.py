@@ -23,7 +23,9 @@ def export_to_pdf(hasil_lolos, trade_mode, session):
     pdf.cell(190, 5, "Quantitative Technical Analysis Report", ln=True, align='C')
     
     pdf.set_font("Arial", 'I', 9)
-    pdf.cell(190, 8, f"Dihasilkan pada: {datetime.now().strftime('%d-%m-%Y %H:%M WIB')} | Sesi: {session}", ln=True, align='C')
+    # Gunakan .replace untuk berjaga-jaga jika session mengandung karakter aneh
+    safe_session = session.encode('ascii', 'ignore').decode('ascii')
+    pdf.cell(190, 8, f"Dihasilkan pada: {datetime.now().strftime('%d-%m-%Y %H:%M WIB')} | Sesi: {safe_session}", ln=True, align='C')
     pdf.ln(5)
     pdf.line(10, pdf.get_y(), 200, pdf.get_y()) 
     pdf.ln(5)
@@ -45,11 +47,13 @@ def export_to_pdf(hasil_lolos, trade_mode, session):
     # --- SEKSI A: TOP 3 ANALISA MENDALAM ---
     pdf.set_fill_color(240, 240, 240)
     pdf.set_font("Arial", 'B', 12)
-    pdf.cell(190, 10, " A. ANALISA PRIORITAS UTAMA (TOP 3)", 0, ln=True, fill=True)
+    # Teks dipastikan bersih tanpa emoji
+    pdf.cell(190, 10, "A. ANALISA PRIORITAS UTAMA (TOP 3)", 0, ln=True, fill=True)
     pdf.ln(3)
 
     top_3 = hasil_lolos[:3]
     for item in top_3:
+        # Bersihkan data Syariah dari Emoji
         syariah_txt = "Ya" if "Ya" in item['Syariah'] else "Tidak"
         
         pdf.set_font("Arial", 'B', 11)
@@ -69,7 +73,7 @@ def export_to_pdf(hasil_lolos, trade_mode, session):
         
         pdf.set_text_color(0, 0, 0)
         pdf.set_font("Arial", 'I', 9)
-        # Menghindari error font dengan membersihkan emoji panah
+        # Menghindari error font dengan membersihkan emoji panah dari RSI
         rsi_bersih = item['RSI'].replace("↗️", "UP").replace("↘️", "DOWN")
         pdf.cell(95, 7, f"Indikator RSI: {rsi_bersih}", ln=True)
         
@@ -82,7 +86,7 @@ def export_to_pdf(hasil_lolos, trade_mode, session):
     # --- SEKSI B: RADAR WATCHLIST ---
     pdf.ln(5)
     pdf.set_font("Arial", 'B', 12)
-    pdf.cell(190, 10, " B. RADAR WATCHLIST (RANK 4-10)", 0, ln=True, fill=True)
+    pdf.cell(190, 10, "B. RADAR WATCHLIST (RANK 4-10)", 0, ln=True, fill=True)
     pdf.ln(3)
 
     pdf.set_font("Arial", 'B', 9)
@@ -96,16 +100,21 @@ def export_to_pdf(hasil_lolos, trade_mode, session):
     pdf.set_font("Arial", '', 8)
     for item in hasil_lolos[3:10]:
         pdf.cell(20, 8, item['Ticker'], 1, 0, 'C')
-        pdf.cell(45, 8, item['Sektor'], 1, 0, 'C')
+        # Potong nama sektor yang terlalu panjang agar rapi di tabel
+        sektor_pendek = str(item['Sektor'])[:15] 
+        pdf.cell(45, 8, sektor_pendek, 1, 0, 'C')
         pdf.cell(20, 8, str(item['Skor']), 1, 0, 'C')
-        pdf.cell(40, 8, item['Rentang_Entry'], 1, 0, 'C')
-        pdf.cell(40, 8, f"Rp {item['TP']} (+{item['Reward_Pct']}%)", 1, 0, 'C')
-        pdf.cell(25, 8, item['RRR'], 1, 1, 'C')
+        # Bersihkan 'Rp ' agar muat di tabel
+        rentang_pendek = str(item['Rentang_Entry']).replace("Rp ", "")
+        pdf.cell(40, 8, rentang_pendek, 1, 0, 'C')
+        pdf.cell(40, 8, f"{item['TP']} (+{item['Reward_Pct']}%)", 1, 0, 'C')
+        pdf.cell(25, 8, str(item['RRR']), 1, 1, 'C')
 
     # --- FOOTER & DISCLAIMER ---
     pdf.ln(10)
     pdf.set_font("Arial", 'B', 8)
-    pdf.cell(190, 5, "⚠️ DISCLAIMER:", ln=True)
+    # PENTING: Hapus emoji ⚠️ dari sini
+    pdf.cell(190, 5, "DISCLAIMER:", ln=True) 
     pdf.set_font("Arial", 'I', 7)
     disclaimer_text = ("Laporan analisa ini dihasilkan secara otomatis menggunakan perhitungan algoritma indikator teknikal "
                        "dan fundamental. Seluruh informasi yang disajikan bukan merupakan ajakan, rekomendasi pasti, atau "
@@ -203,7 +212,6 @@ def run_screening():
                 score = 0
                 alasan = []
 
-                # --- LOGIKA SCORING KETAT (TOTAL 100 POIN) ---
                 if trade_mode == "Day Trading":
                     if curr_price > last['VWAP']: score += 25; alasan.append("Above VWAP")
                     if last['Volume'] > (avg_vol_20 * 1.2): score += 20; alasan.append("Vol Spike")
@@ -238,7 +246,6 @@ def run_screening():
                     atr_mult = 2.5
                     dynamic_support = last['EMA9']
 
-                # Format arah RSI untuk dimasukkan ke data dictionary
                 rsi_val = f"{last['RSI']:.1f} {'↗️' if last['RSI'] > prev['RSI'] else '↘️'}"
 
                 entry_bawah = max(dynamic_support, curr_price * 0.97)
