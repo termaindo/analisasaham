@@ -29,7 +29,7 @@ mod_fundamental = load_module("fundamental")
 mod_dividen = load_module("dividen")
 mod_perbandingan = load_module("perbandingan")
 
-# --- 3. CSS CUSTOM ---
+# --- 3. CSS CUSTOM (GABUNGAN DASHBOARD & LANDING PAGE) ---
 st.markdown("""
 <style>
     header {visibility: hidden;}
@@ -37,6 +37,7 @@ st.markdown("""
     [data-testid="stSidebar"] {display: none;}
     footer {visibility: hidden;}
     
+    /* Style Tombol Menu Dashboard */
     div.stButton > button {
         width: 100%; border-radius: 12px; height: 85px;
         font-weight: bold; font-size: 18px;
@@ -47,25 +48,37 @@ st.markdown("""
         background-color: #ff0000; border-color: #ff0000; color: white;
     }
     
+    /* Style Tombol Beli (Lynk.id) */
     [data-testid="stLinkButton"] a {
-        background-color: #ff0000 !important;
+        background-color: #2ECC71 !important;
         color: white !important;
         border-radius: 12px !important;
         border: none !important;
         font-weight: bold !important;
-        height: 50px;
+        height: 60px;
         display: flex;
         align-items: center;
         justify-content: center;
         text-decoration: none !important;
+        font-size: 1.1em !important;
     }
     [data-testid="stLinkButton"] a:hover {
-        background-color: #cc0000 !important;
-        color: white !important;
+        background-color: #27ae60 !important;
+        box-shadow: 0 4px 15px rgba(46, 204, 113, 0.4);
     }
 
     .back-btn-container button {
         height: 40px !important; background-color: #444 !important; font-size: 14px !important;
+    }
+
+    /* Style Landing Page Header */
+    .landing-header {
+        text-align: center; 
+        padding: 30px; 
+        background-color: #1E1E1E; 
+        border-radius: 15px; 
+        border: 1px solid #2ECC71;
+        margin-bottom: 30px;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -75,29 +88,61 @@ if 'logged_in' not in st.session_state: st.session_state.logged_in = False
 if 'user_name' not in st.session_state: st.session_state.user_name = ""
 if 'current_menu' not in st.session_state: st.session_state.current_menu = "Beranda"
 
-# --- 5. HALAMAN LOGIN ---
+# --- 5. HALAMAN LOGIN (LANDING PAGE KONVERSI) ---
 def login_page():
-    col1, col2, col3 = st.columns([1, 2, 1])
-    with col2:
-        st.markdown("<br><br><h1 style='text-align: center; color: #ff0000;'>🔒 EXPERT STOCK PRO</h1>", unsafe_allow_html=True)
+    # Header Landing Page
+    st.markdown("""
+        <div class="landing-header">
+            <h1 style="color: #2ECC71; margin-bottom: 10px;">🚀 Level Up Analisa Saham Anda ke Standar Institusi!</h1>
+            <p style="font-size: 1.2em; color: #FFFFFF;">Berhenti menebak arah pasar. Gunakan data, bukan perasaan.</p>
+        </div>
+    """, unsafe_allow_html=True)
+
+    col_left, col_right = st.columns([1.2, 1], gap="large")
+
+    with col_left:
+        st.markdown("""
+        ### 🧐 Mengapa Expert Stock Pro?
+        Banyak trader rugi karena **telat entry** atau **salah pilih emiten** akibat data yang berantakan. Kami menyatukan semuanya untuk Anda:
+        
+        * ✅ **6 Modul Analisa Premium:** Dari Teknikal Pro hingga Kalkulator Dividen.
+        * ✅ **Screening Otomatis:** Temukan saham *undervalued* dalam hitungan detik.
+        * ✅ **Risk Management:** Fitur Stop Loss & Target Price otomatis di setiap analisa.
+        * ✅ **Data Real-Time:** Akses langsung ke data pasar Bursa Efek Indonesia.
+        
+        **Jangan biarkan peluang cuan lewat begitu saja hanya karena Anda kurang tools profesional.**
+        """)
+
+    with col_right:
+        st.info("### 🔑 Masuk ke Sistem")
         with st.form("login_form"):
             nama = st.text_input("👤 Nama Panggilan", placeholder="Contoh: Sobat Musa")
-            pw = st.text_input("🔑 Password Akses", type="password")
-            if st.form_submit_button("MASUK SISTEM", use_container_width=True):
-                try: correct = st.secrets["PASSWORD_RAHASIA"]
-                except: correct = "12345"
+            pw = st.text_input("🔑 Password Akses", type="password", placeholder="Masukkan kode akses...")
+            
+            submit_button = st.form_submit_button("BUKA AKSES DASHBOARD", use_container_width=True)
+            
+            if submit_button:
+                try: 
+                    correct = st.secrets["PASSWORD_RAHASIA"]
+                except: 
+                    correct = "12345" # Fallback jika secrets belum diset
+                
                 if pw.strip() == correct:
-                    if nama.strip() == "": st.warning("Isi nama panggilan.")
+                    if nama.strip() == "": 
+                        st.warning("Isi nama panggilan terlebih dahulu.")
                     else:
                         st.session_state.logged_in = True
                         st.session_state.user_name = nama
                         st.rerun()
-                else: st.error("Password salah.")
-        st.markdown("<br>", unsafe_allow_html=True)
-        st.info("🔒 Belum punya akses premium? Sekali beli, berlaku seumur hidup")
-        st.link_button("🛒 Beli Akses via Lynk.id", "https://lynk.id/hahastoresby", use_container_width=True)
+                else: 
+                    st.error("Kode akses salah atau sudah kadaluwarsa.")
+        
+        st.markdown("---")
+        st.markdown("<p style='text-align: center; color: #A0A0A0;'>Belum punya akses premium seumur hidup?</p>", unsafe_allow_html=True)
+        st.link_button("🛒 DAPATKAN KODE AKSES SEKARANG", "https://lynk.id/musa_tanaja", use_container_width=True)
+        st.markdown("<p style='text-align: center; font-size: 0.8em; color: #888; margin-top: 10px;'>💳 Aktivasi Instan via Lynk.id</p>", unsafe_allow_html=True)
 
-# --- 6. DASHBOARD ---
+# --- 6. DASHBOARD (SESUAI ASLINYA) ---
 def show_dashboard():
     st.markdown(f"### 👋 Halo Sobat <span style='color:#ff0000'>{st.session_state.user_name}</span>!", unsafe_allow_html=True)
     
@@ -148,7 +193,7 @@ def show_dashboard():
     if st.button("Keluar / Logout"):
         st.session_state.logged_in = False; st.session_state.user_name = ""; st.rerun()
 
-# --- 7. MAIN ROUTER ---
+# --- 7. MAIN ROUTER (SESUAI ASLINYA) ---
 def main_app():
     if st.session_state.current_menu == "Beranda":
         show_dashboard()
