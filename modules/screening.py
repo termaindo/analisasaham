@@ -2,9 +2,9 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import pytz
-import io # Untuk buffer data
+import io 
 from datetime import datetime
-from fpdf import FPDF # Pastikan sudah install: pip install fpdf
+from fpdf import FPDF 
 from modules.data_loader import get_full_stock_data 
 from modules.universe import UNIVERSE_SAHAM, is_syariah, get_sector_data 
 
@@ -15,7 +15,7 @@ def export_to_pdf(hasil_lolos, trade_mode, session):
     
     # --- HEADER APLIKASI ---
     pdf.set_font("Arial", 'B', 18)
-    pdf.set_text_color(30, 136, 229) # Warna biru profesional
+    pdf.set_text_color(30, 136, 229) 
     pdf.cell(190, 12, "EXPERT STOCK PRO", ln=True, align='C')
     
     pdf.set_font("Arial", 'B', 10)
@@ -25,7 +25,7 @@ def export_to_pdf(hasil_lolos, trade_mode, session):
     pdf.set_font("Arial", 'I', 9)
     pdf.cell(190, 8, f"Dihasilkan pada: {datetime.now().strftime('%d-%m-%Y %H:%M WIB')} | Sesi: {session}", ln=True, align='C')
     pdf.ln(5)
-    pdf.line(10, pdf.get_y(), 200, pdf.get_y()) # Garis pemisah
+    pdf.line(10, pdf.get_y(), 200, pdf.get_y()) 
     pdf.ln(5)
 
     # --- INFORMASI STRATEGI ---
@@ -56,24 +56,20 @@ def export_to_pdf(hasil_lolos, trade_mode, session):
         pdf.cell(190, 8, f"Ticker: {item['Ticker']} | Sektor: {item['Sektor']} | Syariah: {syariah_txt}", ln=True)
         
         pdf.set_font("Arial", '', 10)
-        # Baris 1: Skor & Konfidensi
         pdf.cell(95, 7, f"Confidence Score: {item['Skor']} Pts ({item['Conf']})", 0)
         pdf.cell(95, 7, f"Risk/Reward Ratio: {item['RRR']}", ln=True)
         
-        # Baris 2: Trading Plan
         pdf.set_font("Arial", 'B', 10)
         pdf.cell(95, 7, f"Entry Zone: {item['Rentang_Entry']}", 0)
-        pdf.set_text_color(200, 0, 0) # Merah untuk SL
+        pdf.set_text_color(200, 0, 0) 
         pdf.cell(95, 7, f"Stop Loss (Proteksi): Rp {item['SL']} (-{item['Risk_Pct']}%)", ln=True)
         
-        # Baris 3: Target
-        pdf.set_text_color(0, 128, 0) # Hijau untuk TP
+        pdf.set_text_color(0, 128, 0) 
         pdf.cell(95, 7, f"Take Profit (Target): Rp {item['TP']} (+{item['Reward_Pct']}%)", 0)
         
-        # Baris 4: RSI & Signals
         pdf.set_text_color(0, 0, 0)
         pdf.set_font("Arial", 'I', 9)
-        # Hilangkan emoji agar tidak error di PDF standar
+        # Menghindari error font dengan membersihkan emoji panah
         rsi_bersih = item['RSI'].replace("↗️", "UP").replace("↘️", "DOWN")
         pdf.cell(95, 7, f"Indikator RSI: {rsi_bersih}", ln=True)
         
@@ -89,7 +85,6 @@ def export_to_pdf(hasil_lolos, trade_mode, session):
     pdf.cell(190, 10, " B. RADAR WATCHLIST (RANK 4-10)", 0, ln=True, fill=True)
     pdf.ln(3)
 
-    # Header Tabel
     pdf.set_font("Arial", 'B', 9)
     pdf.cell(20, 8, "Ticker", 1, 0, 'C')
     pdf.cell(45, 8, "Sektor", 1, 0, 'C')
@@ -118,15 +113,12 @@ def export_to_pdf(hasil_lolos, trade_mode, session):
                        "pribadi masing-masing investor. Selalu terapkan manajemen risiko yang baik dan DYOR.")
     pdf.multi_cell(190, 4, disclaimer_text)
 
-    # Footer Page Number
     pdf.set_y(-15)
     pdf.set_font("Arial", 'I', 8)
     pdf.cell(0, 10, f"Halaman {pdf.page_no()} | Dibuat oleh Expert Stock Pro", 0, 0, 'C')
 
     return pdf.output(dest='S').encode('latin-1', 'ignore') 
     
-# Mengembalikan bytes data
-
 # --- 1. FUNGSI AUDIO ALERT ---
 def play_alert_sound():
     audio_html = """
@@ -176,7 +168,6 @@ def run_screening():
     session, status_desc = get_market_session()
     st.info(f"**Mode Aktif:** {trade_mode} | **Sesi:** {session} ({status_desc})")
 
-    # Inisialisasi session state untuk menyimpan hasil agar tombol download tidak hilang
     if 'hasil_screening' not in st.session_state:
         st.session_state.hasil_screening = []
 
@@ -212,29 +203,43 @@ def run_screening():
                 score = 0
                 alasan = []
 
+                # --- LOGIKA SCORING KETAT (TOTAL 100 POIN) ---
                 if trade_mode == "Day Trading":
                     if curr_price > last['VWAP']: score += 25; alasan.append("Above VWAP")
                     if last['Volume'] > (avg_vol_20 * 1.2): score += 20; alasan.append("Vol Spike")
                     if curr_price >= last['MA200']: score += 15; alasan.append("Above MA200")
+                    if avg_val_20 > 5e9: score += 10; alasan.append("Liquid (>5M)")
+                    
+                    change_pct = ((curr_price - prev['Close']) / prev['Close']) * 100
+                    if change_pct > 2.0: score += 10; alasan.append("Strong Move")
+                    
+                    if last['EMA9'] > last['EMA21']: score += 10; alasan.append("EMA Cross")
+                    
+                    if 50 <= last['RSI'] <= 70: score += 5
+                    if last['RSI'] > prev['RSI']: score += 5
+                    if last['RSI'] > 50: alasan.append("RSI Ideal")
+
                     atr_mult = 1.5
                     dynamic_support = last['VWAP']
-                else:
+
+                else: # Swing Trading Mode
                     if curr_price > last['MA50']: score += 25; alasan.append("Above MA50")
-                    if last['EMA9'] > last['EMA21']: score += 20; alasan.append("EMA Cross")
                     if curr_price >= last['MA200']: score += 15; alasan.append("Major Uptrend")
+                    if last['EMA9'] > last['EMA21']: score += 20; alasan.append("EMA Cross")
+                    if avg_val_20 > 5e9: score += 10; alasan.append("Liquid (>5M)")
+                    
+                    change_pct = ((curr_price - prev['Close']) / prev['Close']) * 100
+                    if change_pct > 2.0 or curr_price > prev['High']: score += 15; alasan.append("Breakout Action")
+                    
+                    if last['RSI'] > 50: score += 7.5
+                    if last['RSI'] > prev['RSI']: score += 7.5
+                    if last['RSI'] > 50: alasan.append("RSI Strong")
+
                     atr_mult = 2.5
                     dynamic_support = last['EMA9']
 
-                if avg_val_20 > 5e9: score += 10; alasan.append("Liquid (>5M)")
-                
-                change_pct = ((curr_price - prev['Close']) / prev['Close']) * 100
-                if change_pct > 2.0: score += 10; alasan.append("Strong Move")
-                
-                if last['EMA9'] > last['EMA21']: score += 10; alasan.append("Bullish")
-                
-                if 50 <= last['RSI'] <= 70: score += 5
-                if last['RSI'] > prev['RSI']: score += 5
-                if last['RSI'] > 50: alasan.append("RSI Positif")
+                # Format arah RSI untuk dimasukkan ke data dictionary
+                rsi_val = f"{last['RSI']:.1f} {'↗️' if last['RSI'] > prev['RSI'] else '↘️'}"
 
                 entry_bawah = max(dynamic_support, curr_price * 0.97)
                 sl_atr = curr_price - (atr_mult * last['ATR'])
@@ -247,6 +252,7 @@ def run_screening():
                     if conf == "High": high_score_found = True
                     sektor_nama, _ = get_sector_data(ticker_bersih)
                     
+                    # --- FIX KUNCI: Memasukkan 'RSI' ke dalam dictionary ---
                     hasil_lolos.append({
                         "Ticker": ticker_bersih, "Sektor": sektor_nama,
                         "Syariah": "✅ Ya" if is_syariah(ticker_bersih) else "❌ Tidak",
@@ -255,9 +261,11 @@ def run_screening():
                         "SL": int(sl_final), "TP": int(tp_target),
                         "Risk_Pct": round(((curr_price-sl_final)/curr_price)*100, 1),
                         "Reward_Pct": round(((tp_target-curr_price)/curr_price)*100, 1),
-                        "Signal": ", ".join(alasan), "RRR": f"{rrr:.1f}x"
+                        "Signal": ", ".join(alasan), "RRR": f"{rrr:.1f}x",
+                        "RSI": rsi_val 
                     })
-            except: continue
+            except Exception as e: 
+                continue
 
         progress_bar.empty()
         if high_score_found: play_alert_sound()
@@ -270,12 +278,12 @@ def run_screening():
         top_3 = res[:3]
         watchlist = res[3:10]
 
-        # Tombol Simpan PDF (Floating di atas hasil)
+        # Tombol Simpan PDF
         pdf_data = export_to_pdf(res, trade_mode, session)
         st.download_button(
             label="📄 Simpan Hasil Analisa (PDF)",
             data=pdf_data,
-            file_name=f"Analisa_{trade_mode}_{datetime.now().strftime('%Y%m%d')}.pdf",
+            file_name=f"Analisa_{trade_mode.replace(' ', '_')}_{datetime.now().strftime('%Y%m%d')}.pdf",
             mime="application/pdf"
         )
 
@@ -296,7 +304,9 @@ def run_screening():
             st.dataframe(pd.DataFrame(watchlist)[["Ticker", "Sektor", "Syariah", "Conf", "Skor", "Rentang_Entry", "RRR"]], use_container_width=True, hide_index=True)
 
         st.markdown("---")
-        st.caption("⚠️ **DISCLAIMER:** Laporan analisa ini dihasilkan secara otomatis. DYOR.")
-
+        st.caption("⚠️ "**DISCLAIMER:** Laporan analisa ini dihasilkan secara otomatis menggunakan perhitungan algoritma indikator teknikal "
+                       "dan fundamental. Seluruh informasi yang disajikan bukan merupakan ajakan, rekomendasi pasti, atau "
+                       "paksaan untuk membeli/menjual saham. Keputusan investasi dan trading sepenuhnya menjadi tanggung jawab "
+                       "pribadi masing-masing investor. Selalu terapkan manajemen risiko yang baik dan DYOR.")
 if __name__ == "__main__":
     run_screening()
