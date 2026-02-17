@@ -62,7 +62,6 @@ def run_screening():
     session, status_desc = get_market_session()
     st.info(f"**Status Sesi:** {session} | {status_desc}")
 
-    # Hapus parameter on_click jika ada, gunakan if st.button secara langsung
     if st.button("Mulai Pemindaian Radar (perlu waktu +/- 2 menit)"):
         
         # Ekstrak semua ticker dari UNIVERSE_SAHAM dan tambahkan '.JK'
