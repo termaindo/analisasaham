@@ -252,7 +252,6 @@ def run_screening():
                     if conf == "High": high_score_found = True
                     sektor_nama, _ = get_sector_data(ticker_bersih)
                     
-                    # --- FIX KUNCI: Memasukkan 'RSI' ke dalam dictionary ---
                     hasil_lolos.append({
                         "Ticker": ticker_bersih, "Sektor": sektor_nama,
                         "Syariah": "✅ Ya" if is_syariah(ticker_bersih) else "❌ Tidak",
@@ -304,9 +303,7 @@ def run_screening():
             st.dataframe(pd.DataFrame(watchlist)[["Ticker", "Sektor", "Syariah", "Conf", "Skor", "Rentang_Entry", "RRR"]], use_container_width=True, hide_index=True)
 
         st.markdown("---")
-        st.caption("⚠️ "**DISCLAIMER:** Laporan analisa ini dihasilkan secara otomatis menggunakan perhitungan algoritma indikator teknikal "
-                       "dan fundamental. Seluruh informasi yang disajikan bukan merupakan ajakan, rekomendasi pasti, atau "
-                       "paksaan untuk membeli/menjual saham. Keputusan investasi dan trading sepenuhnya menjadi tanggung jawab "
-                       "pribadi masing-masing investor. Selalu terapkan manajemen risiko yang baik dan DYOR.")
+        st.caption("""⚠️ **DISCLAIMER:** Laporan analisa ini dihasilkan secara otomatis menggunakan perhitungan algoritma indikator teknikal dan fundamental. Seluruh informasi yang disajikan bukan merupakan ajakan, rekomendasi pasti, atau paksaan untuk membeli/menjual saham. Keputusan investasi dan trading sepenuhnya menjadi tanggung jawab pribadi masing-masing investor. Selalu terapkan manajemen risiko yang baik dan DYOR.""")
+
 if __name__ == "__main__":
     run_screening()
