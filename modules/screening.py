@@ -171,4 +171,80 @@ def run_screening():
                     if last['EMA9'] > last['EMA21']: score += 20; alasan.append("EMA Cross")
                     if curr_price >= last['MA200']: score += 15; alasan.append("Major Uptrend")
                     atr_mult = 2.5
-                    dynamic_support = last['EMA
+                    dynamic_support = last['EMA9']
+
+                if avg_val_20 > 5e9: score += 10; alasan.append("Liquid (>5M)")
+                
+                change_pct = ((curr_price - prev['Close']) / prev['Close']) * 100
+                if change_pct > 2.0: score += 10; alasan.append("Strong Move")
+                
+                if last['EMA9'] > last['EMA21']: score += 10; alasan.append("Bullish")
+                
+                if 50 <= last['RSI'] <= 70: score += 5
+                if last['RSI'] > prev['RSI']: score += 5
+                if last['RSI'] > 50: alasan.append("RSI Positif")
+
+                entry_bawah = max(dynamic_support, curr_price * 0.97)
+                sl_atr = curr_price - (atr_mult * last['ATR'])
+                sl_final = max(sl_atr, curr_price * 0.92) 
+                tp_target = curr_price + (curr_price - sl_final) * 2 
+                rrr = (tp_target - curr_price) / (curr_price - sl_final) if curr_price > sl_final else 0
+
+                if score >= 60 and rrr >= 1.5:
+                    conf = "High" if score >= 80 else "Medium"
+                    if conf == "High": high_score_found = True
+                    sektor_nama, _ = get_sector_data(ticker_bersih)
+                    
+                    hasil_lolos.append({
+                        "Ticker": ticker_bersih, "Sektor": sektor_nama,
+                        "Syariah": "✅ Ya" if is_syariah(ticker_bersih) else "❌ Tidak",
+                        "Conf": conf, "Skor": score, "Harga": int(curr_price),
+                        "Rentang_Entry": f"Rp {int(entry_bawah)} - {int(curr_price)}",
+                        "SL": int(sl_final), "TP": int(tp_target),
+                        "Risk_Pct": round(((curr_price-sl_final)/curr_price)*100, 1),
+                        "Reward_Pct": round(((tp_target-curr_price)/curr_price)*100, 1),
+                        "Signal": ", ".join(alasan), "RRR": f"{rrr:.1f}x"
+                    })
+            except: continue
+
+        progress_bar.empty()
+        if high_score_found: play_alert_sound()
+        st.session_state.hasil_screening = hasil_lolos
+
+    # --- BAGIAN TAMPILAN HASIL ---
+    if st.session_state.hasil_screening:
+        res = st.session_state.hasil_screening
+        res.sort(key=lambda x: x['Skor'], reverse=True)
+        top_3 = res[:3]
+        watchlist = res[3:10]
+
+        # Tombol Simpan PDF (Floating di atas hasil)
+        pdf_data = export_to_pdf(res, trade_mode, session)
+        st.download_button(
+            label="📄 Simpan Hasil Analisa (PDF)",
+            data=pdf_data,
+            file_name=f"Analisa_{trade_mode}_{datetime.now().strftime('%Y%m%d')}.pdf",
+            mime="application/pdf"
+        )
+
+        st.header(f"🏆 Top 3 Pilihan {trade_mode}")
+        cols = st.columns(len(top_3))
+        for idx, item in enumerate(top_3):
+            with cols[idx]:
+                st.markdown(f"### {item['Ticker']}")
+                st.write(f"**{item['Sektor']}** | Syariah: {item['Syariah']}")
+                st.metric("Skor", f"{item['Skor']} Pts", item['Conf'])
+                st.write(f"**Target:** Rp {item['TP']} (+{item['Reward_Pct']}%)")
+                st.write(f"**Proteksi:** Rp {item['SL']} (-{item['Risk_Pct']}%)")
+                st.info(f"Entry: {item['Rentang_Entry']}")
+        
+        st.markdown("---")
+        if watchlist:
+            st.subheader(f"📋 Radar Watchlist {trade_mode}")
+            st.dataframe(pd.DataFrame(watchlist)[["Ticker", "Sektor", "Syariah", "Conf", "Skor", "Rentang_Entry", "RRR"]], use_container_width=True, hide_index=True)
+
+        st.markdown("---")
+        st.caption("⚠️ **DISCLAIMER:** Laporan analisa ini dihasilkan secara otomatis. DYOR.")
+
+if __name__ == "__main__":
+    run_screening()
