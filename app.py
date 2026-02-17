@@ -105,8 +105,8 @@ def login_page():
         ### 🧐 Mengapa Expert Stock Pro?
         Banyak trader rugi karena **telat entry** atau **salah pilih emiten** akibat data yang berantakan. Kami menyatukan semuanya untuk Anda:
         
-        * ✅ **6 Modul Analisa Premium:** Dari Teknikal Pro hingga Kalkulator Dividen.
-        * ✅ **Screening Otomatis:** Temukan saham *undervalued* dalam hitungan detik.
+        * ✅ **6 Modul Analisa Premium:** Dari Teknikal Pro, Fundamental Pro hingga Kalkulator Dividen.
+        * ✅ **Screening Otomatis:** Temukan saham untuk trading harian atau untuk swing dalam hitungan menit.
         * ✅ **Risk Management:** Fitur Stop Loss & Target Price otomatis di setiap analisa.
         * ✅ **Data Real-Time:** Akses langsung ke data pasar Bursa Efek Indonesia.
         
@@ -116,7 +116,7 @@ def login_page():
     with col_right:
         st.info("### 🔑 Masuk ke Sistem")
         with st.form("login_form"):
-            nama = st.text_input("👤 Nama Panggilan", placeholder="Contoh: Sobat Musa")
+            nama = st.text_input("👤 Nama Panggilan", placeholder="Contoh: Rudi")
             pw = st.text_input("🔑 Password Akses", type="password", placeholder="Masukkan kode akses...")
             
             submit_button = st.form_submit_button("BUKA AKSES DASHBOARD", use_container_width=True)
@@ -139,7 +139,7 @@ def login_page():
         
         st.markdown("---")
         st.markdown("<p style='text-align: center; color: #A0A0A0;'>Belum punya akses premium seumur hidup?</p>", unsafe_allow_html=True)
-        st.link_button("🛒 DAPATKAN KODE AKSES SEKARANG", "https://lynk.id/musa_tanaja", use_container_width=True)
+        st.link_button("🛒 DAPATKAN KODE AKSES SEKARANG", "https://lynk.id/hahastoresby", use_container_width=True)
         st.markdown("<p style='text-align: center; font-size: 0.8em; color: #888; margin-top: 10px;'>💳 Aktivasi Instan via Lynk.id</p>", unsafe_allow_html=True)
 
 # --- 6. DASHBOARD (SESUAI ASLINYA) ---
@@ -223,3 +223,4 @@ if __name__ == "__main__":
         main_app()
     else:
         login_page()
+
