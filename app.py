@@ -164,10 +164,10 @@ def show_dashboard():
 
     c1, c2 = st.columns(2)
     with c1:
-        if st.button("🔍 Screening Harian", use_container_width=True):
+        if st.button("🔍 Screening Harian Pro", use_container_width=True):
             st.session_state.current_menu = "screening"; st.rerun()
     with c2:
-        label = "⚡ Analisa Cepat" if mod_cepat else "⚡ Analisa Cepat (Rusak)"
+        label = "⚡ Analisa Cepat Pro" if mod_cepat else "⚡ Analisa Cepat (Rusak)"
         if st.button(label, use_container_width=True):
             if mod_cepat:
                 st.session_state.current_menu = "analisa_cepat"; st.rerun()
@@ -184,10 +184,10 @@ def show_dashboard():
 
     c5, c6 = st.columns(2)
     with c5:
-        if st.button("💰 Analisa Dividen", use_container_width=True):
+        if st.button("💰 Analisa Dividen Pro", use_container_width=True):
             st.session_state.current_menu = "dividen"; st.rerun()
     with c6:
-        if st.button("⚖️ Perbandingan Saham", use_container_width=True):
+        if st.button("⚖️ Perbandingan Saham Pro", use_container_width=True):
             st.session_state.current_menu = "perbandingan"; st.rerun()
 
     st.markdown("---")
@@ -224,5 +224,6 @@ if __name__ == "__main__":
         main_app()
     else:
         login_page()
+
 
 
