@@ -23,7 +23,6 @@ def export_to_pdf(hasil_lolos, trade_mode, session):
     pdf.cell(190, 5, "Quantitative Technical Analysis Report", ln=True, align='C')
     
     pdf.set_font("Arial", 'I', 9)
-    # Gunakan .replace untuk berjaga-jaga jika session mengandung karakter aneh
     safe_session = session.encode('ascii', 'ignore').decode('ascii')
     pdf.cell(190, 8, f"Dihasilkan pada: {datetime.now().strftime('%d-%m-%Y %H:%M WIB')} | Sesi: {safe_session}", ln=True, align='C')
     pdf.ln(5)
@@ -47,20 +46,19 @@ def export_to_pdf(hasil_lolos, trade_mode, session):
     # --- SEKSI A: TOP 3 ANALISA MENDALAM ---
     pdf.set_fill_color(240, 240, 240)
     pdf.set_font("Arial", 'B', 12)
-    # Teks dipastikan bersih tanpa emoji
     pdf.cell(190, 10, "A. ANALISA PRIORITAS UTAMA (TOP 3)", 0, ln=True, fill=True)
     pdf.ln(3)
 
     top_3 = hasil_lolos[:3]
     for item in top_3:
-        # Bersihkan data Syariah dari Emoji
         syariah_txt = "Ya" if "Ya" in item['Syariah'] else "Tidak"
         
         pdf.set_font("Arial", 'B', 11)
         pdf.cell(190, 8, f"Ticker: {item['Ticker']} | Sektor: {item['Sektor']} | Syariah: {syariah_txt}", ln=True)
         
         pdf.set_font("Arial", '', 10)
-        pdf.cell(95, 7, f"Confidence Score: {item['Skor']} Pts ({item['Conf']})", 0)
+        # Menampilkan tipe data float dengan rapi jika ada koma (misal 82.5)
+        pdf.cell(95, 7, f"Confidence Score: {item['Skor']:g} Pts ({item['Conf']})", 0)
         pdf.cell(95, 7, f"Risk/Reward Ratio: {item['RRR']}", ln=True)
         
         pdf.set_font("Arial", 'B', 10)
@@ -73,7 +71,6 @@ def export_to_pdf(hasil_lolos, trade_mode, session):
         
         pdf.set_text_color(0, 0, 0)
         pdf.set_font("Arial", 'I', 9)
-        # Menghindari error font dengan membersihkan emoji panah dari RSI
         rsi_bersih = item['RSI'].replace("↗️", "UP").replace("↘️", "DOWN")
         pdf.cell(95, 7, f"Indikator RSI: {rsi_bersih}", ln=True)
         
@@ -100,11 +97,9 @@ def export_to_pdf(hasil_lolos, trade_mode, session):
     pdf.set_font("Arial", '', 8)
     for item in hasil_lolos[3:10]:
         pdf.cell(20, 8, item['Ticker'], 1, 0, 'C')
-        # Potong nama sektor yang terlalu panjang agar rapi di tabel
         sektor_pendek = str(item['Sektor'])[:15] 
         pdf.cell(45, 8, sektor_pendek, 1, 0, 'C')
-        pdf.cell(20, 8, str(item['Skor']), 1, 0, 'C')
-        # Bersihkan 'Rp ' agar muat di tabel
+        pdf.cell(20, 8, str(f"{item['Skor']:g}"), 1, 0, 'C')
         rentang_pendek = str(item['Rentang_Entry']).replace("Rp ", "")
         pdf.cell(40, 8, rentang_pendek, 1, 0, 'C')
         pdf.cell(40, 8, f"{item['TP']} (+{item['Reward_Pct']}%)", 1, 0, 'C')
@@ -113,7 +108,6 @@ def export_to_pdf(hasil_lolos, trade_mode, session):
     # --- FOOTER & DISCLAIMER ---
     pdf.ln(10)
     pdf.set_font("Arial", 'B', 8)
-    # PENTING: Hapus emoji ⚠️ dari sini
     pdf.cell(190, 5, "DISCLAIMER:", ln=True) 
     pdf.set_font("Arial", 'I', 7)
     disclaimer_text = ("Laporan analisa ini dihasilkan secara otomatis menggunakan perhitungan algoritma indikator teknikal "
@@ -212,6 +206,7 @@ def run_screening():
                 score = 0
                 alasan = []
 
+                # --- 1. LOGIKA SCORING KETAT & TRADING PLAN ---
                 if trade_mode == "Day Trading":
                     if curr_price > last['VWAP']: score += 25; alasan.append("Above VWAP")
                     if last['Volume'] > (avg_vol_20 * 1.2): score += 20; alasan.append("Vol Spike")
@@ -221,40 +216,45 @@ def run_screening():
                     change_pct = ((curr_price - prev['Close']) / prev['Close']) * 100
                     if change_pct > 2.0: score += 10; alasan.append("Strong Move")
                     
-                    if last['EMA9'] > last['EMA21']: score += 10; alasan.append("EMA Cross")
+                    if last['EMA9'] > last['EMA21']: score += 10; alasan.append("EMA Cross Trigger Momentum")
                     
-                    if 50 <= last['RSI'] <= 70: score += 5
-                    if last['RSI'] > prev['RSI']: score += 5
-                    if last['RSI'] > 50: alasan.append("RSI Ideal")
+                    if 50 <= last['RSI'] <= 70: score += 5; alasan.append("RSI Ideal")
+                    if last['RSI'] > prev['RSI']: score += 5; alasan.append("RSI Trend")
 
-                    atr_mult = 1.5
-                    dynamic_support = last['VWAP']
+                    # Entry Bawah: Maksimal turun 1.5% atau di VWAP
+                    entry_bawah = max(last['VWAP'], curr_price * 0.985)
+                    # SL: Maksimal turun 3% dari harga beli
+                    sl_final = curr_price * 0.97 
+                    # TP: RRR 1:1.5
+                    tp_target = curr_price + (curr_price - sl_final) * 1.5
 
                 else: # Swing Trading Mode
-                    if curr_price > last['MA50']: score += 25; alasan.append("Above MA50")
-                    if curr_price >= last['MA200']: score += 15; alasan.append("Major Uptrend")
-                    if last['EMA9'] > last['EMA21']: score += 20; alasan.append("EMA Cross")
-                    if avg_val_20 > 5e9: score += 10; alasan.append("Liquid (>5M)")
+                    if curr_price >= last['MA200']: score += 20; alasan.append("Major Uptrend")
+                    if curr_price >= last['MA50']: score += 20; alasan.append("Medium  Uptrend Batas Psikologi Institusi")
                     
                     change_pct = ((curr_price - prev['Close']) / prev['Close']) * 100
-                    if change_pct > 2.0 or curr_price > prev['High']: score += 15; alasan.append("Breakout Action")
+                    if change_pct > 2.0 or curr_price > prev['High']: score += 20; alasan.append("Breakout Action")
                     
-                    if last['RSI'] > 50: score += 7.5
-                    if last['RSI'] > prev['RSI']: score += 7.5
-                    if last['RSI'] > 50: alasan.append("RSI Strong")
+                    if last['EMA9'] > last['EMA21']: score += 15; alasan.append("EMA Cross Trigger Momentum")
+                    
+                    if 50 <= last['RSI'] <= 70: score += 7.5; alasan.append("RSI Ideal")
+                    if last['RSI'] > prev['RSI']: score += 7.5; alasan.append("RSI Trend")
+                    
+                    if avg_val_20 > 5e9: score += 10; alasan.append("Liquid (>5M)")
 
-                    atr_mult = 2.5
-                    dynamic_support = last['EMA9']
+                    # Entry Bawah: Maksimal turun 4% atau di EMA9
+                    entry_bawah = max(last['EMA9'], curr_price * 0.96)
+                    # SL: Maksimal turun 8% (menggunakan 2,5x ATR)
+                    sl_atr = curr_price - (2.5 * last['ATR'])
+                    sl_final = max(sl_atr, curr_price * 0.92) 
+                    # TP: RRR 1:2
+                    tp_target = curr_price + (curr_price - sl_final) * 2
 
                 rsi_val = f"{last['RSI']:.1f} {'↗️' if last['RSI'] > prev['RSI'] else '↘️'}"
-
-                entry_bawah = max(dynamic_support, curr_price * 0.97)
-                sl_atr = curr_price - (atr_mult * last['ATR'])
-                sl_final = max(sl_atr, curr_price * 0.92) 
-                tp_target = curr_price + (curr_price - sl_final) * 2 
                 rrr = (tp_target - curr_price) / (curr_price - sl_final) if curr_price > sl_final else 0
 
-                if score >= 60 and rrr >= 1.5:
+                # Hanya lolos jika RR ratio sesuai batas minimum (otomatis menyesuaikan mode)
+                if score >= 60 and rrr >= 1.4: # Diberi buffer ke 1.4 agar 1.5 tetap aman lolos
                     conf = "High" if score >= 80 else "Medium"
                     if conf == "High": high_score_found = True
                     sektor_nama, _ = get_sector_data(ticker_bersih)
@@ -299,7 +299,7 @@ def run_screening():
             with cols[idx]:
                 st.markdown(f"### {item['Ticker']}")
                 st.write(f"**{item['Sektor']}** | Syariah: {item['Syariah']}")
-                st.metric("Skor", f"{item['Skor']} Pts", item['Conf'])
+                st.metric("Skor", f"{item['Skor']:g} Pts", item['Conf'])
                 st.write(f"**Target:** Rp {item['TP']} (+{item['Reward_Pct']}%)")
                 st.write(f"**Proteksi:** Rp {item['SL']} (-{item['Risk_Pct']}%)")
                 st.info(f"Entry: {item['Rentang_Entry']}")
