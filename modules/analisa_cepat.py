@@ -131,7 +131,7 @@ def export_analisa_cepat_to_pdf(ticker, company_name, sector, f_score, roe, lbl_
 # -----------------------------------------------------
 
 def run_analisa_cepat():
-    st.title("⚡ Analisa Cepat Pro (Scoring 100 & Dynamic Entry)")
+    st.title("⚡ Analisa Cepat Pro")
     st.markdown("---")
 
     col_inp, _ = st.columns([1, 2])
