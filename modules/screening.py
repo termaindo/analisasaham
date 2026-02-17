@@ -174,7 +174,7 @@ def run_screening():
     if 'hasil_screening' not in st.session_state:
         st.session_state.hasil_screening = []
 
-    if st.button(f"Mulai Scan {trade_mode}"):
+    if st.button(f"Mulai Scan {trade_mode} (perlu waktu +/- 2 menit)"):
         saham_list = []
         for sektor, tickers in UNIVERSE_SAHAM.items():
             for ticker in tickers:
