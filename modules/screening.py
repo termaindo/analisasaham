@@ -15,7 +15,6 @@ def play_alert_sound():
 
 # --- 2. INDIKATOR TEKNIKAL ---
 def calculate_indicators(df, trade_mode):
-    # RSI & EMA (Umum untuk kedua mode)
     delta = df['Close'].diff()
     gain = (delta.where(delta > 0, 0)).rolling(14).mean()
     loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
@@ -25,17 +24,14 @@ def calculate_indicators(df, trade_mode):
     df['EMA21'] = df['Close'].ewm(span=21, adjust=False).mean()
     df['MA200'] = df['Close'].rolling(window=200).mean()
     
-    # ATR (Napas Stop Loss)
     high_low = df['High'] - df['Low']
     high_close = np.abs(df['High'] - df['Close'].shift())
     low_close = np.abs(df['Low'] - df['Close'].shift())
     df['ATR'] = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1).rolling(14).mean()
     
-    # VWAP hanya untuk Day Trading
     if trade_mode == "Day Trading":
         df['VWAP'] = (df['Close'] * df['Volume']).cumsum() / df['Volume'].cumsum()
     else:
-        # Untuk Swing, kita pakai MA50 sebagai pengganti kekuatan tren menengah
         df['MA50'] = df['Close'].rolling(window=50).mean()
     
     return df
@@ -45,16 +41,15 @@ def get_market_session():
     now = datetime.now(tz)
     curr_time = now.hour + now.minute/60
     if now.weekday() >= 5: return "AKHIR PEKAN", "Pasar Tutup."
-    if curr_time < 9.0: return "PRA-PASAR", "Data penutupan kemarin."
+    if curr_time < 9.0: return "PRA-PASAR", "Data kemarin."
     elif 9.0 <= curr_time <= 16.0: return "LIVE MARKET", "Data Real-Time."
-    else: return "PASCA-PASAR", "Persiapan untuk besok."
+    else: return "PASCA-PASAR", "Persiapan besok."
 
 # --- 3. MODUL UTAMA ---
 def run_screening():
     st.title("🔔 Expert Stock Pro: Multi-Mode Screener")
     st.markdown("---")
 
-    # PILIHAN MODE TRADING
     trade_mode = st.radio("Pilih Strategi Trading:", ["Day Trading", "Swing Trading"], horizontal=True)
     
     session, status_desc = get_market_session()
@@ -92,33 +87,35 @@ def run_screening():
                 score = 0
                 alasan = []
 
-                # LOGIKA SCORING BERDASARKAN MODE
+                # LOGIKA SCORING KETAT (TOTAL 100 POIN)
                 if trade_mode == "Day Trading":
-                    # Fokus: VWAP & Momentum Cepat
                     if curr_price > last['VWAP']: score += 25; alasan.append("Above VWAP")
                     if last['Volume'] > (avg_vol_20 * 1.2): score += 20; alasan.append("Vol Spike")
-                    if curr_price >= last['MA200']: score += 15; alasan.append("Bullish Trend")
-                    atr_mult = 1.5 # SL lebih ketat
+                    if curr_price >= last['MA200']: score += 15; alasan.append("Above MA200")
+                    atr_mult = 1.5
                 else:
-                    # Fokus: Struktur Tren (MA200 & MA50)
                     if curr_price > last['MA50']: score += 25; alasan.append("Above MA50")
                     if last['EMA9'] > last['EMA21']: score += 20; alasan.append("EMA Cross")
                     if curr_price >= last['MA200']: score += 15; alasan.append("Major Uptrend")
-                    atr_mult = 2.5 # SL lebih longgar untuk Swing
+                    atr_mult = 2.5
 
-                # Scoring Umum
-                if avg_val_20 > 5e9: score += 10; alasan.append("High Liquidity")
+                if avg_val_20 > 5e9: score += 10; alasan.append("Liquid (>5M)")
+                
                 change_pct = ((curr_price - prev['Close']) / prev['Close']) * 100
-                if change_pct > 2.0: score += 10; alasan.append("Price Action")
-                if 50 <= last['RSI'] <= 70: score += 10; alasan.append("RSI Strong")
-                if last['RSI'] > prev['RSI']: score += 10; alasan.append("RSI Up ↗️")
+                if change_pct > 2.0: score += 10; alasan.append(f"Strong Move (+{change_pct:.1f}%)")
+                
+                if last['EMA9'] > last['EMA21']: score += 10; alasan.append("Short-term Bullish")
+                
+                # RSI SCORING (5 + 5 = 10 POIN)
+                if 50 <= last['RSI'] <= 70: score += 5; alasan.append("RSI Ideal")
+                if last['RSI'] > prev['RSI']: score += 5; alasan.append("RSI ↗️")
 
-                # TRADING PLAN (RENTANG ENTRY & SL MAX 8%)
+                # TRADING PLAN
                 dynamic_support = last['VWAP'] if trade_mode == "Day Trading" else last['EMA9']
                 entry_bawah = max(dynamic_support, curr_price * 0.97)
                 
                 sl_atr = curr_price - (atr_mult * last['ATR'])
-                sl_final = max(sl_atr, curr_price * 0.92) # Tetap kunci max 8%
+                sl_final = max(sl_atr, curr_price * 0.92) 
                 
                 tp_target = curr_price + (curr_price - sl_final) * 2 
                 rrr = (tp_target - curr_price) / (curr_price - sl_final) if curr_price > sl_final else 0
@@ -149,19 +146,20 @@ def run_screening():
             cols = st.columns(len(top_3))
             for idx, item in enumerate(top_3):
                 with cols[idx]:
-                    st.metric(item['Ticker'], f"Rp {item['Harga']}", f"{item['Skor']} Pts")
-                    st.write(f"**TP:** Rp {item['TP']} (+{item['Reward_Pct']}%)")
-                    st.write(f"**SL:** Rp {item['SL']} (-{item['Risk_Pct']}%)")
-                    st.caption(f"Entry: {item['Rentang_Entry']}")
+                    st.markdown(f"### {item['Ticker']}")
+                    st.metric("Skor", f"{item['Skor']} Pts", item['Conf'])
+                    st.write(f"**Target:** Rp {item['TP']} (+{item['Reward_Pct']}%)")
+                    st.write(f"**Proteksi:** Rp {item['SL']} (-{item['Risk_Pct']}%)")
+                    st.info(f"Entry: {item['Rentang_Entry']}")
             
             st.markdown("---")
-            st.subheader("📋 Radar Watchlist")
-            st.dataframe(pd.DataFrame(hasil_lolos[3:10])[["Ticker", "Syariah", "Conf", "Skor", "Rentang_Entry", "RRR"]], use_container_width=True)
+            st.subheader("📋 Radar Watchlist (Peringkat 4-10)")
+            st.dataframe(pd.DataFrame(hasil_lolos[3:10])[["Ticker", "Syariah", "Conf", "Skor", "Rentang_Entry", "RRR"]], use_container_width=True, hide_index=True)
         else:
-            st.warning("Tidak ada saham yang memenuhi kriteria.")
+            st.warning("Tidak ada saham yang memenuhi kriteria ketat hari ini.")
 
         st.markdown("---")
-        st.caption("**Disclaimer:** Analisa otomatis. Keputusan di tangan Anda. Batasi risiko!")
+        st.caption("**⚠️ DISCLAIMER ON:** Analisa otomatis ini adalah alat bantu, bukan perintah jual/beli. Risiko sepenuhnya tanggung jawab trader.")
 
 if __name__ == "__main__":
     run_screening()
