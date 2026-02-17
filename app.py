@@ -109,6 +109,7 @@ def login_page():
         * ✅ **Screening Otomatis:** Temukan saham untuk trading harian atau untuk swing dalam hitungan menit.
         * ✅ **Risk Management:** Fitur Stop Loss & Target Price otomatis di setiap analisa.
         * ✅ **Data Real-Time:** Akses langsung ke data pasar Bursa Efek Indonesia.
+        * ✅ **Laporan PDF:** Hasil analisa bisa didownload dalam bentuk PDF.        
         
         **Jangan biarkan peluang cuan lewat begitu saja hanya karena Anda kurang tools profesional.**
         """)
@@ -223,4 +224,5 @@ if __name__ == "__main__":
         main_app()
     else:
         login_page()
+
 
