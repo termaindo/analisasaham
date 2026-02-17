@@ -3,6 +3,8 @@ import pandas as pd
 import numpy as np
 import requests
 from bs4 import BeautifulSoup
+from datetime import datetime
+from fpdf import FPDF
 from modules.data_loader import get_full_stock_data, hitung_div_yield_normal
 
 # --- FUNGSI FALLBACK SCRAPING RASIO BANK ---
@@ -32,6 +34,100 @@ def get_bank_ratios_fallback(ticker):
         pass
         
     return car_val, npl_val
+
+# --- FUNGSI GENERATOR PDF ANALISA CEPAT ---
+def export_analisa_cepat_to_pdf(ticker, company_name, sector, f_score, roe, lbl_solv, eps_g, rev_g,
+                                t_score, avg_value_ma20, rsi, sentiment, curr_per, div_yield,
+                                rekomen, curr, entry_bawah, entry_atas, tp, reward_pct, sl_final, risk_pct, alasan_tek):
+    pdf = FPDF()
+    pdf.add_page()
+    
+    # --- HEADER APLIKASI ---
+    pdf.set_font("Arial", 'B', 18)
+    pdf.set_text_color(30, 136, 229) 
+    pdf.cell(190, 10, "EXPERT STOCK PRO", ln=True, align='C')
+    
+    pdf.set_font("Arial", 'B', 10)
+    pdf.set_text_color(0, 0, 0)
+    pdf.cell(190, 5, "Quantitative Quick Analysis Report", ln=True, align='C')
+    
+    pdf.set_font("Arial", 'I', 9)
+    pdf.cell(190, 6, f"Dihasilkan pada: {datetime.now().strftime('%d-%m-%Y %H:%M WIB')}", ln=True, align='C')
+    pdf.ln(2)
+    
+    # --- AKSES APLIKASI ---
+    pdf.set_font("Arial", 'B', 10)
+    pdf.cell(40, 6, "Akses Full App:", 0)
+    pdf.set_font("Arial", 'U', 10)
+    pdf.set_text_color(0, 0, 255)
+    pdf.cell(150, 6, "lynk.id/hahastoresby", ln=True, link="https://lynk.id/hahastoresby")
+    pdf.set_text_color(0, 0, 0)
+    pdf.ln(3)
+    pdf.line(10, pdf.get_y(), 200, pdf.get_y()) 
+    pdf.ln(5)
+
+    # --- INFORMASI SAHAM ---
+    pdf.set_fill_color(240, 240, 240)
+    pdf.set_font("Arial", 'B', 14)
+    pdf.cell(190, 10, f" {company_name} ({ticker})", 0, ln=True, fill=True)
+    pdf.set_font("Arial", '', 10)
+    pdf.cell(190, 8, f" Sektor: {sector.title()} | Syariah: Perlu Cek ISSI/JII", ln=True)
+    pdf.ln(3)
+
+    # --- 1. SKOR FUNDAMENTAL & TEKNIKAL ---
+    pdf.set_font("Arial", 'B', 11)
+    pdf.cell(190, 8, "1. Ringkasan Skor & Sentimen", ln=True)
+    pdf.set_font("Arial", '', 10)
+    
+    safe_lbl_solv = str(lbl_solv).encode('ascii', 'ignore').decode('ascii')
+    safe_sentiment = str(sentiment).encode('ascii', 'ignore').decode('ascii')
+    
+    pdf.multi_cell(190, 6, f"- Fundamental Score: {f_score}/100 (ROE {roe:.1f}%, {safe_lbl_solv}, EPS Grw {eps_g:.1f}%, Rev Grw {rev_g:.1f}%)")
+    pdf.multi_cell(190, 6, f"- Technical Score: {t_score:g}/100 (Trigger: {alasan_tek})")
+    pdf.cell(190, 6, f"- Valuasi Dasar: PER {curr_per:.1f}x | Div. Yield {div_yield:.2f}%", ln=True)
+    pdf.cell(190, 6, f"- Sentiment Pasar: {safe_sentiment}", ln=True)
+    pdf.ln(4)
+
+    # --- 2. TRADING PLAN & REKOMENDASI ---
+    pdf.set_font("Arial", 'B', 11)
+    pdf.cell(190, 8, "2. Rekomendasi & Trading Plan (Swing Mode)", ln=True)
+    pdf.set_font("Arial", '', 10)
+    
+    if "All-in" in rekomen: pdf.set_text_color(0, 150, 0)
+    elif "Dicicil" in rekomen: pdf.set_text_color(200, 150, 0)
+    else: pdf.set_text_color(200, 0, 0)
+    
+    pdf.set_font("Arial", 'B', 12)
+    pdf.multi_cell(190, 6, f">> {rekomen} <<")
+    pdf.set_text_color(0, 0, 0)
+    pdf.set_font("Arial", '', 10)
+    pdf.ln(2)
+    
+    pdf.cell(190, 6, f"- Harga Sekarang: Rp {int(curr):,.0f}", ln=True)
+    pdf.cell(190, 6, f"- Usulan Entry: Rp {int(entry_bawah):,.0f} - Rp {int(entry_atas):,.0f} (Maks -4% / EMA9)", ln=True)
+    
+    pdf.set_text_color(0, 128, 0) 
+    pdf.cell(190, 6, f"- Take Profit (TP): Rp {tp:,.0f} (+{reward_pct:.1f}%)", ln=True)
+    
+    pdf.set_text_color(200, 0, 0) 
+    pdf.cell(190, 6, f"- Stop Loss (SL): Rp {sl_final:,.0f} (-{risk_pct:.1f}%)", ln=True)
+    
+    pdf.set_text_color(0, 0, 0)
+    pdf.ln(10)
+
+    # --- FOOTER & DISCLAIMER ---
+    pdf.set_y(-30)
+    pdf.set_font("Arial", 'B', 8)
+    pdf.cell(190, 5, "DISCLAIMER:", ln=True) 
+    pdf.set_font("Arial", 'I', 7)
+    disclaimer_text = ("Laporan analisa ini dihasilkan secara otomatis menggunakan perhitungan algoritma indikator teknikal "
+                       "dan fundamental. Seluruh informasi yang disajikan bukan merupakan ajakan, rekomendasi pasti, atau "
+                       "paksaan untuk membeli/menjual saham. Keputusan investasi dan trading sepenuhnya menjadi tanggung jawab "
+                       "pribadi masing-masing investor. Selalu terapkan manajemen risiko yang baik dan DYOR.")
+    pdf.multi_cell(190, 4, disclaimer_text)
+
+    return pdf.output(dest='S').encode('latin-1', 'ignore')
+
 # -----------------------------------------------------
 
 def run_analisa_cepat():
@@ -56,7 +152,7 @@ def run_analisa_cepat():
                 return
 
             # --- 2. DATA TEKNIKAL & INDIKATOR SCORING ---
-            df['MA20'] = df['Close'].rolling(20).mean()
+            df['MA50'] = df['Close'].rolling(50).mean() # PERBAIKAN: TAMBAH MA50
             df['MA200'] = df['Close'].rolling(200).mean()
             
             # Hitung Value Transaksi
@@ -64,9 +160,6 @@ def run_analisa_cepat():
             avg_value_ma20 = df['Value'].rolling(20).mean().iloc[-1]
 
             # Indikator Teknikal Baru untuk Scoring 100 Poin
-            df['Vol_MA20'] = df['Volume'].rolling(20).mean()
-            df['Typical_Price'] = (df['High'] + df['Low'] + df['Close']) / 3
-            df['VWAP_20'] = (df['Typical_Price'] * df['Volume']).rolling(20).sum() / df['Volume'].rolling(20).sum()
             df['EMA9'] = df['Close'].ewm(span=9, adjust=False).mean()
             df['EMA21'] = df['Close'].ewm(span=21, adjust=False).mean()
 
@@ -74,239 +167,7 @@ def run_analisa_cepat():
             delta = df['Close'].diff()
             gain = (delta.where(delta > 0, 0)).rolling(14).mean()
             loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
-            rsi = 100 - (100 / (1 + (gain/loss))).iloc[-1]
+            df['RSI'] = 100 - (100 / (1 + (gain/loss)))
 
             # Cek ketersediaan data MA200 & ekstrak nilai
-            ma200_val = 0 if pd.isna(df['MA200'].iloc[-1]) else df['MA200'].iloc[-1]
-            ma20_val = df['MA20'].iloc[-1]
-            vwap_val = df['VWAP_20'].iloc[-1] if not pd.isna(df['VWAP_20'].iloc[-1]) else df['Close'].iloc[-1]
-            
-            curr = df['Close'].iloc[-1]
-            prev_close = df['Close'].iloc[-2]
-            
-            # --- 3. SCORING FUNDAMENTAL & TEKNIKAL ---
-            f_score = 0
-            t_score = 0
-            
-            # === A. PENILAIAN FUNDAMENTAL (Skala 100 Poin) ===
-            sector = str(info.get('sector', '')).lower()
-            industry = str(info.get('industry', '')).lower()
-            name = str(info.get('longName', '')).lower()
-            
-            is_bank = 'bank' in industry or 'bank' in sector or 'bank' in name or sector == 'financial services'
-            is_infra = 'infrastructure' in industry or sector in ['utilities', 'real estate', 'industrials'] or 'construction' in industry or 'karya' in name
-            
-            raw_der = info.get('debtToEquity', 0)
-            der_ratio = raw_der / 100 if raw_der > 10 else raw_der
-
-            lbl_solv = ""
-            car_approx, npl_approx = 0, 0
-            car_scraped, npl_scraped = None, None
-
-            # 1. KESEHATAN KEUANGAN (Maks 25)
-            if is_bank:
-                car_scraped, npl_scraped = get_bank_ratios_fallback(ticker)
-                
-                # NPL Logic
-                npl_approx = npl_scraped if (npl_scraped is not None and not pd.isna(npl_scraped)) else info.get('nonPerformingLoan', 2.5)
-                if npl_approx < 2: f_score += 10
-                elif npl_approx <= 3.5: f_score += 5
-                
-                # CAR Logic
-                if car_scraped is not None and not pd.isna(car_scraped):
-                    car_approx = car_scraped
-                    lbl_solv = f"CAR (Asli) {car_approx:.1f}% | NPL {npl_approx:.1f}%"
-                else:
-                    total_assets = info.get('totalAssets', 1)
-                    total_equity = info.get('totalStockholderEquity', 0)
-                    car_approx = (total_equity / total_assets) * 100 if total_assets > 0 else info.get('capitalAdequacyRatio', 18)
-                    lbl_solv = f"Est. CAR {car_approx:.1f}% | NPL {npl_approx:.1f}%"
-                    
-                if car_approx > 20: f_score += 15
-                elif car_approx >= 15: f_score += 10
-                elif car_approx >= 10: f_score += 5
-                
-            elif is_infra:
-                if der_ratio < 1.5: f_score += 15
-                elif der_ratio <= 2.5: f_score += 10
-                elif der_ratio <= 4.0: f_score += 5
-                
-                icr = 2.0
-                try:
-                    ebit = financials.loc['EBIT'].iloc[0]
-                    interest = abs(financials.loc['Interest Expense'].iloc[0])
-                    if interest > 0: icr = ebit / interest
-                except: pass
-                
-                if icr > 3.0: f_score += 10
-                elif icr >= 1.5: f_score += 5
-                lbl_solv = f"DER {der_ratio:.2f}x | ICR {icr:.1f}x"
-                
-            else: # Sektor Umum
-                if der_ratio < 0.5: f_score += 15
-                elif der_ratio <= 1.0: f_score += 10
-                elif der_ratio <= 2.0: f_score += 5
-                
-                cr = info.get('currentRatio', 0)
-                if cr > 1.5: f_score += 10
-                elif cr >= 1.0: f_score += 5
-                lbl_solv = f"DER {der_ratio:.2f}x | CR {cr:.2f}x"
-
-            # 2. PROFITABILITAS (Maks 25)
-            roe = info.get('returnOnEquity', 0) * 100 if info.get('returnOnEquity') else 0
-            if roe > 15: f_score += 15
-            elif roe >= 10: f_score += 10
-            elif roe >= 5: f_score += 5
-            
-            npm = info.get('profitMargins', 0) * 100 if info.get('profitMargins') else 0
-            if npm > 10: f_score += 10
-            elif npm >= 5: f_score += 5
-
-            # 3. VALUASI DINAMIS (Maks 20)
-            curr_per = info.get('trailingPE', 0)
-            curr_pbv = info.get('priceToBook', 0)
-            mean_pe_5y = info.get('trailingPE', 15) * 0.95 
-            mean_pbv_5y = info.get('priceToBook', 1.5) * 0.9 
-            
-            if curr_per > 0 and mean_pe_5y > 0:
-                pe_discount = ((mean_pe_5y - curr_per) / mean_pe_5y) * 100
-                if pe_discount > 20: f_score += 10
-                elif pe_discount >= 0: f_score += 7
-                elif pe_discount >= -20: f_score += 3
-            
-            if curr_pbv > 0 and mean_pbv_5y > 0:
-                pbv_discount = ((mean_pbv_5y - curr_pbv) / mean_pbv_5y) * 100
-                if pbv_discount > 20: f_score += 10
-                elif pbv_discount >= 0: f_score += 7
-                elif pbv_discount >= -20: f_score += 3
-
-            # 4. PERTUMBUHAN / GROWTH (Maks 20)
-            eps_g = info.get('earningsGrowth', 0) * 100 if info.get('earningsGrowth') else 0
-            if eps_g > 15: f_score += 10
-            elif eps_g >= 5: f_score += 7
-            elif eps_g >= 0: f_score += 3
-            
-            cagr_rev = 0
-            if not financials.empty and 'Total Revenue' in financials.index:
-                try:
-                    revs = financials.loc['Total Revenue']
-                    if len(revs) >= 2:
-                        years = len(revs) - 1
-                        cagr_rev = ((revs.iloc[0] / revs.iloc[-1]) ** (1/years)) - 1
-                except: pass
-            
-            rev_g = cagr_rev * 100 if cagr_rev != 0 else (info.get('revenueGrowth', 0) * 100 if info.get('revenueGrowth') else 0)
-            if rev_g > 10: f_score += 10
-            elif rev_g >= 0: f_score += 5
-
-            # 5. DIVIDEN (Maks 10)
-            div_yield = hitung_div_yield_normal(info)
-            if div_yield > 5: f_score += 10
-            elif div_yield >= 2: f_score += 5
-
-
-            # === B. PENILAIAN TEKNIKAL (Skala 100 Poin) ===
-            t_score = 0
-
-            # 1. Relative Volume (20 Poin)
-            curr_vol = df['Volume'].iloc[-1] if not pd.isna(df['Volume'].iloc[-1]) else 0
-            avg_vol_20 = df['Vol_MA20'].iloc[-1] if not pd.isna(df['Vol_MA20'].iloc[-1]) else 0
-            if curr_vol > avg_vol_20: t_score += 20
-
-            # 2. VWAP Alignment (20 Poin)
-            if curr > vwap_val: t_score += 20
-
-            # 3. RSI Momentum (20 Poin)
-            if 50 < rsi < 70: t_score += 20
-
-            # 4. EMA 9/21 Cross (20 Poin)
-            ema9_val = df['EMA9'].iloc[-1]
-            ema21_val = df['EMA21'].iloc[-1]
-            if ema9_val > ema21_val: t_score += 20
-
-            # 5. Price Action/Gap (10 Poin)
-            if (curr - prev_close) / prev_close > 0.02: t_score += 10
-
-            # 6. Value MA20 (10 Poin)
-            if avg_value_ma20 > 5e9: t_score += 10
-
-
-            # --- 4. DATA PROCESSING LAINNYA & RENTANG ENTRY ---
-            # Kalkulasi ATR untuk SL (Lock 8%)
-            high_low = df['High'] - df['Low']
-            high_close = np.abs(df['High'] - df['Close'].shift())
-            low_close = np.abs(df['Low'] - df['Close'].shift())
-            ranges = pd.concat([high_low, high_close, low_close], axis=1)
-            atr = ranges.max(axis=1).rolling(14).mean().iloc[-1]
-            
-            sl_raw = curr - (1.5 * atr)
-            sl_final = max(sl_raw, curr * 0.92) # KUNCI MAX LOSS 8%
-            
-            # LOGIKA RENTANG ENTRY (Support Dinamis, Batas Diskon Maksimal 3%)
-            entry_atas = curr
-            support_dinamis = max(vwap_val, ma20_val)
-            batas_diskon_3pct = curr * 0.97
-            
-            if support_dinamis < curr:
-                entry_bawah = max(support_dinamis, batas_diskon_3pct)
-            else:
-                entry_bawah = batas_diskon_3pct
-                
-            avg_entry = (entry_atas + entry_bawah) / 2
-            
-            tp = int(avg_entry + (avg_entry - sl_final) * 2.5) # RRR 1:2.5
-            risk_pct = ((avg_entry - sl_final) / avg_entry) * 100
-            reward_pct = ((tp - avg_entry) / avg_entry) * 100
-            
-            # Tentukan Sentimen
-            if curr > ma20_val and curr > ma200_val: sentiment = "BULLISH (Sangat Kuat) 🐂"
-            elif curr > ma20_val: sentiment = "MILD BULLISH (Jangka Pendek) 🐃"
-            elif curr < ma200_val: sentiment = "BEARISH (Hati-hati) 🐻"
-            else: sentiment = "NEUTRAL / SIDEWAYS 😐"
-
-            # Rekomendasi 
-            if f_score >= 80 and t_score >= 70: rekomen = "STRONG BUY"
-            elif f_score >= 60 and t_score >= 50: rekomen = "BUY / ACCUMULATE"
-            elif t_score < 40 or f_score < 40: rekomen = "SELL / AVOID"
-            else: rekomen = "HOLD / WAIT"
-
-            color_rec = "#00ff00" if "BUY" in rekomen else "#ffcc00" if "HOLD" in rekomen else "#ff0000"
-
-            # --- 5. TAMPILAN OUTPUT ---
-            html_output = f"""
-            <div style="background-color:#1e2b3e; padding:25px; border-radius:12px; border-left:10px solid {color_rec}; color:#e0e0e0; font-family:sans-serif;">
-                <h3 style="margin-top:0; color:white; margin-bottom:5px;">{info.get('longName', ticker)} ({ticker})</h3>
-                <p style="margin-top:0; font-size:14px; color:#b0bec5; margin-bottom:15px;">
-                    Sektor: <b>{sector.title()}</b> | Kategori Syariah: <b>Perlu Cek ISSI/JII</b>
-                </p>
-                <ul style="line-height:1.8; padding-left:20px; font-size:16px;">
-                    <li><b>1. Fundamental Score ({f_score}/100):</b> ROE {roe:.1f}%, {lbl_solv}, EPS Grw {eps_g:.1f}%, Rev Grw {rev_g:.1f}%.</li>
-                    <li><b>2. Technical Score ({t_score}/100):</b> Value Rata2 Rp {avg_value_ma20/1e9:.1f} M, RSI {rsi:.1f}.</li>
-                    <li><b>3. Sentiment Pasar:</b> <b>{sentiment}</b></li>
-                    <li><b>4. Alasan Utama:</b> Tren {'Positif' if t_score >= 50 else 'Negatif'}, Valuasi (PER {curr_per:.1f}x), Div. Yield {div_yield:.2f}%.</li>
-                    <li><b>5. Risk Utama:</b> Volatilitas pasar & Potensi koreksi jika gagal bertahan di area Support.</li>
-                    <li><b>6. Rekomendasi Final:</b> <span style="color:{color_rec}; font-weight:bold; font-size:18px;">{rekomen}</span></li>
-                    <li><b>7. Trading Plan:</b><br>
-                        • Harga Sekarang: Rp {int(curr):,.0f}<br>
-                        • Usulan Entry: Rp {int(entry_bawah):,.0f} - Rp {int(entry_atas):,.0f} (Maks -3%)<br>
-                        • Titik TP: Rp {tp:,.0f} (Potensi Reward: +{reward_pct:.1f}%)<br>
-                        • Titik SL: Rp {sl_final:,.0f} (Batas Risiko: -{risk_pct:.1f}%)
-                    </li>
-                    <li><b>8. Timeframe:</b> {'Investasi Jangka Panjang' if f_score >= 80 else 'Swing Trading Pendek'}.</li>
-                </ul>
-            </div>
-            """
-            st.markdown(html_output, unsafe_allow_html=True)
-            
-            with st.expander("Lihat Detail Data Mentah"):
-                st.write(f"Sektor Terdeteksi: {sector.title()} | Bank? {is_bank}")
-                st.write(f"Raw DER: {raw_der} | Normalized Ratio: {der_ratio:.2f}")
-                st.write(f"Support Dinamis (VWAP/MA20): Rp {int(support_dinamis):,.0f}")
-                
-                if is_bank: 
-                    st.write(f"CAR Terpakai: {car_approx:.2f}% ({'Hasil Scraping' if car_scraped is not None else 'Estimasi Proxy'})")
-                    st.write(f"NPL Terpakai: {npl_approx:.2f}% ({'Hasil Scraping' if npl_scraped is not None else 'Estimasi Proxy'})")
-
-            # --- 6. DISCLAIMER ---
-            st.markdown("---")
-            st.caption("⚠️ **DISCLAIMER:** Laporan analisa ini dihasilkan secara otomatis menggunakan perhitungan algoritma indikator teknikal dan fundamental. Seluruh informasi yang disajikan bukan merupakan ajakan, rekomendasi pasti, atau paksaan untuk membeli/menjual saham. Keputusan investasi dan trading sepenuhnya menjadi tanggung jawab pribadi masing-masing investor. Selalu terapkan manajemen risiko yang baik dan *Do Your Own Research* (DYOR).")
+            ma200_val = 0 if pd
