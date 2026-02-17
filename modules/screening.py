@@ -3,40 +3,40 @@ import pandas as pd
 import numpy as np
 import pytz
 from datetime import datetime
-from modules.data_loader import get_full_stock_data # STANDAR ANTI-ERROR
-from modules.universe import UNIVERSE_SAHAM, is_syariah # Impor universe dan fungsi syariah
+from modules.data_loader import get_full_stock_data 
+from modules.universe import UNIVERSE_SAHAM, is_syariah 
 
 # --- 1. FUNGSI AUDIO ALERT ---
 def play_alert_sound():
-    """Bunyikan lonceng untuk High Confidence Signal"""
     audio_html = """
     <audio autoplay><source src="https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3" type="audio/mpeg"></audio>
     """
     st.components.v1.html(audio_html, height=0)
 
-# --- 2. INDIKATOR DAY TRADING ---
-def calculate_day_indicators(df):
-    # RSI
+# --- 2. INDIKATOR TEKNIKAL ---
+def calculate_indicators(df, trade_mode):
+    # RSI & EMA (Umum untuk kedua mode)
     delta = df['Close'].diff()
     gain = (delta.where(delta > 0, 0)).rolling(14).mean()
     loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
     df['RSI'] = 100 - (100 / (1 + (gain/loss)))
     
-    # EMA 9 & 21 (Momentum Crossover)
     df['EMA9'] = df['Close'].ewm(span=9, adjust=False).mean()
     df['EMA21'] = df['Close'].ewm(span=21, adjust=False).mean()
+    df['MA200'] = df['Close'].rolling(window=200).mean()
     
-    # VWAP (Volume Weighted Average Price)
-    df['VWAP'] = (df['Close'] * df['Volume']).cumsum() / df['Volume'].cumsum()
-    
-    # ATR untuk SL (14 Hari)
+    # ATR (Napas Stop Loss)
     high_low = df['High'] - df['Low']
     high_close = np.abs(df['High'] - df['Close'].shift())
     low_close = np.abs(df['Low'] - df['Close'].shift())
     df['ATR'] = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1).rolling(14).mean()
     
-    # MA 200 (Long-term Trend Filter)
-    df['MA200'] = df['Close'].rolling(window=200).mean()
+    # VWAP hanya untuk Day Trading
+    if trade_mode == "Day Trading":
+        df['VWAP'] = (df['Close'] * df['Volume']).cumsum() / df['Volume'].cumsum()
+    else:
+        # Untuk Swing, kita pakai MA50 sebagai pengganti kekuatan tren menengah
+        df['MA50'] = df['Close'].rolling(window=50).mean()
     
     return df
 
@@ -44,33 +44,27 @@ def get_market_session():
     tz = pytz.timezone('Asia/Jakarta')
     now = datetime.now(tz)
     curr_time = now.hour + now.minute/60
-    
-    if now.weekday() >= 5: 
-        return "AKHIR PEKAN", "Pasar Tutup. Menggunakan data penutupan terakhir."
-    if curr_time < 9.0: 
-        return "PRA-PASAR", "Menunggu pembukaan. Memakai data penutupan kemarin."
-    elif 9.0 <= curr_time <= 16.0: 
-        return "LIVE MARKET", "Sesi perdagangan berjalan. Memakai data real-time."
-    else: 
-        return "PASCA-PASAR", "Pasar ditutup. Mendata kandidat untuk besok pagi."
+    if now.weekday() >= 5: return "AKHIR PEKAN", "Pasar Tutup."
+    if curr_time < 9.0: return "PRA-PASAR", "Data penutupan kemarin."
+    elif 9.0 <= curr_time <= 16.0: return "LIVE MARKET", "Data Real-Time."
+    else: return "PASCA-PASAR", "Persiapan untuk besok."
 
 # --- 3. MODUL UTAMA ---
 def run_screening():
-    st.title("🔔 High Prob. Breakout & Day Trading Screener")
+    st.title("🔔 Expert Stock Pro: Multi-Mode Screener")
     st.markdown("---")
 
+    # PILIHAN MODE TRADING
+    trade_mode = st.radio("Pilih Strategi Trading:", ["Day Trading", "Swing Trading"], horizontal=True)
+    
     session, status_desc = get_market_session()
-    st.info(f"**Status Sesi:** {session} | {status_desc}")
+    st.info(f"**Mode:** {trade_mode} | **Sesi:** {session} ({status_desc})")
 
-    if st.button("Mulai Pemindaian Radar (perlu waktu +/- 2 menit)"):
-        
-        # Ekstrak semua ticker dari UNIVERSE_SAHAM dan tambahkan '.JK'
+    if st.button(f"Mulai Scan {trade_mode}"):
         saham_list = []
         for sektor, tickers in UNIVERSE_SAHAM.items():
             for ticker in tickers:
                 saham_list.append(f"{ticker}.JK")
-        
-        # Menghapus duplikasi
         saham_list = list(set(saham_list))
 
         hasil_lolos = []
@@ -84,146 +78,90 @@ def run_screening():
             try:
                 data = get_full_stock_data(ticker)
                 df = data['history']
-                if df.empty or len(df) < 30: continue
+                if df.empty or len(df) < 200: continue
 
-                df = calculate_day_indicators(df)
+                df = calculate_indicators(df, trade_mode)
                 last = df.iloc[-1]
                 prev = df.iloc[-2]
-                
                 curr_price = last['Close']
-                avg_val_20 = (df['Close'] * df['Volume']).rolling(20).mean().iloc[-1]
                 avg_vol_20 = df['Volume'].rolling(20).mean().iloc[-1]
+                avg_val_20 = (df['Close'] * df['Volume']).rolling(20).mean().iloc[-1]
 
-                # --- 1. FILTER LIKUIDITAS UTAMA (Min Rp 1 Miliar) ---
                 if avg_val_20 < 1e9: continue
 
-                # --- 2. PENILAIAN KONFIDENSI KETAT (SCORING MAX 100 POIN) ---
                 score = 0
                 alasan = []
 
-                if curr_price > last['VWAP']: score += 25; alasan.append("Above VWAP")
-                if last['Volume'] > (avg_vol_20 * 1.2): score += 20; alasan.append("Volume Breakout")
-                if pd.notna(last['MA200']) and curr_price >= last['MA200']: score += 15; alasan.append("Uptrend (Above MA200)")
-                if avg_val_20 > 5e9: score += 10; alasan.append("Liquid (>5M)")
-                
-                change_pct = ((curr_price - prev['Close']) / prev['Close']) * 100
-                if change_pct > 2.0: score += 10; alasan.append(f"Strong Move +{change_pct:.1f}%")
-                
-                if last['EMA9'] > last['EMA21']: score += 10; alasan.append("EMA Golden Cross")
-                
-                curr_rsi = last['RSI']
-                prev_rsi = prev['RSI']
-                rsi_trend_icon = "↗️" if curr_rsi > prev_rsi else "↘️"
-                
-                if curr_rsi > 50: score += 5 
-                if curr_rsi > prev_rsi: score += 5 
-                if curr_rsi > 50 or curr_rsi > prev_rsi: alasan.append("RSI Positif")
-                if curr_price > prev['High'] and "Breakout Prev High" not in alasan: alasan.append("Breakout Prev High")
+                # LOGIKA SCORING BERDASARKAN MODE
+                if trade_mode == "Day Trading":
+                    # Fokus: VWAP & Momentum Cepat
+                    if curr_price > last['VWAP']: score += 25; alasan.append("Above VWAP")
+                    if last['Volume'] > (avg_vol_20 * 1.2): score += 20; alasan.append("Vol Spike")
+                    if curr_price >= last['MA200']: score += 15; alasan.append("Bullish Trend")
+                    atr_mult = 1.5 # SL lebih ketat
+                else:
+                    # Fokus: Struktur Tren (MA200 & MA50)
+                    if curr_price > last['MA50']: score += 25; alasan.append("Above MA50")
+                    if last['EMA9'] > last['EMA21']: score += 20; alasan.append("EMA Cross")
+                    if curr_price >= last['MA200']: score += 15; alasan.append("Major Uptrend")
+                    atr_mult = 2.5 # SL lebih longgar untuk Swing
 
-                # --- 3. TRADING PLAN (RENTANG ENTRY & LOCK RISK 8%) ---
-                dynamic_support = max(last['VWAP'], last['EMA9'])
-                batas_bawah_aman = curr_price * 0.97
-                entry_bawah = max(dynamic_support, batas_bawah_aman)
-                entry_bawah = min(entry_bawah, curr_price) 
+                # Scoring Umum
+                if avg_val_20 > 5e9: score += 10; alasan.append("High Liquidity")
+                change_pct = ((curr_price - prev['Close']) / prev['Close']) * 100
+                if change_pct > 2.0: score += 10; alasan.append("Price Action")
+                if 50 <= last['RSI'] <= 70: score += 10; alasan.append("RSI Strong")
+                if last['RSI'] > prev['RSI']: score += 10; alasan.append("RSI Up ↗️")
+
+                # TRADING PLAN (RENTANG ENTRY & SL MAX 8%)
+                dynamic_support = last['VWAP'] if trade_mode == "Day Trading" else last['EMA9']
+                entry_bawah = max(dynamic_support, curr_price * 0.97)
                 
-                atr_sl = curr_price - (1.5 * last['ATR'])
-                sl_final = max(atr_sl, curr_price * 0.92) 
+                sl_atr = curr_price - (atr_mult * last['ATR'])
+                sl_final = max(sl_atr, curr_price * 0.92) # Tetap kunci max 8%
                 
                 tp_target = curr_price + (curr_price - sl_final) * 2 
                 rrr = (tp_target - curr_price) / (curr_price - sl_final) if curr_price > sl_final else 0
-                
-                risk_pct = ((curr_price - sl_final) / curr_price) * 100
-                reward_pct = ((tp_target - curr_price) / curr_price) * 100
 
-                status_syariah = "✅ Ya" if is_syariah(ticker_bersih) else "❌ Tidak"
-
-                # Lolos jika Skor mencukupi (>=60) dan Reward sepadan (RRR >= 1.5)
                 if score >= 60 and rrr >= 1.5:
                     conf = "High" if score >= 80 else "Medium"
                     if conf == "High": high_score_found = True
-                    
                     hasil_lolos.append({
                         "Ticker": ticker_bersih,
-                        "Syariah": status_syariah,
-                        "Conf": conf,
-                        "Skor": score,
-                        "Harga_Curr": int(curr_price),
-                        "Entry_Bawah": int(entry_bawah),
-                        "Rentang_Entry": f"Rp {int(entry_bawah)} - Rp {int(curr_price)}",
-                        "RSI": f"{curr_rsi:.1f} {rsi_trend_icon}", 
-                        "RRR": f"{rrr:.1f}x",
-                        "Signal": ", ".join(alasan),
-                        "Stop Loss": int(sl_final),
-                        "Take Profit": int(tp_target),
-                        "Risk_Pct": round(risk_pct, 1),      
-                        "Reward_Pct": round(reward_pct, 1)
+                        "Syariah": "✅ Ya" if is_syariah(ticker_bersih) else "❌ Tidak",
+                        "Conf": conf, "Skor": score, "Harga": int(curr_price),
+                        "Rentang_Entry": f"Rp {int(entry_bawah)} - {int(curr_price)}",
+                        "SL": int(sl_final), "TP": int(tp_target),
+                        "Risk_Pct": round(((curr_price-sl_final)/curr_price)*100, 1),
+                        "Reward_Pct": round(((tp_target-curr_price)/curr_price)*100, 1),
+                        "Signal": ", ".join(alasan), "RRR": f"{rrr:.1f}x"
                     })
-            except Exception as e: 
-                continue
+            except: continue
 
         progress_bar.empty()
-        
-        if high_score_found:
-            st.warning("⚠️ Sinyal High Confidence Ditemukan!")
-            play_alert_sound()
+        if high_score_found: play_alert_sound()
 
         if hasil_lolos:
-            # Urutkan dan batasi MAKSIMAL 10 Saham
             hasil_lolos.sort(key=lambda x: x['Skor'], reverse=True)
-            hasil_lolos = hasil_lolos[:10] 
-            
             top_3 = hasil_lolos[:3]
-            watchlist = hasil_lolos[3:]
-
-            st.success(f"Proses selesai. Menyaring {len(hasil_lolos)} kandidat paling potensial dari seluruh sektor.")
-
-            # --- TAMPILAN VIP UNTUK TOP 3 ---
-            st.header("🏆 TOP 3 Sinyal Utama")
-            cols = st.columns(len(top_3)) # Membagi kolom dinamis sesuai jumlah top 3
             
+            st.header(f"🏆 Top 3 Pilihan {trade_mode}")
+            cols = st.columns(len(top_3))
             for idx, item in enumerate(top_3):
                 with cols[idx]:
-                    st.markdown(f"<h2 style='text-align: center; color: #1E88E5;'>{item['Ticker']}</h2>", unsafe_allow_html=True)
-                    st.markdown(f"<p style='text-align: center;'>Skor: <b>{item['Skor']}</b> ({item['Conf']}) | Syariah: {item['Syariah']}</p>", unsafe_allow_html=True)
-                    
-                    st.metric(label="Target Profit", value=f"Rp {item['Take Profit']}", delta=f"+{item['Reward_Pct']}%")
-                    st.metric(label="Batas Risiko (SL)", value=f"Rp {item['Stop Loss']}", delta=f"-{item['Risk_Pct']}%", delta_color="inverse")
-                    
-                    st.info(f"**Area Entry:**\n{item['Rentang_Entry']}")
+                    st.metric(item['Ticker'], f"Rp {item['Harga']}", f"{item['Skor']} Pts")
+                    st.write(f"**TP:** Rp {item['TP']} (+{item['Reward_Pct']}%)")
+                    st.write(f"**SL:** Rp {item['SL']} (-{item['Risk_Pct']}%)")
+                    st.caption(f"Entry: {item['Rentang_Entry']}")
             
             st.markdown("---")
-
-            # --- TAMPILAN TABEL UNTUK PERINGKAT 4 - 10 (Jika Ada) ---
-            if len(watchlist) > 0:
-                st.subheader("👀 Radar Pantauan (Peringkat 4 - 10)")
-                df_watchlist = pd.DataFrame(watchlist)
-                st.dataframe(
-                    df_watchlist[["Ticker", "Syariah", "Conf", "Skor", "Rentang_Entry", "RSI", "RRR"]], 
-                    use_container_width=True,
-                    hide_index=True
-                )
-                st.markdown("---")
-
-            # --- RINCIAN STRATEGI UNTUK SEMUA (Maks 10) ---
-            st.subheader("Detail Logika Sinyal & Trading Plan")
-            for item in hasil_lolos:
-                with st.expander(f"Buka Rincian: {item['Ticker']} (Skor: {item['Skor']})"):
-                    st.write(f"**Indikator Aktif:** {item['Signal']}")
-                    c1, c2, c3 = st.columns(3)
-                    c1.info(f"Rentang Penawaran\n\n**{item['Rentang_Entry']}**")
-                    c2.error(f"Stop Loss\n\n**Rp {item['Stop Loss']}**")
-                    c3.success(f"Take Profit\n\n**Rp {item['Take Profit']}**")
-                    st.caption(f"Risk/Reward Ratio: {item['RRR']} | Disarankan pantau Timeframe 5m/15m. Beli sedekat mungkin dengan batas bawah entry.")
-
+            st.subheader("📋 Radar Watchlist")
+            st.dataframe(pd.DataFrame(hasil_lolos[3:10])[["Ticker", "Syariah", "Conf", "Skor", "Rentang_Entry", "RRR"]], use_container_width=True)
         else:
-            st.info("Tidak ada saham yang memenuhi kriteria ketat saat ini. Pasar mungkin sedang konsolidasi atau koreksi.")
+            st.warning("Tidak ada saham yang memenuhi kriteria.")
 
-        # --- TAMPILAN DISCLAIMER DI PALING BAWAH ---
         st.markdown("---")
-        st.caption("""
-        **⚠️ DISCLAIMER ON:** *Seluruh data, hasil analisa, dan trading plan yang disajikan dalam aplikasi ini dihasilkan oleh algoritma teknikal secara otomatis dan bertujuan sebagai informasi serta alat bantu penyaringan (screening) saham. Informasi ini BUKAN merupakan ajakan, paksaan, atau rekomendasi mutlak untuk membeli atau menjual saham tertentu. Day trading di pasar saham memiliki tingkat risiko kerugian yang tinggi (High Risk). Keputusan untuk melakukan transaksi sepenuhnya berada di tangan Anda. Gunakan manajemen risiko (Money Management) yang baik dan disiplin mematuhi batas Stop Loss Anda.*
-        """)
+        st.caption("**Disclaimer:** Analisa otomatis. Keputusan di tangan Anda. Batasi risiko!")
 
-# Untuk testing secara mandiri jika file ini di-run langsung
 if __name__ == "__main__":
     run_screening()
