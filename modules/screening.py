@@ -13,67 +13,119 @@ def export_to_pdf(hasil_lolos, trade_mode, session):
     pdf = FPDF()
     pdf.add_page()
     
-    # Header
-    pdf.set_font("Arial", 'B', 16)
-    pdf.cell(190, 10, f"Laporan Analisa Expert Stock Pro", ln=True, align='C')
-    pdf.set_font("Arial", '', 10)
-    pdf.cell(190, 10, f"Tanggal: {datetime.now().strftime('%d-%m-%Y %H:%M')} | Mode: {trade_mode}", ln=True, align='C')
-    pdf.ln(10)
-
-    # Top 3 Picks
-    pdf.set_font("Arial", 'B', 12)
-    pdf.cell(190, 10, f"A. TOP 3 PILIHAN UTAMA ({trade_mode})", ln=True)
-    pdf.set_font("Arial", '', 10)
+    # --- HEADER APLIKASI ---
+    pdf.set_font("Arial", 'B', 18)
+    pdf.set_text_color(30, 136, 229) # Warna biru profesional
+    pdf.cell(190, 12, "EXPERT STOCK PRO", ln=True, align='C')
     
-    top_3 = hasil_lolos[:3]
-    for item in top_3:
-        # Menghapus emoji karena FPDF standar tidak mendukung unicode emoji
-        syariah_text = "Ya" if "Ya" in item['Syariah'] else "Tidak"
-        pdf.multi_cell(190, 7, (
-            f"Ticker: {item['Ticker']} ({item['Sektor']}) | Syariah: {syariah_text}\n"
-            f"Skor: {item['Skor']} Pts ({item['Conf']})\n"
-            f"Rentang Entry: {item['Rentang_Entry']}\n"
-            f"Target Profit: Rp {item['TP']} (+{item['Reward_Pct']}%)\n"
-            f"Stop Loss: Rp {item['SL']} (-{item['Risk_Pct']}%)\n"
-            f"Signal: {item['Signal']}\n"
-            f"--------------------------------------------------"
-        ))
+    pdf.set_font("Arial", 'B', 10)
+    pdf.set_text_color(0, 0, 0)
+    pdf.cell(190, 5, "Quantitative Technical Analysis Report", ln=True, align='C')
     
+    pdf.set_font("Arial", 'I', 9)
+    pdf.cell(190, 8, f"Dihasilkan pada: {datetime.now().strftime('%d-%m-%Y %H:%M WIB')} | Sesi: {session}", ln=True, align='C')
+    pdf.ln(5)
+    pdf.line(10, pdf.get_y(), 200, pdf.get_y()) # Garis pemisah
     pdf.ln(5)
 
-    # Watchlist Table
+    # --- INFORMASI STRATEGI ---
+    pdf.set_font("Arial", 'B', 11)
+    pdf.cell(50, 8, "Strategi Trading:", 0)
+    pdf.set_font("Arial", '', 11)
+    pdf.cell(140, 8, f"{trade_mode}", ln=True)
+    
+    pdf.set_font("Arial", 'B', 11)
+    pdf.cell(50, 8, "Akses Aplikasi Full:", 0)
+    pdf.set_font("Arial", 'U', 11)
+    pdf.set_text_color(0, 0, 255)
+    pdf.cell(140, 8, "lynk.id/hahastoresby", ln=True, link="https://lynk.id/hahastoresby")
+    pdf.set_text_color(0, 0, 0)
+    pdf.ln(5)
+
+    # --- SEKSI A: TOP 3 ANALISA MENDALAM ---
+    pdf.set_fill_color(240, 240, 240)
     pdf.set_font("Arial", 'B', 12)
-    pdf.cell(190, 10, "B. RADAR WATCHLIST", ln=True)
-    pdf.set_font("Arial", 'B', 9)
+    pdf.cell(190, 10, " A. ANALISA PRIORITAS UTAMA (TOP 3)", 0, ln=True, fill=True)
+    pdf.ln(3)
+
+    top_3 = hasil_lolos[:3]
+    for item in top_3:
+        syariah_txt = "Ya" if "Ya" in item['Syariah'] else "Tidak"
+        
+        pdf.set_font("Arial", 'B', 11)
+        pdf.cell(190, 8, f"Ticker: {item['Ticker']} | Sektor: {item['Sektor']} | Syariah: {syariah_txt}", ln=True)
+        
+        pdf.set_font("Arial", '', 10)
+        # Baris 1: Skor & Konfidensi
+        pdf.cell(95, 7, f"Confidence Score: {item['Skor']} Pts ({item['Conf']})", 0)
+        pdf.cell(95, 7, f"Risk/Reward Ratio: {item['RRR']}", ln=True)
+        
+        # Baris 2: Trading Plan
+        pdf.set_font("Arial", 'B', 10)
+        pdf.cell(95, 7, f"Entry Zone: {item['Rentang_Entry']}", 0)
+        pdf.set_text_color(200, 0, 0) # Merah untuk SL
+        pdf.cell(95, 7, f"Stop Loss (Proteksi): Rp {item['SL']} (-{item['Risk_Pct']}%)", ln=True)
+        
+        # Baris 3: Target
+        pdf.set_text_color(0, 128, 0) # Hijau untuk TP
+        pdf.cell(95, 7, f"Take Profit (Target): Rp {item['TP']} (+{item['Reward_Pct']}%)", 0)
+        
+        # Baris 4: RSI & Signals
+        pdf.set_text_color(0, 0, 0)
+        pdf.set_font("Arial", 'I', 9)
+        # Hilangkan emoji agar tidak error di PDF standar
+        rsi_bersih = item['RSI'].replace("↗️", "UP").replace("↘️", "DOWN")
+        pdf.cell(95, 7, f"Indikator RSI: {rsi_bersih}", ln=True)
+        
+        pdf.set_font("Arial", '', 9)
+        pdf.multi_cell(180, 6, f"Sinyal Teknis: {item['Signal']}")
+        pdf.ln(2)
+        pdf.line(15, pdf.get_y(), 195, pdf.get_y())
+        pdf.ln(3)
+
+    # --- SEKSI B: RADAR WATCHLIST ---
+    pdf.ln(5)
+    pdf.set_font("Arial", 'B', 12)
+    pdf.cell(190, 10, " B. RADAR WATCHLIST (RANK 4-10)", 0, ln=True, fill=True)
+    pdf.ln(3)
+
     # Header Tabel
-    pdf.cell(25, 8, "Ticker", 1)
-    pdf.cell(35, 8, "Sektor", 1)
-    pdf.cell(20, 8, "Syariah", 1)
-    pdf.cell(20, 8, "Skor", 1)
-    pdf.cell(50, 8, "Rentang Entry", 1)
-    pdf.cell(20, 8, "RRR", 1)
-    pdf.ln()
+    pdf.set_font("Arial", 'B', 9)
+    pdf.cell(20, 8, "Ticker", 1, 0, 'C')
+    pdf.cell(45, 8, "Sektor", 1, 0, 'C')
+    pdf.cell(20, 8, "Skor", 1, 0, 'C')
+    pdf.cell(40, 8, "Area Entry", 1, 0, 'C')
+    pdf.cell(40, 8, "Target (TP)", 1, 0, 'C')
+    pdf.cell(25, 8, "RRR", 1, 1, 'C')
 
     pdf.set_font("Arial", '', 8)
     for item in hasil_lolos[3:10]:
-        syariah_text = "Ya" if "Ya" in item['Syariah'] else "Tidak"
-        pdf.cell(25, 8, str(item['Ticker']), 1)
-        pdf.cell(35, 8, str(item['Sektor']), 1)
-        pdf.cell(20, 8, syariah_text, 1)
-        pdf.cell(20, 8, str(item['Skor']), 1)
-        pdf.cell(50, 8, str(item['Rentang_Entry']), 1)
-        pdf.cell(20, 8, str(item['RRR']), 1)
-        pdf.ln()
+        pdf.cell(20, 8, item['Ticker'], 1, 0, 'C')
+        pdf.cell(45, 8, item['Sektor'], 1, 0, 'C')
+        pdf.cell(20, 8, str(item['Skor']), 1, 0, 'C')
+        pdf.cell(40, 8, item['Rentang_Entry'], 1, 0, 'C')
+        pdf.cell(40, 8, f"Rp {item['TP']} (+{item['Reward_Pct']}%)", 1, 0, 'C')
+        pdf.cell(25, 8, item['RRR'], 1, 1, 'C')
 
-    # Disclaimer
+    # --- FOOTER & DISCLAIMER ---
     pdf.ln(10)
-    pdf.set_font("Arial", 'I', 8)
-    disclaimer = ("DISCLAIMER: Laporan analisa ini dihasilkan secara otomatis menggunakan perhitungan "
-                  "algoritma indikator teknikal. Seluruh informasi bukan merupakan ajakan atau rekomendasi pasti. "
-                  "Keputusan trading sepenuhnya tanggung jawab pribadi. DYOR.")
-    pdf.multi_cell(190, 5, disclaimer)
+    pdf.set_font("Arial", 'B', 8)
+    pdf.cell(190, 5, "⚠️ DISCLAIMER:", ln=True)
+    pdf.set_font("Arial", 'I', 7)
+    disclaimer_text = ("Laporan analisa ini dihasilkan secara otomatis menggunakan perhitungan algoritma indikator teknikal "
+                       "dan fundamental. Seluruh informasi yang disajikan bukan merupakan ajakan, rekomendasi pasti, atau "
+                       "paksaan untuk membeli/menjual saham. Keputusan investasi dan trading sepenuhnya menjadi tanggung jawab "
+                       "pribadi masing-masing investor. Selalu terapkan manajemen risiko yang baik dan DYOR.")
+    pdf.multi_cell(190, 4, disclaimer_text)
 
-    return pdf.output(dest='S').encode('latin-1', 'ignore') # Mengembalikan bytes data
+    # Footer Page Number
+    pdf.set_y(-15)
+    pdf.set_font("Arial", 'I', 8)
+    pdf.cell(0, 10, f"Halaman {pdf.page_no()} | Dibuat oleh Expert Stock Pro", 0, 0, 'C')
+
+    return pdf.output(dest='S').encode('latin-1', 'ignore') 
+    
+# Mengembalikan bytes data
 
 # --- 1. FUNGSI AUDIO ALERT ---
 def play_alert_sound():
