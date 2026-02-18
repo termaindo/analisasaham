@@ -271,6 +271,8 @@ def generate_pdf_report(data_dict):
     pdf.set_font("Arial", 'B', 12)
     pdf.cell(0, 8, "6. TRADING PLAN & EKSEKUSI", ln=True)
     pdf.set_font("Arial", '', 11)
+    # TAMPILKAN HARGA SAAT INI SEBELUM ENTRY
+    pdf.cell(0, 6, f"Harga Saat Ini: Rp {data_dict['curr_price']:,.0f}", ln=True)
     pdf.multi_cell(0, 6, f"Saran Entry: {data_dict['saran_entry']}")
     pdf.cell(0, 6, f"Target TP: Minimal di Rp {data_dict['tp']:,.0f} (+{data_dict['reward_pct']:.1f}%)", ln=True)
     pdf.cell(0, 6, f"Average Down: Area Rp {data_dict['avg_down']:,.0f} (Penurunan ~12%)", ln=True)
@@ -466,6 +468,8 @@ def run_fundamental():
 
             # Trading Plan
             st.header("5. TRADING PLAN & EKSEKUSI")
+            # TAMPILKAN HARGA SAAT INI SEBELUM ENTRY
+            st.markdown(f"**Harga Saat Ini:** Rp {curr_price:,.0f}")
             r0, r1, r2, r3 = st.columns(4)
             r0.info(f"**Taktik Entry:**\n{saran_entry}")
             r1.success(f"**Target TP:**\nMin. Rp {target_short:,.0f} (+{reward_pct:.1f}%)")
