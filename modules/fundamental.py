@@ -198,8 +198,13 @@ def generate_pdf_report(data_dict):
     
     # Header Utama
     pdf.cell(0, 10, "Expert Stock Pro - Analisa Fundamental & Kualitatif", ln=True, align='C')
+    
+    # PENYESUAIAN HYPERLINK
     pdf.set_font("Arial", 'I', 10)
-    pdf.cell(0, 5, "Sumber: lynk.id/hahastoresby", ln=True, align='C')
+    pdf.set_text_color(0, 0, 255)  # Ubah warna teks menjadi Biru (RGB)
+    # Menambahkan parameter link (wajib menggunakan https:// agar dibaca sebagai URL eksternal)
+    pdf.cell(0, 5, "Sumber: lynk.id/hahastoresby", ln=True, align='C', link="https://lynk.id/hahastoresby")
+    pdf.set_text_color(0, 0, 0)  # Kembalikan warna teks ke Hitam agar bagian bawah tidak ikut biru
     pdf.ln(5)
     
     # Info Emiten
@@ -229,7 +234,7 @@ def generate_pdf_report(data_dict):
     pdf.multi_cell(0, 6, f"Kelemahan (Weaknesses): {data_dict['w_1']}, {data_dict['w_2']}")
     pdf.ln(5)
 
-    # 3. Analisa Keuangan Dinamis (REVISI: Sesuaikan tampilan PDF)
+    # 3. Analisa Keuangan Dinamis
     pdf.set_font("Arial", 'B', 12)
     pdf.cell(0, 8, "3. ANALISA KEUANGAN", ln=True)
     pdf.set_font("Arial", '', 11)
@@ -250,7 +255,6 @@ def generate_pdf_report(data_dict):
     pdf.cell(0, 6, f"Harga Wajar (Graham): Rp {data_dict['fair_price']:,.0f}", ln=True)
     pdf.cell(0, 6, f"Harga Saat Ini: Rp {data_dict['curr_price']:,.0f}", ln=True)
     pdf.cell(0, 6, f"Margin of Safety (MOS): {data_dict['mos']:.1f}%", ln=True)
-    # --- TAMBAHAN DIVIDEN DI PDF ---
     pdf.cell(0, 6, f"Estimasi Dividen (Rupiah): Rp {data_dict['div_rate']:,.0f} per lembar", ln=True)
     pdf.cell(0, 6, f"Estimasi Dividend Yield: {data_dict['div_yield']:.2f}%", ln=True)
     pdf.ln(5)
@@ -281,7 +285,6 @@ def generate_pdf_report(data_dict):
     return bytes(pdf.output(dest='S').encode('latin1'))
 
 def run_fundamental():
-    # REVISI 1: Menambahkan Judul Halaman di modul
     st.title("📊 Analisa Fundamental & Valuasi Pro")
     st.markdown("---")
     
@@ -332,7 +335,6 @@ def run_fundamental():
             except: mean_pe_5y, mean_pbv_5y = 15.0, 1.5
             
             div_yield = hitung_div_yield_normal(info)
-            # TAMBAHAN: Ekstraksi angka Rupiah Prediksi Dividen dari Yfinance
             div_rate = info.get('dividendRate', 0)
             
             skor_akhir, konf_pct, label_konf, ocf_sehat = hitung_skor_fundamental(info, financials, cashflow, mean_pe_5y, mean_pbv_5y, div_yield)
@@ -433,16 +435,14 @@ def run_fundamental():
                     f4.metric("Current Ratio", f"{info.get('currentRatio', 0):.2f}x")
             except: st.warning("Visualisasi data keuangan terbatas.")
 
-            # Valuasi (PENYESUAIAN ANTARMUKA WEB UNTUK DIVIDEN)
+            # Valuasi
             st.header("3. VALUASI & MARGIN OF SAFETY")
             curr_pe, curr_pbv = info.get('trailingPE', 0), info.get('priceToBook', 0)
             
-            # Dirubah menjadi 4 kolom agar est. dividen masuk dengan cantik
             v1, v2, v3, v4 = st.columns(4)
             v1.metric("PER Terkini", f"{curr_pe:.2f}x", f"Avg 5Y: {mean_pe_5y:.1f}x")
             v2.metric("PBV Terkini", f"{curr_pbv:.2f}x", f"Avg 5Y: {mean_pbv_5y:.1f}x")
             v3.metric("Harga Wajar", f"Rp {fair_price:,.0f}")
-            # Menampilkan info estimasi pembagian Rupiah & persentase Yield
             v4.metric("Est. Dividen", f"Rp {div_rate:,.0f}", f"Yield: {div_yield:.2f}%")
             
             warna_mos = "normal" if mos > 0 else "inverse"
@@ -509,7 +509,6 @@ def run_fundamental():
                 'npm': (info.get('profitMargins') or 0) * 100,
                 'der': (info.get('debtToEquity') or 0) / 100,
                 'cr': info.get('currentRatio') or 0,
-                # TAMBAHAN UNTUK PDF DIVIDEN
                 'div_rate': div_rate,
                 'div_yield': div_yield
             }
