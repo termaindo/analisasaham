@@ -191,17 +191,17 @@ def generate_pdf_report(data_dict):
     pdf = FPDF()
     pdf.add_page()
     
-    # Konfigurasi Font
+    # --- HEADER UTAMA (Desain Sementara) ---
     pdf.set_font("Arial", 'B', 16)
-    
-    # Header Utama
-    pdf.cell(0, 10, "Expert Stock Pro - Analisa Fundamental & Kualitatif", ln=True, align='C')
+    pdf.set_fill_color(33, 37, 41) # Background abu-abu gelap
+    pdf.set_text_color(255, 255, 255) # Teks putih
+    pdf.cell(0, 15, " Expert Stock Pro - Analisa Fundamental & Kualitatif ", ln=True, align='C', fill=True)
     
     # PENYESUAIAN HYPERLINK
     pdf.set_font("Arial", 'I', 10)
     pdf.set_text_color(0, 0, 255)  
-    pdf.cell(0, 5, "Sumber: lynk.id/hahastoresby", ln=True, align='C', link="https://lynk.id/hahastoresby")
-    pdf.set_text_color(0, 0, 0)  
+    pdf.cell(0, 8, "Sumber: lynk.id/hahastoresby", ln=True, align='C', link="https://lynk.id/hahastoresby")
+    pdf.set_text_color(0, 0, 0)  # Kembalikan ke teks hitam
     pdf.ln(5)
     
     # Info Emiten
@@ -268,7 +268,6 @@ def generate_pdf_report(data_dict):
     pdf.set_font("Arial", 'B', 12)
     pdf.cell(0, 8, "6. TRADING PLAN & EKSEKUSI", ln=True)
     pdf.set_font("Arial", '', 11)
-    # TAMPILKAN HARGA SAAT INI SEBELUM ENTRY
     pdf.cell(0, 6, f"Harga Saat Ini: Rp {data_dict['curr_price']:,.0f}", ln=True)
     pdf.multi_cell(0, 6, f"Saran Entry: {data_dict['saran_entry']}")
     pdf.cell(0, 6, f"Target TP: Minimal di Rp {data_dict['tp']:,.0f} (+{data_dict['reward_pct']:.1f}%)", ln=True)
@@ -465,7 +464,6 @@ def run_fundamental():
 
             # Trading Plan
             st.header("5. TRADING PLAN & EKSEKUSI")
-            # TAMPILKAN HARGA SAAT INI SEBELUM ENTRY DENGAN LEBIH MENCOLOK DI UI
             st.subheader(f"📍 Harga Saat Ini: Rp {curr_price:,.0f}")
             
             r0, r1, r2, r3 = st.columns(4)
@@ -524,4 +522,4 @@ def run_fundamental():
                 use_container_width=True
             )
             
-            st.caption("⚠️ **DISCLAIMER:** Analisa ini bersifat edukatif dan berbasis formula kuantitatif. Keputusan investasi sepenuhnya di tangan Anda. Kinerja masa lalu tidak menjamin hasil masa depan.")
+            st.caption("⚠️ **DISCLAIMER:** Laporan ini dihasilkan secara otomatis oleh sistem algoritma Expert Stock Pro. Semua informasi, analisa, dan sinyal trading disediakan hanya untuk tujuan edukasi. Keputusan investasi sepenuhnya berada di tangan Anda. Kinerja masa lalu tidak selalu menjamin hasil masa depan.")
