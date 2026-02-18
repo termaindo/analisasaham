@@ -135,16 +135,56 @@ def generate_pdf_fpdf(data):
     pdf.cell(0, 6, txt=f"Sinyal: {data['signal']} ({data['confidence']})", ln=True)
     
     pdf.ln(5)
-    pdf.set_font("Arial", 'B', 12)
-    pdf.cell(0, 8, txt="TRADING PLAN", ln=True)
+    
+    # --- DIMENSI 1: TREND ANALYSIS ---
+    pdf.set_font("Arial", 'B', 11)
+    pdf.cell(0, 7, txt="1. TREND ANALYSIS", ln=True)
+    pdf.set_font("Arial", '', 10)
+    pdf.cell(0, 5, txt=f"- Trend Utama (Daily)  : {data['main_trend']}", ln=True)
+    pdf.cell(0, 5, txt=f"- Trend Wkly/Monthly : {data['weekly_trend']}", ln=True)
+    pdf.cell(0, 5, txt=f"- Support / Resist     : Rp {data['sup_level']:,.0f} / Rp {data['res_level']:,.0f}", ln=True)
+    pdf.ln(3)
+
+    # --- DIMENSI 2: INDIKATOR TEKNIKAL ---
+    pdf.set_font("Arial", 'B', 11)
+    pdf.cell(0, 7, txt="2. INDIKATOR TEKNIKAL", ln=True)
+    pdf.set_font("Arial", '', 10)
+    pdf.cell(0, 5, txt=f"- Posisi MA   : {data['posisi_ma']}", ln=True)
+    pdf.cell(0, 5, txt=f"- RSI         : {data['rsi_text']}", ln=True)
+    pdf.cell(0, 5, txt=f"- MACD        : {data['macd_text']}", ln=True)
+    pdf.cell(0, 5, txt=f"- Volatilitas : {data['volatilitas']}", ln=True)
+    pdf.ln(3)
+
+    # --- DIMENSI 3: PATTERN RECOGNITION ---
+    pdf.set_font("Arial", 'B', 11)
+    pdf.cell(0, 7, txt="3. PATTERN RECOGNITION", ln=True)
+    pdf.set_font("Arial", '', 10)
+    pdf.cell(0, 5, txt=f"- Candlestick   : {data['candlestick']}", ln=True)
+    pdf.cell(0, 5, txt=f"- Chart Pattern : Potensi Konsolidasi / Channeling", ln=True)
+    pdf.cell(0, 5, txt=f"- Divergence    : {data['divergence']}", ln=True)
+    pdf.ln(3)
+
+    # --- DIMENSI 4: MOMENTUM & STRENGTH ---
+    pdf.set_font("Arial", 'B', 11)
+    pdf.cell(0, 7, txt="4. MOMENTUM & STRENGTH", ln=True)
+    pdf.set_font("Arial", '', 10)
+    pdf.cell(0, 5, txt=f"- Momentum : {data['momentum']}", ln=True)
+    pdf.cell(0, 5, txt=f"- Pressure : {data['pressure']}", ln=True)
+    pdf.ln(3)
+
+    # --- DIMENSI 5: TRADING PLAN ---
+    pdf.set_font("Arial", 'B', 11)
+    pdf.cell(0, 8, txt="5. TRADING PLAN", ln=True)
     pdf.set_font("Arial", '', 11)
     pdf.cell(0, 6, txt=f"Area Entry  : Rp {data['entry_bawah']:,.0f} - Rp {data['entry_atas']:,.0f}", ln=True)
     pdf.cell(0, 6, txt=f"Stop Loss   : Rp {data['sl_final']:,.0f} (-{data['risk_pct']:.1f}%)", ln=True)
     pdf.cell(0, 6, txt=f"Target      : Rp {data['tp_final']:,.0f} (+{data['tp_pct']:.1f}%)", ln=True)
     
     pdf.ln(5)
-    pdf.set_font("Arial", 'B', 12)
-    pdf.cell(0, 8, txt="ANALISA SENTIMEN BERITA (Dimensi ke-6)", ln=True)
+    
+    # --- DIMENSI 6: SENTIMEN BERITA ---
+    pdf.set_font("Arial", 'B', 11)
+    pdf.cell(0, 8, txt="6. ANALISA SENTIMEN BERITA", ln=True)
     pdf.set_font("Arial", '', 11)
     pdf.cell(0, 6, txt=f"Status Sentimen: {data['sentiment']}", ln=True)
     pdf.set_font("Arial", 'I', 10)
@@ -271,6 +311,14 @@ def run_teknikal():
                 market_pressure = "Selling Pressure (Turun)"
             else:
                 market_pressure = "Neutral (Stagnan)"
+
+            posisi_ma_pdf = "Di atas MA20 (Kuning)" if curr_price > last['MA20'] else "Di bawah MA20 (Kuning)"
+            rsi_status = 'Overbought' if last['RSI']>70 else 'Oversold' if last['RSI']<30 else 'Neutral'
+            arah_rsi_pdf = "Naik" if last['RSI'] > prev_1['RSI'] else "Turun"
+            macd_teks = 'Bullish Cross' if last['MACD'] > last['Signal_Line'] else 'Bearish'
+            volatilitas_teks = 'Tinggi' if (last['BB_Upper']-last['BB_Lower']) > (df['BB_Upper']-df['BB_Lower']).mean() else 'Rendah'
+            pattern_teks = "Doji" if abs(last['Open']-last['Close']) < (last['High']-last['Low'])*0.1 else "Normal"
+            momentum_teks = 'Kuat' if last['RSI'] > 50 else 'Lemah'
             
             # --- PEMBUATAN TRADING PLAN ---
             entry_atas = curr_price
@@ -370,6 +418,18 @@ def run_teknikal():
                 'score': score,
                 'signal': signal,
                 'confidence': confidence,
+                'main_trend': main_trend,
+                'weekly_trend': weekly_trend,
+                'sup_level': sup_level,
+                'res_level': res_level,
+                'posisi_ma': posisi_ma_pdf,
+                'rsi_text': f"{last['RSI']:.1f} ({arah_rsi_pdf} | {rsi_status})",
+                'macd_text': macd_teks,
+                'volatilitas': volatilitas_teks,
+                'candlestick': pattern_teks,
+                'divergence': "Terdeteksi (Bullish)" if (curr_price < prev_5['Close'] and last['RSI'] > prev_5['RSI']) else "Tidak Terdeteksi",
+                'momentum': momentum_teks,
+                'pressure': market_pressure,
                 'entry_bawah': entry_bawah,
                 'entry_atas': entry_atas,
                 'sl_final': sl_final,
