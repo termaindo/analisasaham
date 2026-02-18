@@ -87,12 +87,13 @@ def hitung_skor_fundamental(info, financials, cashflow, mean_pe_5y, mean_pbv_5y,
     sector = info.get('sector', '')
     industry = info.get('industry', '')
     
-    # REVISI 2: Perluasan deteksi sektor finansial (termasuk Multifinance, Asuransi, dll)
-    is_financial = sector == 'Financial Services' or any(kw in industry for kw in ['Bank', 'Credit', 'Financing', 'Insurance'])
+    # REVISI: Mengembalikan deteksi khusus Bank untuk metrik CAR & NPL
+    # Multifinance (ADMF/CFIN) dan Asuransi akan diuji dengan DER & CR seperti perusahaan umum
+    is_bank = 'Bank' in industry
     is_infra = 'Infrastructure' in industry or sector in ['Utilities', 'Real Estate', 'Industrials']
     
     # --- 1. KESEHATAN KEUANGAN ---
-    if is_financial:
+    if is_bank:
         if info.get('capitalAdequacyRatio') is not None: metrik_tersedia += 1
         car = info.get('capitalAdequacyRatio', 18) 
         npl = info.get('nonPerformingLoan', 2.5)   
@@ -219,7 +220,7 @@ def generate_pdf_report(data_dict):
     pdf.multi_cell(0, 6, f"Alasan: {data_dict['alasan']}")
     pdf.ln(5)
 
-    # REVISI 3: Tambahan Analisa SWOT ke dalam PDF
+    # 2. Analisa SWOT
     pdf.set_font("Arial", 'B', 12)
     pdf.cell(0, 8, "2. OVERVIEW & ANALISA SWOT", ln=True)
     pdf.set_font("Arial", '', 11)
@@ -228,13 +229,18 @@ def generate_pdf_report(data_dict):
     pdf.multi_cell(0, 6, f"Kelemahan (Weaknesses): {data_dict['w_1']}, {data_dict['w_2']}")
     pdf.ln(5)
 
-    # REVISI 3: Tambahan Analisa Keuangan ke dalam PDF
+    # 3. Analisa Keuangan Dinamis (REVISI: Sesuaikan tampilan PDF)
     pdf.set_font("Arial", 'B', 12)
     pdf.cell(0, 8, "3. ANALISA KEUANGAN", ln=True)
     pdf.set_font("Arial", '', 11)
     pdf.cell(0, 6, f"ROE (Efisiensi): {data_dict['roe']:.2f}%", ln=True)
     pdf.cell(0, 6, f"NPM (Marjin Laba): {data_dict['npm']:.2f}%", ln=True)
-    pdf.cell(0, 6, f"Debt to Equity: {data_dict['der']:.2f}x", ln=True)
+    if data_dict['is_bank']:
+        pdf.cell(0, 6, f"CAR (Kecukupan Modal): {data_dict['car']:.2f}%", ln=True)
+        pdf.cell(0, 6, f"NPL (Kredit Macet): {data_dict['npl']:.2f}%", ln=True)
+    else:
+        pdf.cell(0, 6, f"Debt to Equity (DER): {data_dict['der']:.2f}x", ln=True)
+        pdf.cell(0, 6, f"Current Ratio (CR): {data_dict['cr']:.2f}x", ln=True)
     pdf.ln(5)
     
     # 4. Valuasi
@@ -259,7 +265,6 @@ def generate_pdf_report(data_dict):
     pdf.cell(0, 8, "6. TRADING PLAN & EKSEKUSI", ln=True)
     pdf.set_font("Arial", '', 11)
     pdf.multi_cell(0, 6, f"Saran Entry: {data_dict['saran_entry']}")
-    # REVISI 4: Menambahkan persentase Reward di PDF
     pdf.cell(0, 6, f"Target TP: Minimal di Rp {data_dict['tp']:,.0f} (+{data_dict['reward_pct']:.1f}%)", ln=True)
     pdf.cell(0, 6, f"Average Down: Area Rp {data_dict['avg_down']:,.0f} (Penurunan ~12%)", ln=True)
     pdf.cell(0, 6, f"Batas Cutloss: Tembus Rp {data_dict['sl']:,.0f} (Penurunan ~30%)", ln=True)
@@ -273,6 +278,8 @@ def generate_pdf_report(data_dict):
     return bytes(pdf.output(dest='S').encode('latin1'))
 
 def run_fundamental():
+    # REVISI 1: Menambahkan Judul Halaman di modul
+    st.title("📊 Analisa Fundamental & Valuasi")
     st.markdown("---")
     
     col_inp, _ = st.columns([1, 2])
@@ -291,6 +298,9 @@ def run_fundamental():
             if not info or financials.empty:
                 st.error("Data tidak lengkap. Mohon tunggu sejenak atau bersihkan cache.")
                 return
+
+            # Cek status industri untuk tampilan UI dinamis
+            is_bank_ui = 'Bank' in info.get('industry', '')
 
             # --- AMBIL DATA SENTIMEN ---
             sentimen_kesimpulan, daftar_berita, sentimen_alasan = analisa_sentimen_berita(ticker)
@@ -355,12 +365,10 @@ def run_fundamental():
 
             target_short = fair_price if fair_price > curr_price else curr_price * 1.15
             
-            # REVISI 4: Hitung Persentase Target Profit (Reward)
             reward_pct = ((target_short - curr_price) / curr_price) * 100 if curr_price > 0 else 0
 
             # --- RENDER TAMPILAN WEB STREAMLIT ---
             st.header("🏆 SKOR FUNDAMENTAL & KEPUTUSAN")
-            # REVISI 1: Menampilkan Skor Teks di atas Progress Bar
             st.markdown(f"**Skor Fundamental: {skor_akhir} / 100**")
             st.progress(skor_akhir / 100.0)
             
@@ -401,16 +409,23 @@ def run_fundamental():
             st.markdown(swot_html, unsafe_allow_html=True)
             st.write(f"<br><b>Posisi Industri:</b> Emiten diklasifikasikan sebagai <b>{posisi}</b>.", unsafe_allow_html=True)
 
-            # Keuangan
+            # Keuangan (Visualisasi Dinamis Bank vs Non-Bank)
             st.header("2. ANALISA KEUANGAN")
             try:
                 df_fin = financials.T.sort_index().tail(5)
                 st.write("**Tren Pendapatan vs Laba Bersih:**")
                 st.line_chart(df_fin[['Total Revenue', 'Net Income']])
-                f1, f2, f3 = st.columns(3)
+                
+                # REVISI 3: Menambahkan kolom keempat (CR / NPL) dan dibuat dinamis
+                f1, f2, f3, f4 = st.columns(4)
                 f1.metric("ROE (Efisiensi)", f"{info.get('returnOnEquity', 0)*100:.2f}%")
                 f2.metric("NPM (Marjin Laba)", f"{info.get('profitMargins', 0)*100:.2f}%")
-                f3.metric("Debt to Equity", f"{info.get('debtToEquity', 0)/100:.2f}x")
+                if is_bank_ui:
+                    f3.metric("CAR (Modal)", f"{info.get('capitalAdequacyRatio', 0):.2f}%")
+                    f4.metric("NPL (Kredit Macet)", f"{info.get('nonPerformingLoan', 0):.2f}%")
+                else:
+                    f3.metric("Debt to Equity", f"{(info.get('debtToEquity') or 0)/100:.2f}x")
+                    f4.metric("Current Ratio", f"{info.get('currentRatio', 0):.2f}x")
             except: st.warning("Visualisasi data keuangan terbatas.")
 
             # Valuasi
@@ -424,7 +439,7 @@ def run_fundamental():
             warna_mos = "normal" if mos > 0 else "inverse"
             st.metric(label="Margin of Safety (MOS) 🛡️", value=f"{mos:.1f}%", delta="Diskon" if mos > 0 else "Premi (Kemahalan)", delta_color=warna_mos)
 
-            # --- TAMBAHAN: SENTIMEN BERITA KUALITATIF ---
+            # Sentimen Berita
             st.header("4. SENTIMEN BERITA & KUALITATIF")
             if "BULLISH" in sentimen_kesimpulan:
                 st.success(f"**Tren Sentimen: {sentimen_kesimpulan}**\n\n{sentimen_alasan}")
@@ -444,7 +459,6 @@ def run_fundamental():
             st.header("5. TRADING PLAN & EKSEKUSI")
             r0, r1, r2, r3 = st.columns(4)
             r0.info(f"**Taktik Entry:**\n{saran_entry}")
-            # REVISI 4: Menambahkan persentase Reward di Web
             r1.success(f"**Target TP:**\nMin. Rp {target_short:,.0f} (+{reward_pct:.1f}%)")
             r2.warning(f"**Average Down:**\nArea Rp {avg_down_price:,.0f} (-12%)")
             r3.error(f"**Cut Loss (-30%):**\nTembus Rp {sl_final:,.0f}")
@@ -452,7 +466,6 @@ def run_fundamental():
             st.markdown("---")
             
             # --- TOMBOL EXPORT PDF ---
-            # Membersihkan emoji untuk FPDF (Latin-1)
             pdf_sentimen_kesimpulan = sentimen_kesimpulan.replace("🌟", "").replace("⚠️", "").replace("⚖️", "").strip()
 
             data_to_pdf = {
@@ -472,18 +485,21 @@ def run_fundamental():
                 'sentimen_alasan': sentimen_alasan,
                 'saran_entry': saran_entry,
                 'tp': target_short,
-                'reward_pct': reward_pct, # Variabel baru
+                'reward_pct': reward_pct,
                 'avg_down': avg_down_price,
                 'sl': sl_final,
-                # REVISI 3: Menambahkan data SWOT dan Keuangan ke dalam kamus cetak
                 'posisi': posisi,
                 's_1': s_1,
                 's_2': s_2,
                 'w_1': w_1,
                 'w_2': w_2,
+                'is_bank': is_bank_ui, # Info apakah dia bank atau bukan untuk PDF
+                'car': info.get('capitalAdequacyRatio') or 0,
+                'npl': info.get('nonPerformingLoan') or 0,
                 'roe': (info.get('returnOnEquity') or 0) * 100,
                 'npm': (info.get('profitMargins') or 0) * 100,
-                'der': (info.get('debtToEquity') or 0) / 100
+                'der': (info.get('debtToEquity') or 0) / 100,
+                'cr': info.get('currentRatio') or 0
             }
             
             pdf_bytes = generate_pdf_report(data_to_pdf)
