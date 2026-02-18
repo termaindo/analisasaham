@@ -86,11 +86,13 @@ def hitung_skor_fundamental(info, financials, cashflow, mean_pe_5y, mean_pbv_5y,
     
     sector = info.get('sector', '')
     industry = info.get('industry', '')
-    is_bank = 'Bank' in industry or sector == 'Financial Services'
+    
+    # REVISI 2: Perluasan deteksi sektor finansial (termasuk Multifinance, Asuransi, dll)
+    is_financial = sector == 'Financial Services' or any(kw in industry for kw in ['Bank', 'Credit', 'Financing', 'Insurance'])
     is_infra = 'Infrastructure' in industry or sector in ['Utilities', 'Real Estate', 'Industrials']
     
     # --- 1. KESEHATAN KEUANGAN ---
-    if is_bank:
+    if is_financial:
         if info.get('capitalAdequacyRatio') is not None: metrik_tersedia += 1
         car = info.get('capitalAdequacyRatio', 18) 
         npl = info.get('nonPerformingLoan', 2.5)   
@@ -165,7 +167,6 @@ def hitung_skor_fundamental(info, financials, cashflow, mean_pe_5y, mean_pbv_5y,
     # --- 5. PERTUMBUHAN ---
     if info.get('earningsGrowth') is not None: metrik_tersedia += 1
     eps_g = info.get('earningsGrowth', 0) * 100 if info.get('earningsGrowth') else 0
-    # KOREKSI: Menerapkan 3 tingkat skor untuk EPS Growth
     if eps_g > 15: skor += 10
     elif eps_g >= 5: skor += 7
     elif eps_g > 0: skor += 3
@@ -208,7 +209,7 @@ def generate_pdf_report(data_dict):
     pdf.cell(0, 6, f"Sektor: {data_dict['sektor']} | Status: {data_dict['syariah']}", ln=True, align='C')
     pdf.ln(10)
     
-    # Skor & Keputusan
+    # 1. Skor & Keputusan
     pdf.set_font("Arial", 'B', 12)
     pdf.cell(0, 8, "1. SKOR FUNDAMENTAL & KEPUTUSAN", ln=True)
     pdf.set_font("Arial", '', 11)
@@ -217,31 +218,50 @@ def generate_pdf_report(data_dict):
     pdf.cell(0, 6, f"Keputusan: {data_dict['keputusan']}", ln=True)
     pdf.multi_cell(0, 6, f"Alasan: {data_dict['alasan']}")
     pdf.ln(5)
-    
-    # Valuasi
+
+    # REVISI 3: Tambahan Analisa SWOT ke dalam PDF
     pdf.set_font("Arial", 'B', 12)
-    pdf.cell(0, 8, "2. VALUASI & MARGIN OF SAFETY", ln=True)
+    pdf.cell(0, 8, "2. OVERVIEW & ANALISA SWOT", ln=True)
+    pdf.set_font("Arial", '', 11)
+    pdf.cell(0, 6, f"Posisi Industri: {data_dict['posisi']}", ln=True)
+    pdf.multi_cell(0, 6, f"Kekuatan (Strengths): {data_dict['s_1']}, {data_dict['s_2']}")
+    pdf.multi_cell(0, 6, f"Kelemahan (Weaknesses): {data_dict['w_1']}, {data_dict['w_2']}")
+    pdf.ln(5)
+
+    # REVISI 3: Tambahan Analisa Keuangan ke dalam PDF
+    pdf.set_font("Arial", 'B', 12)
+    pdf.cell(0, 8, "3. ANALISA KEUANGAN", ln=True)
+    pdf.set_font("Arial", '', 11)
+    pdf.cell(0, 6, f"ROE (Efisiensi): {data_dict['roe']:.2f}%", ln=True)
+    pdf.cell(0, 6, f"NPM (Marjin Laba): {data_dict['npm']:.2f}%", ln=True)
+    pdf.cell(0, 6, f"Debt to Equity: {data_dict['der']:.2f}x", ln=True)
+    pdf.ln(5)
+    
+    # 4. Valuasi
+    pdf.set_font("Arial", 'B', 12)
+    pdf.cell(0, 8, "4. VALUASI & MARGIN OF SAFETY", ln=True)
     pdf.set_font("Arial", '', 11)
     pdf.cell(0, 6, f"Harga Wajar (Graham): Rp {data_dict['fair_price']:,.0f}", ln=True)
     pdf.cell(0, 6, f"Harga Saat Ini: Rp {data_dict['curr_price']:,.0f}", ln=True)
     pdf.cell(0, 6, f"Margin of Safety (MOS): {data_dict['mos']:.1f}%", ln=True)
     pdf.ln(5)
 
-    # Sentimen Kualitatif
+    # 5. Sentimen Kualitatif
     pdf.set_font("Arial", 'B', 12)
-    pdf.cell(0, 8, "3. SENTIMEN BERITA (KUALITATIF)", ln=True)
+    pdf.cell(0, 8, "5. SENTIMEN BERITA (KUALITATIF)", ln=True)
     pdf.set_font("Arial", '', 11)
     pdf.cell(0, 6, f"Kesimpulan: {data_dict['sentimen_kesimpulan']}", ln=True)
     pdf.multi_cell(0, 6, f"Catatan: {data_dict['sentimen_alasan']}")
     pdf.ln(5)
     
-    # Trading Plan
+    # 6. Trading Plan
     pdf.set_font("Arial", 'B', 12)
-    pdf.cell(0, 8, "4. TRADING PLAN & EKSEKUSI", ln=True)
+    pdf.cell(0, 8, "6. TRADING PLAN & EKSEKUSI", ln=True)
     pdf.set_font("Arial", '', 11)
     pdf.multi_cell(0, 6, f"Saran Entry: {data_dict['saran_entry']}")
-    pdf.cell(0, 6, f"Target TP: Minimal di Rp {data_dict['tp']:,.0f}", ln=True)
-    pdf.cell(0, 6, f"Average Down: Area Rp {data_dict['avg_down']:,.0f} (Penurunan 10-15%)", ln=True)
+    # REVISI 4: Menambahkan persentase Reward di PDF
+    pdf.cell(0, 6, f"Target TP: Minimal di Rp {data_dict['tp']:,.0f} (+{data_dict['reward_pct']:.1f}%)", ln=True)
+    pdf.cell(0, 6, f"Average Down: Area Rp {data_dict['avg_down']:,.0f} (Penurunan ~12%)", ln=True)
     pdf.cell(0, 6, f"Batas Cutloss: Tembus Rp {data_dict['sl']:,.0f} (Penurunan ~30%)", ln=True)
     pdf.ln(10)
     
@@ -302,7 +322,6 @@ def run_fundamental():
             skor_akhir, konf_pct, label_konf, ocf_sehat = hitung_skor_fundamental(info, financials, cashflow, mean_pe_5y, mean_pbv_5y, div_yield)
             
             # --- PENENTUAN KEPUTUSAN GABUNGAN (MODIFIKASI MOS) ---
-            # KOREKSI: Ambang batas skor akhir High Confidence diubah menjadi minimal 80
             if skor_akhir >= 80 and konf_pct >= 60 and mos >= 30:
                 keputusan = "🌟 SANGAT LAYAK DIBELI"
                 warna_keputusan = "success"
@@ -318,7 +337,7 @@ def run_fundamental():
             else:
                 keputusan = "⛔ BELUM LAYAK DIBELI (Hindari)"
                 warna_keputusan = "error"
-                alasan_keputusan = f"Kualitas fundamental rentan atau harga Overvalued."
+                alasan_keputusan = f"Kualitas fundamental rentan atau data laporan keuangan tidak meyakinkan."
 
             # --- PERSIAPAN DATA TRADING PLAN ---
             atr = (history['High'] - history['Low']).tail(14).mean() if not history.empty else (curr_price * 0.02)
@@ -326,8 +345,8 @@ def run_fundamental():
             if mos < 15: 
                 base_entry_price = fair_price * 0.85
                 saran_entry = f"Sabar tunggu koreksi di Harga ideal: Rp {base_entry_price:,.0f} (MOS 15%)"
-                avg_down_price = base_entry_price * 0.88 # 12% dari target harga masuk
-                sl_final = base_entry_price * 0.70       # 30% batas Cut Loss
+                avg_down_price = base_entry_price * 0.88 
+                sl_final = base_entry_price * 0.70       
             else:
                 batas_bawah = max(curr_price - atr, curr_price * 0.95)
                 saran_entry = f"Beli Bertahap di area Rp {batas_bawah:,.0f} - Rp {curr_price:,.0f}"
@@ -335,9 +354,14 @@ def run_fundamental():
                 sl_final = curr_price * 0.70       
 
             target_short = fair_price if fair_price > curr_price else curr_price * 1.15
+            
+            # REVISI 4: Hitung Persentase Target Profit (Reward)
+            reward_pct = ((target_short - curr_price) / curr_price) * 100 if curr_price > 0 else 0
 
             # --- RENDER TAMPILAN WEB STREAMLIT ---
             st.header("🏆 SKOR FUNDAMENTAL & KEPUTUSAN")
+            # REVISI 1: Menampilkan Skor Teks di atas Progress Bar
+            st.markdown(f"**Skor Fundamental: {skor_akhir} / 100**")
             st.progress(skor_akhir / 100.0)
             
             if warna_keputusan == "success": st.success(f"### {keputusan}\n{alasan_keputusan}")
@@ -420,7 +444,8 @@ def run_fundamental():
             st.header("5. TRADING PLAN & EKSEKUSI")
             r0, r1, r2, r3 = st.columns(4)
             r0.info(f"**Taktik Entry:**\n{saran_entry}")
-            r1.success(f"**Target TP:**\nMin. Rp {target_short:,.0f}")
+            # REVISI 4: Menambahkan persentase Reward di Web
+            r1.success(f"**Target TP:**\nMin. Rp {target_short:,.0f} (+{reward_pct:.1f}%)")
             r2.warning(f"**Average Down:**\nArea Rp {avg_down_price:,.0f} (-12%)")
             r3.error(f"**Cut Loss (-30%):**\nTembus Rp {sl_final:,.0f}")
             
@@ -447,8 +472,18 @@ def run_fundamental():
                 'sentimen_alasan': sentimen_alasan,
                 'saran_entry': saran_entry,
                 'tp': target_short,
+                'reward_pct': reward_pct, # Variabel baru
                 'avg_down': avg_down_price,
-                'sl': sl_final
+                'sl': sl_final,
+                # REVISI 3: Menambahkan data SWOT dan Keuangan ke dalam kamus cetak
+                'posisi': posisi,
+                's_1': s_1,
+                's_2': s_2,
+                'w_1': w_1,
+                'w_2': w_2,
+                'roe': (info.get('returnOnEquity') or 0) * 100,
+                'npm': (info.get('profitMargins') or 0) * 100,
+                'der': (info.get('debtToEquity') or 0) / 100
             }
             
             pdf_bytes = generate_pdf_report(data_to_pdf)
