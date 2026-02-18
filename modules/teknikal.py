@@ -103,17 +103,19 @@ def generate_pdf_fpdf(data):
     pdf = FPDF()
     pdf.add_page()
     
-    # Menghapus emoji untuk fpdf karena hanya mendukung Latin-1
     status_syariah_teks = "Syariah" if "✅" in data['syariah'] else "Non-Syariah"
     
-    # --- HEADER PDF DISESUAIKAN ---
+    # --- HEADER PDF ---
     pdf.set_font("Arial", 'B', 16)
     pdf.cell(0, 10, txt="Expert Stock Pro - Analisa Teknikal & Sentimen Berita", ln=True, align='C')
     
-    pdf.set_font("Arial", 'I', 11)
-    pdf.cell(0, 6, txt="Sumber: lynk.id/hahastoresby", ln=True, align='C')
+    # Membuat Link Bisa Diklik dan Berwarna Biru
+    pdf.set_font("Arial", 'U', 11)
+    pdf.set_text_color(37, 99, 235) # Warna biru khas link
+    pdf.cell(0, 6, txt="Sumber: https://lynk.id/hahastoresby", ln=True, align='C', link="https://lynk.id/hahastoresby")
+    pdf.set_text_color(0, 0, 0) # Kembalikan teks ke warna hitam
     
-    pdf.ln(8) # Jarak spasi
+    pdf.ln(8) 
     
     pdf.set_font("Arial", 'B', 15)
     pdf.cell(0, 8, txt=f"{data['ticker']} - {data['nama_perusahaan']}", ln=True, align='C')
@@ -121,8 +123,7 @@ def generate_pdf_fpdf(data):
     pdf.set_font("Arial", '', 12)
     pdf.cell(0, 6, txt=f"Sektor: {data['sektor']} | Status: {status_syariah_teks}", ln=True, align='C')
     
-    pdf.ln(10) # Jarak sebelum mulai konten
-    # ---------------------------------
+    pdf.ln(10)
     
     pdf.set_font("Arial", '', 10)
     pdf.cell(0, 6, txt=f"Tanggal Analisa: {data['tanggal']} | Harga: Rp {data['harga']:,.0f}", ln=True, align='R')
