@@ -250,6 +250,9 @@ def generate_pdf_report(data_dict):
     pdf.cell(0, 6, f"Harga Wajar (Graham): Rp {data_dict['fair_price']:,.0f}", ln=True)
     pdf.cell(0, 6, f"Harga Saat Ini: Rp {data_dict['curr_price']:,.0f}", ln=True)
     pdf.cell(0, 6, f"Margin of Safety (MOS): {data_dict['mos']:.1f}%", ln=True)
+    # --- TAMBAHAN DIVIDEN DI PDF ---
+    pdf.cell(0, 6, f"Estimasi Dividen (Rupiah): Rp {data_dict['div_rate']:,.0f} per lembar", ln=True)
+    pdf.cell(0, 6, f"Estimasi Dividend Yield: {data_dict['div_yield']:.2f}%", ln=True)
     pdf.ln(5)
 
     # 5. Sentimen Kualitatif
@@ -329,6 +332,9 @@ def run_fundamental():
             except: mean_pe_5y, mean_pbv_5y = 15.0, 1.5
             
             div_yield = hitung_div_yield_normal(info)
+            # TAMBAHAN: Ekstraksi angka Rupiah Prediksi Dividen dari Yfinance
+            div_rate = info.get('dividendRate', 0)
+            
             skor_akhir, konf_pct, label_konf, ocf_sehat = hitung_skor_fundamental(info, financials, cashflow, mean_pe_5y, mean_pbv_5y, div_yield)
             
             # --- PENENTUAN KEPUTUSAN GABUNGAN (MODIFIKASI MOS) ---
@@ -409,14 +415,13 @@ def run_fundamental():
             st.markdown(swot_html, unsafe_allow_html=True)
             st.write(f"<br><b>Posisi Industri:</b> Emiten diklasifikasikan sebagai <b>{posisi}</b>.", unsafe_allow_html=True)
 
-            # Keuangan (Visualisasi Dinamis Bank vs Non-Bank)
+            # Keuangan
             st.header("2. ANALISA KEUANGAN")
             try:
                 df_fin = financials.T.sort_index().tail(5)
                 st.write("**Tren Pendapatan vs Laba Bersih:**")
                 st.line_chart(df_fin[['Total Revenue', 'Net Income']])
                 
-                # REVISI 3: Menambahkan kolom keempat (CR / NPL) dan dibuat dinamis
                 f1, f2, f3, f4 = st.columns(4)
                 f1.metric("ROE (Efisiensi)", f"{info.get('returnOnEquity', 0)*100:.2f}%")
                 f2.metric("NPM (Marjin Laba)", f"{info.get('profitMargins', 0)*100:.2f}%")
@@ -428,13 +433,17 @@ def run_fundamental():
                     f4.metric("Current Ratio", f"{info.get('currentRatio', 0):.2f}x")
             except: st.warning("Visualisasi data keuangan terbatas.")
 
-            # Valuasi
+            # Valuasi (PENYESUAIAN ANTARMUKA WEB UNTUK DIVIDEN)
             st.header("3. VALUASI & MARGIN OF SAFETY")
             curr_pe, curr_pbv = info.get('trailingPE', 0), info.get('priceToBook', 0)
-            v1, v2, v3 = st.columns(3)
+            
+            # Dirubah menjadi 4 kolom agar est. dividen masuk dengan cantik
+            v1, v2, v3, v4 = st.columns(4)
             v1.metric("PER Terkini", f"{curr_pe:.2f}x", f"Avg 5Y: {mean_pe_5y:.1f}x")
             v2.metric("PBV Terkini", f"{curr_pbv:.2f}x", f"Avg 5Y: {mean_pbv_5y:.1f}x")
-            v3.metric("Harga Wajar (Graham)", f"Rp {fair_price:,.0f}")
+            v3.metric("Harga Wajar", f"Rp {fair_price:,.0f}")
+            # Menampilkan info estimasi pembagian Rupiah & persentase Yield
+            v4.metric("Est. Dividen", f"Rp {div_rate:,.0f}", f"Yield: {div_yield:.2f}%")
             
             warna_mos = "normal" if mos > 0 else "inverse"
             st.metric(label="Margin of Safety (MOS) 🛡️", value=f"{mos:.1f}%", delta="Diskon" if mos > 0 else "Premi (Kemahalan)", delta_color=warna_mos)
@@ -493,13 +502,16 @@ def run_fundamental():
                 's_2': s_2,
                 'w_1': w_1,
                 'w_2': w_2,
-                'is_bank': is_bank_ui, # Info apakah dia bank atau bukan untuk PDF
+                'is_bank': is_bank_ui,
                 'car': info.get('capitalAdequacyRatio') or 0,
                 'npl': info.get('nonPerformingLoan') or 0,
                 'roe': (info.get('returnOnEquity') or 0) * 100,
                 'npm': (info.get('profitMargins') or 0) * 100,
                 'der': (info.get('debtToEquity') or 0) / 100,
-                'cr': info.get('currentRatio') or 0
+                'cr': info.get('currentRatio') or 0,
+                # TAMBAHAN UNTUK PDF DIVIDEN
+                'div_rate': div_rate,
+                'div_yield': div_yield
             }
             
             pdf_bytes = generate_pdf_report(data_to_pdf)
