@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import base64
-import yfinance as yf  # Tambahan untuk mengambil berita
+import yfinance as yf  
 from io import BytesIO
 from fpdf import FPDF
 from modules.data_loader import get_full_stock_data, hitung_div_yield_normal
@@ -87,8 +87,6 @@ def hitung_skor_fundamental(info, financials, cashflow, mean_pe_5y, mean_pbv_5y,
     sector = info.get('sector', '')
     industry = info.get('industry', '')
     
-    # REVISI: Mengembalikan deteksi khusus Bank untuk metrik CAR & NPL
-    # Multifinance (ADMF/CFIN) dan Asuransi akan diuji dengan DER & CR seperti perusahaan umum
     is_bank = 'Bank' in industry
     is_infra = 'Infrastructure' in industry or sector in ['Utilities', 'Real Estate', 'Industrials']
     
@@ -201,10 +199,9 @@ def generate_pdf_report(data_dict):
     
     # PENYESUAIAN HYPERLINK
     pdf.set_font("Arial", 'I', 10)
-    pdf.set_text_color(0, 0, 255)  # Ubah warna teks menjadi Biru (RGB)
-    # Menambahkan parameter link (wajib menggunakan https:// agar dibaca sebagai URL eksternal)
+    pdf.set_text_color(0, 0, 255)  
     pdf.cell(0, 5, "Sumber: lynk.id/hahastoresby", ln=True, align='C', link="https://lynk.id/hahastoresby")
-    pdf.set_text_color(0, 0, 0)  # Kembalikan warna teks ke Hitam agar bagian bawah tidak ikut biru
+    pdf.set_text_color(0, 0, 0)  
     pdf.ln(5)
     
     # Info Emiten
@@ -468,8 +465,9 @@ def run_fundamental():
 
             # Trading Plan
             st.header("5. TRADING PLAN & EKSEKUSI")
-            # TAMPILKAN HARGA SAAT INI SEBELUM ENTRY
-            st.markdown(f"**Harga Saat Ini:** Rp {curr_price:,.0f}")
+            # TAMPILKAN HARGA SAAT INI SEBELUM ENTRY DENGAN LEBIH MENCOLOK DI UI
+            st.subheader(f"📍 Harga Saat Ini: Rp {curr_price:,.0f}")
+            
             r0, r1, r2, r3 = st.columns(4)
             r0.info(f"**Taktik Entry:**\n{saran_entry}")
             r1.success(f"**Target TP:**\nMin. Rp {target_short:,.0f} (+{reward_pct:.1f}%)")
