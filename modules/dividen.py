@@ -2,10 +2,108 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
+from fpdf import FPDF
 
 # Import dari data_loader & universe
 from modules.data_loader import get_full_stock_data, hitung_div_yield_normal
 from modules.universe import is_syariah
+
+def clean_text(text):
+    """Menghapus karakter non-latin untuk kompatibilitas FPDF"""
+    if isinstance(text, str):
+        return text.encode('latin-1', 'ignore').decode('latin-1')
+    return str(text)
+
+def generate_pdf_report(ticker, company, sector, syariah_status, 
+                        score, score_status, conf_label, conf_pct,
+                        yield_val, payout, konsistensi, cagr, 
+                        eps_growth, roe, fcf, der, 
+                        est_dps, curr_price, sl_final, entry_price, status_final):
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_auto_page_break(auto=True, margin=15)
+    
+    # --- HEADER PDF ---
+    pdf.set_font("Arial", "B", 18)
+    pdf.cell(0, 8, "Expert Stock Pro", ln=True, align="C")
+    
+    pdf.set_font("Arial", "B", 12)
+    pdf.cell(0, 6, "Analisa Dividen Pro", ln=True, align="C")
+    
+    # Tautan Aktif berwarna Biru
+    pdf.set_font("Arial", "U", 10)
+    pdf.set_text_color(0, 0, 255)
+    pdf.cell(0, 6, "lynk.id/hahastoresby", ln=True, align="C", link="https://lynk.id/hahastoresby")
+    pdf.set_text_color(0, 0, 0) # Kembalikan ke teks hitam
+    pdf.ln(8)
+    
+    # --- IDENTITAS SAHAM ---
+    pdf.set_font("Arial", "B", 14)
+    pdf.cell(0, 8, clean_text(f"{ticker} - {company}"), ln=True)
+    pdf.set_font("Arial", "", 11)
+    pdf.cell(0, 6, clean_text(f"Sektor: {sector} | Kategori: {syariah_status}"), ln=True)
+    pdf.cell(0, 6, clean_text(f"Skor Kelayakan Dividen: {score}/100 ({score_status})"), ln=True)
+    pdf.cell(0, 6, clean_text(f"Tingkat Kepercayaan Data: {conf_label} ({conf_pct:.0f}% metrik tersedia)"), ln=True)
+    pdf.ln(5)
+    
+    # --- 1. HISTORY DIVIDEN ---
+    pdf.set_font("Arial", "B", 12)
+    pdf.cell(0, 8, "1. History & Pertumbuhan Dividen", ln=True)
+    pdf.set_font("Arial", "", 11)
+    pdf.cell(0, 6, f"- Dividend Yield: {yield_val:.2f}%", ln=True)
+    pdf.cell(0, 6, f"- Payout Ratio: {payout:.1f}%", ln=True)
+    pdf.cell(0, 6, f"- Konsistensi: {konsistensi}/5 Tahun", ln=True)
+    pdf.cell(0, 6, f"- Growth (CAGR): {cagr*100:.1f}%", ln=True)
+    pdf.ln(3)
+
+    # --- 2. KINERJA BISNIS ---
+    pdf.set_font("Arial", "B", 12)
+    pdf.cell(0, 8, "2. Kinerja Bisnis", ln=True)
+    pdf.set_font("Arial", "", 11)
+    pdf.cell(0, 6, f"- EPS Growth (YoY): {eps_growth:.1f}%", ln=True)
+    pdf.cell(0, 6, f"- Return on Equity (ROE): {roe:.1f}%", ln=True)
+    pdf.ln(3)
+
+    # --- 3. KESEHATAN FINANSIAL ---
+    pdf.set_font("Arial", "B", 12)
+    pdf.cell(0, 8, "3. Kesehatan Finansial", ln=True)
+    pdf.set_font("Arial", "", 11)
+    fcf_status = "Positif (Aman)" if fcf > 0 else "Negatif (Berisiko)"
+    pdf.cell(0, 6, f"- Kualitas Kas (FCF): {fcf_status}", ln=True)
+    pdf.cell(0, 6, f"- Debt to Equity Ratio (DER): {der:.2f}x", ln=True)
+    pdf.ln(3)
+
+    # --- 4. PROYEKSI & PROTEKSI ---
+    pdf.set_font("Arial", "B", 12)
+    pdf.cell(0, 8, "4. Proyeksi & Proteksi", ln=True)
+    pdf.set_font("Arial", "", 11)
+    pdf.cell(0, 6, f"- Estimasi DPS Mendatang: Rp {est_dps:,.0f} / Lembar", ln=True)
+    pot_yield = (est_dps/curr_price)*100 if curr_price > 0 else 0
+    pdf.cell(0, 6, f"- Potential Yield: {pot_yield:.2f}%", ln=True)
+    pdf.cell(0, 6, f"- Stop Loss Level (Lock 8%): Rp {sl_final:,.0f}", ln=True)
+    pdf.ln(3)
+
+    # --- 5. REKOMENDASI ---
+    pdf.set_font("Arial", "B", 12)
+    pdf.cell(0, 8, "5. Rekomendasi", ln=True)
+    pdf.set_font("Arial", "", 11)
+    pdf.cell(0, 6, clean_text(f"Status: {status_final}"), ln=True)
+    pdf.cell(0, 6, clean_text(f"Harga wajar bila dividen setara deposito (5%): Rp {entry_price:,.0f}"), ln=True)
+    pdf.cell(0, 6, clean_text(f"Harga Saham Saat Ini: Rp {curr_price:,.0f}"), ln=True)
+    pdf.ln(8)
+
+    # --- DISCLAIMER ---
+    pdf.set_font("Arial", "I", 9)
+    pdf.set_text_color(100, 100, 100)
+    disclaimer_text = "Laporan ini dihasilkan secara otomatis oleh sistem algoritma Expert Stock Pro. Semua informasi, analisa, dan sinyal trading disediakan hanya untuk tujuan edukasi. Keputusan investasi sepenuhnya berada di tangan Anda. Kinerja masa lalu tidak selalu menjamin hasil masa depan."
+    pdf.multi_cell(0, 5, disclaimer_text)
+
+    # Kembalikan sebagai bytes
+    try:
+        return pdf.output(dest="S").encode("latin-1")
+    except AttributeError:
+        # Menangani jika menggunakan versi fpdf2 terbaru
+        return bytearray(pdf.output())
 
 def run_dividen():
     st.title("💰 Analisa Dividen Pro (Passive Income Investing)")
@@ -53,34 +151,25 @@ def run_dividen():
             
             # --- 2. LOGIKA SCORING AKURAT (100 POIN) ---
             total_score = 0
-            
-            # A. Kualitas Kas (Max 20)
             if fcf > 0: total_score += 20
-            
-            # B. Konsistensi & Pertumbuhan (Max 20)
             if konsistensi == 5 and cagr > 0.05: total_score += 20
             elif konsistensi == 5 and cagr > 0: total_score += 15
             elif konsistensi >= 3: total_score += 10
             
-            # C. Dividend Yield (Max 20)
             if yield_val >= 8: total_score += 20
             elif yield_val >= 6: total_score += 15
             elif yield_val >= 4: total_score += 10
             
-            # D. Kesehatan Utang (Max 15)
             if der < 1.0: total_score += 15
             elif der <= 2.0: total_score += 10
             
-            # E. Payout Ratio (Max 15)
             if 30 <= payout <= 70: total_score += 15
             elif 70 < payout <= 90: total_score += 10
             elif payout > 0: total_score += 5
             
-            # F. Kinerja Bisnis (Max 10)
             if roe > 15 and eps_growth > 0: total_score += 10
             elif roe > 8: total_score += 5
 
-            # Teks Status Skor
             if total_score >= 80:
                 score_status = "Luar Biasa (Sangat Layak Dikoleksi)"
             elif total_score >= 60:
@@ -95,7 +184,7 @@ def run_dividen():
             conf_color = "🟢" if konfidensi_persen >= 100 else "🟡" if konfidensi_persen >= 70 else "🔴"
             conf_label = "Tinggi" if konfidensi_persen >= 100 else "Sedang" if konfidensi_persen >= 70 else "Rendah"
 
-            # --- 4. HEADER: IDENTITAS & SKOR (Style Match: Fundamental Pro) ---
+            # --- 4. HEADER UI ---
             company_name = info.get('longName', ticker_input)
             status_syr_icon = "✅" if is_syariah(kode_bersih) else "❌"
             status_syr_text = "Syariah" if is_syariah(kode_bersih) else "Non-Syariah"
@@ -176,7 +265,27 @@ def run_dividen():
             st.subheader(f"Status: {status_final}")
             st.write(f"**Harga wajar bila dividen setara dengan deposito dengan bagi hasil 5%:** Rp {entry_price:,.0f}")
             st.write(f"**Harga Saham Saat Ini:** Rp {curr_price:,.0f}")
-            
-            # --- DISCLAIMER ---
+
+            # --- EXPORT PDF BUTTON ---
             st.markdown("---")
-            st.caption("**DISCLAIMER:** Data dan analisa ini dihasilkan secara otomatis untuk tujuan edukasi. Keputusan investasi sepenuhnya adalah tanggung jawab investor.")
+            pdf_bytes = generate_pdf_report(
+                ticker_input, company_name, sector, status_syr_text, 
+                total_score, score_status, conf_label, konfidensi_persen,
+                yield_val, payout, konsistensi, cagr, 
+                eps_growth, roe, fcf, der, 
+                est_dps, curr_price, sl_final, entry_price, status_final
+            )
+            
+            st.download_button(
+                label="📄 Simpan sebagai PDF",
+                data=pdf_bytes,
+                file_name=f"ExpertStockPro_Dividen_{ticker_input}.pdf",
+                mime="application/pdf",
+                use_container_width=True
+            )
+            
+            # --- DISCLAIMER BARU ---
+            st.markdown("---")
+            st.caption("""
+            **DISCLAIMER:** Laporan ini dihasilkan secara otomatis oleh sistem algoritma Expert Stock Pro. Semua informasi, analisa, dan sinyal trading disediakan hanya untuk tujuan edukasi. Keputusan investasi sepenuhnya berada di tangan Anda. Kinerja masa lalu tidak selalu menjamin hasil masa depan.
+            """)
