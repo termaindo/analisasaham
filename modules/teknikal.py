@@ -179,9 +179,11 @@ def generate_pdf_fpdf(data):
     pdf.set_font("Arial", 'B', 11)
     pdf.cell(0, 8, txt="5. TRADING PLAN", ln=True)
     pdf.set_font("Arial", '', 11)
-    pdf.cell(0, 6, txt=f"Area Entry  : Rp {data['entry_bawah']:,.0f} - Rp {data['entry_atas']:,.0f}", ln=True)
-    pdf.cell(0, 6, txt=f"Stop Loss   : Rp {data['sl_final']:,.0f} (-{data['risk_pct']:.1f}%)", ln=True)
-    pdf.cell(0, 6, txt=f"Target      : Rp {data['tp_final']:,.0f} (+{data['tp_pct']:.1f}%)", ln=True)
+    # Spasi disejajarkan agar rapi dan mudah dibaca
+    pdf.cell(0, 6, txt=f"Harga Saat Ini : Rp {data['harga']:,.0f}", ln=True)
+    pdf.cell(0, 6, txt=f"Area Entry     : Rp {data['entry_bawah']:,.0f} - Rp {data['entry_atas']:,.0f}", ln=True)
+    pdf.cell(0, 6, txt=f"Stop Loss      : Rp {data['sl_final']:,.0f} (-{data['risk_pct']:.1f}%)", ln=True)
+    pdf.cell(0, 6, txt=f"Target         : Rp {data['tp_final']:,.0f} (+{data['tp_pct']:.1f}%)", ln=True)
     
     pdf.ln(5)
     
@@ -395,6 +397,10 @@ def run_teknikal():
 
             st.markdown("---")
             st.subheader("5. TRADING SIGNAL & PLAN")
+            
+            # Tambahan Format Header Harga Saat Ini di UI
+            st.write(f"#### Harga Saat Ini: Rp {int(curr_price):,.0f}")
+            
             s1, s2, s3 = st.columns(3)
             with s1:
                 st.metric("AREA ENTRY", f"Rp {int(entry_bawah):,.0f} - {int(entry_atas):,.0f}")
@@ -403,58 +409,4 @@ def run_teknikal():
                 st.error(f"**STOP LOSS**\n\n**Rp {int(sl_final):,.0f} (-{risk_pct_riil:.1f}%)**")
                 st.caption("Max Risk 8% / 2.5x ATR")
             with s3:
-                st.success(f"**TARGET PROFIT**\n\n**Rp {int(tp_final):,.0f} (+{tp_pct_riil:.1f}%)**")
-                st.caption(f"Risk/Reward Ratio 1 : {rrr_riil}")
-
-            st.markdown("---")
-
-            # ==========================================
-            # TOMBOL DOWNLOAD PDF MENGGUNAKAN FPDF
-            # ==========================================
-            pdf_data = {
-                'ticker': clean_ticker,
-                'nama_perusahaan': nama_perusahaan,
-                'sektor': sektor_id,
-                'syariah': status_syariah,
-                'tanggal': datetime.now().strftime("%d %B %Y"),
-                'harga': curr_price,
-                'score': score,
-                'signal': signal,
-                'confidence': confidence,
-                'main_trend': main_trend,
-                'weekly_trend': weekly_trend,
-                'sup_level': sup_level,
-                'res_level': res_level,
-                'posisi_ma': posisi_ma_pdf,
-                'rsi_text': f"{last['RSI']:.1f} ({arah_rsi_pdf} | {rsi_status})",
-                'macd_text': macd_teks,
-                'volatilitas': volatilitas_teks,
-                'candlestick': pattern_teks,
-                'divergence': "Terdeteksi (Bullish)" if (curr_price < prev_5['Close'] and last['RSI'] > prev_5['RSI']) else "Tidak Terdeteksi",
-                'momentum': momentum_teks,
-                'pressure': market_pressure,
-                'entry_bawah': entry_bawah,
-                'entry_atas': entry_atas,
-                'sl_final': sl_final,
-                'risk_pct': risk_pct_riil,
-                'tp_final': tp_final,
-                'tp_pct': tp_pct_riil,
-                'sentiment': sentimen_status,
-                'headline': sentimen_headline
-            }
-            
-            pdf_bytes = generate_pdf_fpdf(pdf_data)
-            
-            if pdf_bytes:
-                st.download_button(
-                    label="📄 Unduh Laporan Analisa (PDF)",
-                    data=pdf_bytes,
-                    file_name=f"Expert_Stock_Pro_Teknikal_{clean_ticker}_{datetime.now().strftime('%Y%m%d')}.pdf",
-                    mime="application/pdf",
-                    use_container_width=True
-                )
-
-            # --- DISCLAIMER (UI) ---
-            st.warning("""
-            **DISCLAIMER:** Semua informasi, analisa teknikal, dan sinyal trading yang disediakan di modul ini hanya untuk tujuan edukasi dan informasi. Ini bukan merupakan rekomendasi, ajakan, atau nasihat keuangan untuk membeli atau menjual saham tertentu. Keputusan investasi sepenuhnya berada di tangan Anda. Harap lakukan riset Anda sendiri (*Do Your Own Research*) dan pertimbangkan profil risiko sebelum mengambil keputusan di pasar modal.
-            """)
+                st.success(f"**TARGET PROFIT**\n\n**Rp {int(tp_final):,.0f
