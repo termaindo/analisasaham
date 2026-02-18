@@ -104,21 +104,29 @@ def generate_pdf_fpdf(data):
     pdf.add_page()
     
     # Menghapus emoji untuk fpdf karena hanya mendukung Latin-1
-    status_syariah_teks = "[Syariah]" if "✅" in data['syariah'] else "[Non-Syariah]"
+    status_syariah_teks = "Syariah" if "✅" in data['syariah'] else "Non-Syariah"
     
+    # --- HEADER PDF DISESUAIKAN ---
     pdf.set_font("Arial", 'B', 16)
-    pdf.cell(0, 10, txt="EXPERT STOCK PRO", ln=True, align='C')
-    pdf.set_font("Arial", 'I', 12)
-    pdf.cell(0, 8, txt="Laporan Analisa Teknikal (6 Dimensi)", ln=True, align='C')
+    pdf.cell(0, 10, txt="Expert Stock Pro - Analisa Teknikal & Sentimen Berita", ln=True, align='C')
     
-    pdf.line(10, 30, 200, 30)
-    pdf.ln(10)
+    pdf.set_font("Arial", 'I', 11)
+    pdf.cell(0, 6, txt="Sumber: lynk.id/hahastoresby", ln=True, align='C')
     
-    pdf.set_font("Arial", 'B', 14)
-    pdf.cell(0, 10, txt=f"{data['ticker']} - {data['nama_perusahaan']}", ln=True, align='C')
-    pdf.set_font("Arial", '', 10)
+    pdf.ln(8) # Jarak spasi
+    
+    pdf.set_font("Arial", 'B', 15)
+    pdf.cell(0, 8, txt=f"{data['ticker']} - {data['nama_perusahaan']}", ln=True, align='C')
+    
+    pdf.set_font("Arial", '', 12)
     pdf.cell(0, 6, txt=f"Sektor: {data['sektor']} | Status: {status_syariah_teks}", ln=True, align='C')
-    pdf.cell(0, 6, txt=f"Tanggal Analisa: {data['tanggal']} | Harga: Rp {data['harga']:,.0f}", ln=True, align='C')
+    
+    pdf.ln(10) # Jarak sebelum mulai konten
+    # ---------------------------------
+    
+    pdf.set_font("Arial", '', 10)
+    pdf.cell(0, 6, txt=f"Tanggal Analisa: {data['tanggal']} | Harga: Rp {data['harga']:,.0f}", ln=True, align='R')
+    pdf.line(10, pdf.get_y(), 200, pdf.get_y())
     
     pdf.ln(5)
     pdf.set_font("Arial", 'B', 12)
@@ -139,16 +147,16 @@ def generate_pdf_fpdf(data):
     pdf.cell(0, 8, txt="ANALISA SENTIMEN BERITA (Dimensi ke-6)", ln=True)
     pdf.set_font("Arial", '', 11)
     pdf.cell(0, 6, txt=f"Status Sentimen: {data['sentiment']}", ln=True)
-    # FPDF multi_cell untuk teks berita yang mungkin panjang
     pdf.set_font("Arial", 'I', 10)
-    pdf.multi_cell(0, 6, txt=f"Headline Terakhir: {data['headline']}")
+    # Gunakan encoding/replace agar karakter aneh dari berita (seperti kutip melengkung) tidak error di fpdf
+    aman_headline = data['headline'].encode('latin-1', 'replace').decode('latin-1')
+    pdf.multi_cell(0, 6, txt=f"Headline Terakhir: {aman_headline}")
     
     pdf.ln(15)
     pdf.line(10, pdf.get_y(), 200, pdf.get_y())
     pdf.set_font("Arial", 'I', 8)
     pdf.multi_cell(0, 4, txt="DISCLAIMER: Laporan ini dihasilkan secara otomatis oleh sistem algoritma Expert Stock Pro. Semua informasi, analisa, dan sinyal trading disediakan hanya untuk tujuan edukasi. Keputusan investasi sepenuhnya berada di tangan Anda.")
     
-    # Mengembalikan data dalam bentuk byte string
     return bytes(pdf.output(dest='S').encode('latin1'))
 
 def run_teknikal():
