@@ -1,11 +1,14 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
+import base64
+import yfinance as yf  # Tambahan untuk mengambil berita
+from io import BytesIO
+from fpdf import FPDF
 from modules.data_loader import get_full_stock_data, hitung_div_yield_normal
-from modules.universe import is_syariah  # --- Memanggil fungsi dari universe.py ---
+from modules.universe import is_syariah  
 
 def translate_sector(sector_en):
-    """Menerjemahkan sektor ke Bahasa Indonesia"""
     mapping = {
         "Financial Services": "Jasa Keuangan",
         "Basic Materials": "Bahan Baku & Tambang",
@@ -21,73 +24,129 @@ def translate_sector(sector_en):
     }
     return mapping.get(sector_en, sector_en)
 
-def hitung_skor_fundamental(info, financials, mean_pe_5y, mean_pbv_5y, div_yield):
-    """Menghitung skor fundamental (Maks 100) berdasarkan sektor & metrik dinamis"""
+# --- FUNGSI ANALISA SENTIMEN KUALITATIF ---
+def analisa_sentimen_berita(ticker):
+    """Membaca sentimen berita terbaru menggunakan algoritma heuristik kata kunci"""
+    try:
+        stock = yf.Ticker(ticker)
+        news = stock.news
+        if not news:
+            return "NETRAL", [], "Tidak ada berita terbaru ditemukan di pangkalan data."
+        
+        # Kamus sentimen sederhana
+        kata_positif = ['laba', 'naik', 'untung', 'tumbuh', 'dividen', 'akuisisi', 'ekspansi', 'lonjak', 'rekor', 'prospek', 'positif', 'profit', 'growth', 'surge', 'target']
+        kata_negatif = ['rugi', 'turun', 'anjlok', 'utang', 'gugatan', 'kasus', 'susut', 'merosot', 'negatif', 'krisis', 'loss', 'drop', 'plunge', 'debt', 'denda']
+        
+        skor_sentimen = 0
+        berita_terpilih = []
+        
+        for artikel in news[:5]: # Ambil maksimal 5 berita terbaru
+            judul = artikel.get('title', '')
+            judul_lower = judul.lower()
+            publisher = artikel.get('publisher', 'Sumber Tidak Diketahui')
+            link = artikel.get('link', '#')
+            
+            pos_count = sum(1 for kata in kata_positif if kata in judul_lower)
+            neg_count = sum(1 for kata in kata_negatif if kata in judul_lower)
+            
+            if pos_count > neg_count:
+                skor_sentimen += 1
+                sentimen_item = "🟢 Positif"
+            elif neg_count > pos_count:
+                skor_sentimen -= 1
+                sentimen_item = "🔴 Negatif"
+            else:
+                sentimen_item = "⚪ Netral"
+                
+            berita_terpilih.append({
+                'judul': judul,
+                'publisher': publisher,
+                'link': link,
+                'sentimen': sentimen_item
+            })
+        
+        if skor_sentimen >= 2:
+            kesimpulan = "🌟 BULLISH (Optimis)"
+            alasan = "Berita terbaru didominasi oleh sentimen positif terkait kinerja atau aksi korporasi."
+        elif skor_sentimen <= -2:
+            kesimpulan = "⚠️ BEARISH (Pesimis)"
+            alasan = "Terdapat beberapa sentimen negatif atau tantangan makro/mikro pada berita terbaru."
+        else:
+            kesimpulan = "⚖️ NETRAL"
+            alasan = "Sentimen berita saat ini berimbang atau tidak ada katalis pergerakan harga yang tajam."
+            
+        return kesimpulan, berita_terpilih, alasan
+    except Exception as e:
+        return "NETRAL", [], "Gagal memproses data berita terkini."
+
+def hitung_skor_fundamental(info, financials, cashflow, mean_pe_5y, mean_pbv_5y, div_yield):
     skor = 0
-    total_metrik = 7
+    total_metrik = 8
     metrik_tersedia = 0
     
     sector = info.get('sector', '')
     industry = info.get('industry', '')
-    
-    # Deteksi Sektor
     is_bank = 'Bank' in industry or sector == 'Financial Services'
     is_infra = 'Infrastructure' in industry or sector in ['Utilities', 'Real Estate', 'Industrials']
     
-    # --- 1. KESEHATAN KEUANGAN (Maks 25) ---
+    # --- 1. KESEHATAN KEUANGAN ---
     if is_bank:
         if info.get('capitalAdequacyRatio') is not None: metrik_tersedia += 1
         car = info.get('capitalAdequacyRatio', 18) 
         npl = info.get('nonPerformingLoan', 2.5)   
-        
-        if car > 20: skor += 15
-        elif car >= 15: skor += 10
-        elif car >= 10: skor += 5
-        
+        if car > 20: skor += 10
+        elif car >= 15: skor += 5
         if npl < 2: skor += 10
         elif npl <= 3.5: skor += 5
-        
     elif is_infra:
         if info.get('debtToEquity') is not None: metrik_tersedia += 1
         der = info.get('debtToEquity', 0) / 100 if info.get('debtToEquity') else 0
-        if der < 1.5: skor += 15
-        elif der <= 2.5: skor += 10
-        elif der <= 4.0: skor += 5
-        
+        if der < 1.5: skor += 10
+        elif der <= 2.5: skor += 5
         icr = 2.0 
         try:
             ebit = financials.loc['EBIT'].iloc[0]
             interest = abs(financials.loc['Interest Expense'].iloc[0])
             if interest > 0: icr = ebit / interest
         except: pass
-            
         if icr > 3.0: skor += 10
         elif icr >= 1.5: skor += 5
-        
     else: 
         if info.get('debtToEquity') is not None: metrik_tersedia += 1
         der = info.get('debtToEquity', 0) / 100 if info.get('debtToEquity') else 0
-        if der < 0.5: skor += 15
-        elif der <= 1.0: skor += 10
-        elif der <= 2.0: skor += 5
-        
+        if der < 0.5: skor += 10
+        elif der <= 1.0: skor += 5
         cr = info.get('currentRatio', 0)
         if cr > 1.5: skor += 10
         elif cr >= 1.0: skor += 5
 
-    # --- 2. PROFITABILITAS (Maks 25) ---
+    # --- 2. PROFITABILITAS ---
     if info.get('returnOnEquity') is not None: metrik_tersedia += 1
     roe = info.get('returnOnEquity', 0) * 100 if info.get('returnOnEquity') else 0
-    if roe > 15: skor += 15
-    elif roe >= 10: skor += 10
-    elif roe >= 5: skor += 5
+    if roe > 15: skor += 10
+    elif roe >= 10: skor += 5
     
     if info.get('profitMargins') is not None: metrik_tersedia += 1
     npm = info.get('profitMargins', 0) * 100 if info.get('profitMargins') else 0
     if npm > 10: skor += 10
     elif npm >= 5: skor += 5
 
-    # --- 3. VALUASI DINAMIS (Maks 20) ---
+    # --- 3. KUALITAS ARUS KAS ---
+    ocf_sehat = False
+    try:
+        if not cashflow.empty and not financials.empty:
+            metrik_tersedia += 1
+            ocf = cashflow.loc['Operating Cash Flow'].iloc[0]
+            net_income = financials.loc['Net Income'].iloc[0]
+            if ocf > net_income: 
+                skor += 10 
+                ocf_sehat = True
+            elif ocf > 0: 
+                skor += 5 
+                ocf_sehat = True
+    except: pass
+
+    # --- 4. VALUASI DINAMIS ---
     if info.get('trailingPE') is not None: metrik_tersedia += 1
     per = info.get('trailingPE', 0)
     if info.get('priceToBook') is not None: metrik_tersedia += 1
@@ -96,103 +155,208 @@ def hitung_skor_fundamental(info, financials, mean_pe_5y, mean_pbv_5y, div_yield
     if per > 0 and mean_pe_5y > 0:
         pe_discount = ((mean_pe_5y - per) / mean_pe_5y) * 100
         if pe_discount > 20: skor += 10
-        elif pe_discount >= 0: skor += 7
-        elif pe_discount >= -20: skor += 3
+        elif pe_discount >= 0: skor += 5
     
     if pbv > 0 and mean_pbv_5y > 0:
         pbv_discount = ((mean_pbv_5y - pbv) / mean_pbv_5y) * 100
         if pbv_discount > 20: skor += 10
-        elif pbv_discount >= 0: skor += 7
-        elif pbv_discount >= -20: skor += 3
+        elif pbv_discount >= 0: skor += 5
 
-    # --- 4. PERTUMBUHAN / GROWTH (Maks 20) ---
+    # --- 5. PERTUMBUHAN ---
     if info.get('earningsGrowth') is not None: metrik_tersedia += 1
     eps_g = info.get('earningsGrowth', 0) * 100 if info.get('earningsGrowth') else 0
+    # KOREKSI: Menerapkan 3 tingkat skor untuk EPS Growth
     if eps_g > 15: skor += 10
     elif eps_g >= 5: skor += 7
-    elif eps_g >= 0: skor += 3
+    elif eps_g > 0: skor += 3
     
     if info.get('revenueGrowth') is not None: metrik_tersedia += 1
     rev_g = info.get('revenueGrowth', 0) * 100 if info.get('revenueGrowth') else 0
     if rev_g > 10: skor += 10
     elif rev_g >= 0: skor += 5
 
-    # --- 5. DIVIDEN (Maks 10) ---
+    # --- 6. DIVIDEN ---
     if div_yield > 5: skor += 10
     elif div_yield >= 2: skor += 5
 
-    # --- KLASIFIKASI AKHIR ---
-    if skor >= 80: kelas = "Strong Buy (Fundamental Sangat Sehat & Undervalued)"
-    elif skor >= 60: kelas = "Investable / Accumulate (Fundamental Baik)"
-    elif skor >= 40: kelas = "Watchlist / Hold (Pas-pasan atau Kemahalan)"
-    else: kelas = "High Risk / Sell (Risiko Tinggi)"
-    
     konf_pct = (metrik_tersedia / total_metrik) * 100
-    if konf_pct >= 85: label_konf = "🟢 Tinggi (Data Lengkap)"
-    elif konf_pct >= 50: label_konf = "🟡 Sedang (Sebagian Data Kosong)"
-    else: label_konf = "🔴 Rendah (Hati-hati, Data Kurang Memadai)"
+    if konf_pct >= 85: label_konf = "Tinggi (Data Lengkap)"
+    elif konf_pct >= 50: label_konf = "Sedang (Sebagian Data Kosong)"
+    else: label_konf = "Rendah (Hati-hati, Data Kurang Memadai)"
     
-    return skor, kelas, konf_pct, label_konf
+    return skor, konf_pct, label_konf, ocf_sehat
+
+# --- FUNGSI GENERATE PDF ---
+def generate_pdf_report(data_dict):
+    pdf = FPDF()
+    pdf.add_page()
+    
+    # Konfigurasi Font
+    pdf.set_font("Arial", 'B', 16)
+    
+    # Header Utama
+    pdf.cell(0, 10, "Expert Stock Pro - Analisa Fundamental & Kualitatif", ln=True, align='C')
+    pdf.set_font("Arial", 'I', 10)
+    pdf.cell(0, 5, "Sumber: lynk.id/hahastoresby", ln=True, align='C')
+    pdf.ln(5)
+    
+    # Info Emiten
+    pdf.set_font("Arial", 'B', 14)
+    pdf.cell(0, 10, f"{data_dict['ticker']} - {data_dict['nama']}", ln=True, align='C')
+    
+    pdf.set_font("Arial", '', 11)
+    pdf.cell(0, 6, f"Sektor: {data_dict['sektor']} | Status: {data_dict['syariah']}", ln=True, align='C')
+    pdf.ln(10)
+    
+    # Skor & Keputusan
+    pdf.set_font("Arial", 'B', 12)
+    pdf.cell(0, 8, "1. SKOR FUNDAMENTAL & KEPUTUSAN", ln=True)
+    pdf.set_font("Arial", '', 11)
+    pdf.cell(0, 6, f"Skor Akhir: {data_dict['skor']}/100", ln=True)
+    pdf.cell(0, 6, f"Tingkat Kepercayaan Data: {data_dict['konf_label']} ({data_dict['konf_pct']:.0f}%)", ln=True)
+    pdf.cell(0, 6, f"Keputusan: {data_dict['keputusan']}", ln=True)
+    pdf.multi_cell(0, 6, f"Alasan: {data_dict['alasan']}")
+    pdf.ln(5)
+    
+    # Valuasi
+    pdf.set_font("Arial", 'B', 12)
+    pdf.cell(0, 8, "2. VALUASI & MARGIN OF SAFETY", ln=True)
+    pdf.set_font("Arial", '', 11)
+    pdf.cell(0, 6, f"Harga Wajar (Graham): Rp {data_dict['fair_price']:,.0f}", ln=True)
+    pdf.cell(0, 6, f"Harga Saat Ini: Rp {data_dict['curr_price']:,.0f}", ln=True)
+    pdf.cell(0, 6, f"Margin of Safety (MOS): {data_dict['mos']:.1f}%", ln=True)
+    pdf.ln(5)
+
+    # Sentimen Kualitatif
+    pdf.set_font("Arial", 'B', 12)
+    pdf.cell(0, 8, "3. SENTIMEN BERITA (KUALITATIF)", ln=True)
+    pdf.set_font("Arial", '', 11)
+    pdf.cell(0, 6, f"Kesimpulan: {data_dict['sentimen_kesimpulan']}", ln=True)
+    pdf.multi_cell(0, 6, f"Catatan: {data_dict['sentimen_alasan']}")
+    pdf.ln(5)
+    
+    # Trading Plan
+    pdf.set_font("Arial", 'B', 12)
+    pdf.cell(0, 8, "4. TRADING PLAN & EKSEKUSI", ln=True)
+    pdf.set_font("Arial", '', 11)
+    pdf.multi_cell(0, 6, f"Saran Entry: {data_dict['saran_entry']}")
+    pdf.cell(0, 6, f"Target TP: Minimal di Rp {data_dict['tp']:,.0f}", ln=True)
+    pdf.cell(0, 6, f"Average Down: Area Rp {data_dict['avg_down']:,.0f} (Penurunan 10-15%)", ln=True)
+    pdf.cell(0, 6, f"Batas Cutloss: Tembus Rp {data_dict['sl']:,.0f} (Penurunan ~30%)", ln=True)
+    pdf.ln(10)
+    
+    # Disclaimer
+    pdf.set_font("Arial", 'I', 8)
+    pdf.multi_cell(0, 4, "DISCLAIMER: Analisa ini bersifat edukatif dan berbasis formula kuantitatif. Keputusan investasi sepenuhnya di tangan Anda. Kinerja masa lalu tidak menjamin hasil masa depan.")
+    
+    # Output sebagai Bytes
+    return bytes(pdf.output(dest='S').encode('latin1'))
 
 def run_fundamental():
-    st.title("🏛️ Analisa Fundamental Pro (Deep Value Investigation)")
     st.markdown("---")
-
+    
     col_inp, _ = st.columns([1, 2])
     with col_inp:
-        ticker_input = st.text_input("Kode Saham:", value="ASII").upper()
+        ticker_input = st.text_input("Kode Saham (Contoh: ASII):", value="ASII").upper()
     ticker = ticker_input if ticker_input.endswith(".JK") else f"{ticker_input}.JK"
 
     if st.button(f"Bedah Fundamental {ticker_input}"):
-        with st.spinner("Mengkalkulasi rata-rata historis & tren keuangan..."):
+        with st.spinner("Menginvestigasi kualitas aset, valuasi, dan sentimen pasar..."):
             data = get_full_stock_data(ticker)
             info = data['info']
-            financials = data['financials']
+            financials = data.get('financials', pd.DataFrame())
+            cashflow = data.get('cashflow', pd.DataFrame())
             history = data['history']
             
             if not info or financials.empty:
                 st.error("Data tidak lengkap. Mohon tunggu sejenak atau bersihkan cache.")
                 return
 
-            # --- HEADER UTAMA (Sesuai Teknikal.py) ---
+            # --- AMBIL DATA SENTIMEN ---
+            sentimen_kesimpulan, daftar_berita, sentimen_alasan = analisa_sentimen_berita(ticker)
+
+            # --- HEADER UTAMA ---
             nama_perusahaan = info.get('longName', info.get('shortName', 'Nama Tidak Diketahui'))
             st.markdown(f"<h1 style='text-align: center; color: #4CAF50; margin-bottom: 0;'>🏢 {ticker_input} - {nama_perusahaan}</h1>", unsafe_allow_html=True)
             
-            # Baris Sektor & Syariah di bawah judul
             sektor_indo = translate_sector(info.get('sector'))
-            status_syariah = "✅ Syariah (ISSI)" if is_syariah(ticker_input) else "❌ Non-Syariah"
-            st.markdown(f"<p style='text-align: center; font-size: 18px; color: #b0bec5;'>Sektor: <b>{sektor_indo}</b> | Kategori: <b>{status_syariah}</b></p>", unsafe_allow_html=True)
+            status_syariah = "Syariah (ISSI)" if is_syariah(ticker_input) else "Non-Syariah"
+            st.markdown(f"<p style='text-align: center; font-size: 18px; color: #b0bec5;'>Sektor: <b>{sektor_indo}</b> | Kategori: <b>✅ {status_syariah}</b></p>", unsafe_allow_html=True)
             st.markdown("<br>", unsafe_allow_html=True)
 
-            # --- 🏆 SCORING FUNDAMENTAL ---
+            # --- PERHITUNGAN FAIR PRICE & MOS ---
+            curr_price = info.get('currentPrice', 0)
+            eps = info.get('trailingEps', 0)
+            bvps = info.get('bookValue', 0)
+            fair_price = np.sqrt(22.5 * eps * bvps) if (eps > 0 and bvps > 0) else curr_price
+            
+            mos = ((fair_price - curr_price) / fair_price) * 100 if fair_price > 0 else 0
+
+            # --- SCORING & LOGIKA REKOMENDASI CERDAS ---
             try:
                 mean_pe_5y = info.get('trailingPE', 15) * 0.95 
                 mean_pbv_5y = info.get('priceToBook', 1.5) * 0.9 
             except: mean_pe_5y, mean_pbv_5y = 15.0, 1.5
             
             div_yield = hitung_div_yield_normal(info)
-            skor_akhir, klasifikasi, konf_pct, label_konf = hitung_skor_fundamental(info, financials, mean_pe_5y, mean_pbv_5y, div_yield)
+            skor_akhir, konf_pct, label_konf, ocf_sehat = hitung_skor_fundamental(info, financials, cashflow, mean_pe_5y, mean_pbv_5y, div_yield)
             
-            st.header("🏆 SKOR FUNDAMENTAL")
+            # --- PENENTUAN KEPUTUSAN GABUNGAN (MODIFIKASI MOS) ---
+            # KOREKSI: Ambang batas skor akhir High Confidence diubah menjadi minimal 80
+            if skor_akhir >= 80 and konf_pct >= 60 and mos >= 30:
+                keputusan = "🌟 SANGAT LAYAK DIBELI"
+                warna_keputusan = "success"
+                alasan_keputusan = f"Fundamental sangat kokoh (Skor: {skor_akhir}) dipadukan dengan Harga Sangat Diskon (MOS: {mos:.1f}%)."
+            elif skor_akhir >= 60 and konf_pct >= 50 and mos >= 15:
+                keputusan = "✅ LAYAK DIBELI"
+                warna_keputusan = "info"
+                alasan_keputusan = f"Perusahaan sehat secara operasional dan harga masih masuk akal (Undervalued dengan MOS memadai)."
+            elif skor_akhir >= 60 and mos < 15:
+                keputusan = "⏳ TUNGGU KOREKSI (Hold)"
+                warna_keputusan = "warning"
+                alasan_keputusan = f"Perusahaan bagus, namun harga saat ini belum cukup aman (Margin of Safety terlalu tipis). Kesabaran diperlukan."
+            else:
+                keputusan = "⛔ BELUM LAYAK DIBELI (Hindari)"
+                warna_keputusan = "error"
+                alasan_keputusan = f"Kualitas fundamental rentan atau harga Overvalued."
+
+            # --- PERSIAPAN DATA TRADING PLAN ---
+            atr = (history['High'] - history['Low']).tail(14).mean() if not history.empty else (curr_price * 0.02)
+            
+            if mos < 15: 
+                base_entry_price = fair_price * 0.85
+                saran_entry = f"Sabar tunggu koreksi di Harga ideal: Rp {base_entry_price:,.0f} (MOS 15%)"
+                avg_down_price = base_entry_price * 0.88 # 12% dari target harga masuk
+                sl_final = base_entry_price * 0.70       # 30% batas Cut Loss
+            else:
+                batas_bawah = max(curr_price - atr, curr_price * 0.95)
+                saran_entry = f"Beli Bertahap di area Rp {batas_bawah:,.0f} - Rp {curr_price:,.0f}"
+                avg_down_price = curr_price * 0.88 
+                sl_final = curr_price * 0.70       
+
+            target_short = fair_price if fair_price > curr_price else curr_price * 1.15
+
+            # --- RENDER TAMPILAN WEB STREAMLIT ---
+            st.header("🏆 SKOR FUNDAMENTAL & KEPUTUSAN")
             st.progress(skor_akhir / 100.0)
             
-            if skor_akhir >= 80: st.success(f"**Skor: {skor_akhir}/100** — {klasifikasi}")
-            elif skor_akhir >= 60: st.info(f"**Skor: {skor_akhir}/100** — {klasifikasi}")
-            elif skor_akhir >= 40: st.warning(f"**Skor: {skor_akhir}/100** — {klasifikasi}")
-            else: st.error(f"**Skor: {skor_akhir}/100** — {klasifikasi}")
+            if warna_keputusan == "success": st.success(f"### {keputusan}\n{alasan_keputusan}")
+            elif warna_keputusan == "info": st.info(f"### {keputusan}\n{alasan_keputusan}")
+            elif warna_keputusan == "warning": st.warning(f"### {keputusan}\n{alasan_keputusan}")
+            else: st.error(f"### {keputusan}\n{alasan_keputusan}")
+            
             st.caption(f"**Tingkat Kepercayaan Data:** {label_konf} ({konf_pct:.0f}% metrik tersedia)")
             st.markdown("---")
 
-            # --- 1. OVERVIEW & ANALISA SWOT ---
+            # Analisa SWOT
             st.header("1. OVERVIEW & ANALISA SWOT")
             mkt_cap = info.get('marketCap', 0)
             posisi = "Market Leader (Gajah)" if mkt_cap > 100e12 else "Challenger (Menengah)" if mkt_cap > 10e12 else "Small Cap (Lapis 3)"
             
-            # Logika SWOT Dinamis
             s_1 = "Skala Ekonomi Besar & Dominasi Pasar" if mkt_cap > 50e12 else "Struktur Biaya Efisien"
-            s_2 = "Kesehatan Keuangan Sangat Prima" if skor_akhir > 70 else "Efisiensi Operasional Baik"
+            s_2 = "Arus Kas Sangat Kuat (OCF > Laba)" if ocf_sehat else "Efisiensi Operasional Terjaga"
             w_1 = "Pertumbuhan Melambat (Mature)" if mkt_cap > 100e12 else "Volatilitas Harga Tinggi"
-            w_2 = "Margin Keuntungan Tipis" if info.get('profitMargins', 0) < 0.05 else "Beban Hutang Perlu Diperhatikan" if skor_akhir < 50 else "Ketergantungan pada Kebijakan Makro"
+            w_2 = "Kualitas Laba Diragukan (OCF Lemah)" if not ocf_sehat else "Beban Hutang Perlu Dipantau" if skor_akhir < 60 else "Sensitif Sentimen Global"
 
             swot_html = f"""
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px;">
@@ -211,57 +375,89 @@ def run_fundamental():
             </div>
             """
             st.markdown(swot_html, unsafe_allow_html=True)
-            st.write(f"<br><b>Posisi Industri:</b> Emiten adalah <b>{posisi}</b> dengan keunggulan kompetitif pada integrasi ekosistem bisnis.", unsafe_allow_html=True)
+            st.write(f"<br><b>Posisi Industri:</b> Emiten diklasifikasikan sebagai <b>{posisi}</b>.", unsafe_allow_html=True)
 
-            # --- 2. ANALISA KEUANGAN ---
+            # Keuangan
             st.header("2. ANALISA KEUANGAN")
             try:
                 df_fin = financials.T.sort_index().tail(5)
                 st.write("**Tren Pendapatan vs Laba Bersih:**")
                 st.line_chart(df_fin[['Total Revenue', 'Net Income']])
-                
                 f1, f2, f3 = st.columns(3)
-                f1.metric("ROE", f"{info.get('returnOnEquity', 0)*100:.2f}%")
-                f2.metric("Debt to Equity", f"{info.get('debtToEquity', 0)/100:.2f}x")
-                f3.metric("Current Ratio", f"{info.get('currentRatio', 0):.2f}x")
+                f1.metric("ROE (Efisiensi)", f"{info.get('returnOnEquity', 0)*100:.2f}%")
+                f2.metric("NPM (Marjin Laba)", f"{info.get('profitMargins', 0)*100:.2f}%")
+                f3.metric("Debt to Equity", f"{info.get('debtToEquity', 0)/100:.2f}x")
             except: st.warning("Visualisasi data keuangan terbatas.")
 
-            # --- 3. VALUASI ---
-            st.header("3. VALUASI")
+            # Valuasi
+            st.header("3. VALUASI & MARGIN OF SAFETY")
             curr_pe, curr_pbv = info.get('trailingPE', 0), info.get('priceToBook', 0)
-            eps, bvps = info.get('trailingEps', 0), info.get('bookValue', 0)
-            fair_price = np.sqrt(22.5 * eps * bvps) if (eps > 0 and bvps > 0) else info.get('currentPrice', 0)
-
             v1, v2, v3 = st.columns(3)
-            v1.metric("PER vs Avg 5Y", f"{curr_pe:.2f}x", f"Avg: {mean_pe_5y:.1f}x")
-            v2.metric("PBV vs Avg 5Y", f"{curr_pbv:.2f}x", f"Avg: {mean_pbv_5y:.1f}x")
-            v3.metric("Div. Yield", f"{div_yield:.2f}%")
+            v1.metric("PER Terkini", f"{curr_pe:.2f}x", f"Avg 5Y: {mean_pe_5y:.1f}x")
+            v2.metric("PBV Terkini", f"{curr_pbv:.2f}x", f"Avg 5Y: {mean_pbv_5y:.1f}x")
+            v3.metric("Harga Wajar (Graham)", f"Rp {fair_price:,.0f}")
             
-            status = "UNDERVALUED" if info.get('currentPrice', 0) < fair_price else "OVERVALUED"
-            st.success(f"🎯 **Harga Wajar Graham: Rp {fair_price:,.0f}** | Status: **{status}**")
+            warna_mos = "normal" if mos > 0 else "inverse"
+            st.metric(label="Margin of Safety (MOS) 🛡️", value=f"{mos:.1f}%", delta="Diskon" if mos > 0 else "Premi (Kemahalan)", delta_color=warna_mos)
 
-            # --- 4. PROSPEK BISNIS ---
-            st.header("4. PROSPEK BISNIS")
-            st.write("• **Outlook:** Sektor ini berpotensi menguat seiring stabilitas ekonomi.")
-            st.write("• **Growth Catalyst:** Digitalisasi operasional dan efansi pasar regional.")
+            # --- TAMBAHAN: SENTIMEN BERITA KUALITATIF ---
+            st.header("4. SENTIMEN BERITA & KUALITATIF")
+            if "BULLISH" in sentimen_kesimpulan:
+                st.success(f"**Tren Sentimen: {sentimen_kesimpulan}**\n\n{sentimen_alasan}")
+            elif "BEARISH" in sentimen_kesimpulan:
+                st.error(f"**Tren Sentimen: {sentimen_kesimpulan}**\n\n{sentimen_alasan}")
+            else:
+                st.info(f"**Tren Sentimen: {sentimen_kesimpulan}**\n\n{sentimen_alasan}")
+                
+            if daftar_berita:
+                with st.expander("📰 Lihat Berita Terbaru (Yahoo Finance)"):
+                    for b in daftar_berita:
+                        st.markdown(f"**{b['sentimen']}** | [{b['judul']}]({b['link']}) *(Sumber: {b['publisher']})*")
+            else:
+                st.caption("Belum ada rilis berita signifikan baru-baru ini.")
 
-            # --- 5. REKOMENDASI & TRADING PLAN ---
-            st.header("5. REKOMENDASI")
-            curr_p = info.get('currentPrice', 0)
-            atr = (history['High'] - history['Low']).tail(14).mean() if not history.empty else (curr_p * 0.02)
-            
-            entry_bawah = max(curr_p - atr, curr_p * 0.97)
-            sl_final = max(curr_p - (1.5 * atr), curr_p * 0.92)
-            
-            target_short = fair_price if fair_price > curr_p else curr_p * 1.15
-            sig = "BUY" if curr_p < fair_price else "HOLD"
-            
-            st.subheader(f"Keputusan: **{sig}**")
+            # Trading Plan
+            st.header("5. TRADING PLAN & EKSEKUSI")
             r0, r1, r2, r3 = st.columns(4)
-            r0.success(f"**Entry Ideal:**\nRp {entry_bawah:,.0f} - {curr_p:,.0f}")
-            r1.info(f"**Target TP:**\nRp {target_short:,.0f}")
-            r2.error(f"**Stop Loss:**\nRp {sl_final:,.0f}")
-            r3.write(f"**Risk/Reward:**\n1 : 2.5")
+            r0.info(f"**Taktik Entry:**\n{saran_entry}")
+            r1.success(f"**Target TP:**\nMin. Rp {target_short:,.0f}")
+            r2.warning(f"**Average Down:**\nArea Rp {avg_down_price:,.0f} (-12%)")
+            r3.error(f"**Cut Loss (-30%):**\nTembus Rp {sl_final:,.0f}")
             
             st.markdown("---")
-            st.caption("⚠️ **DISCLAIMER:** Analisa ini bersifat edukatif. Keputusan investasi sepenuhnya di tangan Anda. Kinerja masa lalu tidak menjamin hasil masa depan.")
+            
+            # --- TOMBOL EXPORT PDF ---
+            # Membersihkan emoji untuk FPDF (Latin-1)
+            pdf_sentimen_kesimpulan = sentimen_kesimpulan.replace("🌟", "").replace("⚠️", "").replace("⚖️", "").strip()
+
+            data_to_pdf = {
+                'ticker': ticker_input,
+                'nama': nama_perusahaan,
+                'sektor': sektor_indo,
+                'syariah': status_syariah,
+                'skor': skor_akhir,
+                'konf_pct': konf_pct,
+                'konf_label': label_konf,
+                'keputusan': keputusan.replace("🌟", "").replace("✅", "").replace("⏳", "").replace("⛔", "").strip(),
+                'alasan': alasan_keputusan,
+                'fair_price': fair_price,
+                'curr_price': curr_price,
+                'mos': mos,
+                'sentimen_kesimpulan': pdf_sentimen_kesimpulan,
+                'sentimen_alasan': sentimen_alasan,
+                'saran_entry': saran_entry,
+                'tp': target_short,
+                'avg_down': avg_down_price,
+                'sl': sl_final
+            }
+            
+            pdf_bytes = generate_pdf_report(data_to_pdf)
+            st.download_button(
+                label="📥 Simpan Laporan sebagai PDF",
+                data=pdf_bytes,
+                file_name=f"ExpertStockPro_Fundamental_{ticker_input}.pdf",
+                mime="application/pdf",
+                use_container_width=True
+            )
+            
+            st.caption("⚠️ **DISCLAIMER:** Analisa ini bersifat edukatif dan berbasis formula kuantitatif. Keputusan investasi sepenuhnya di tangan Anda. Kinerja masa lalu tidak menjamin hasil masa depan.")
