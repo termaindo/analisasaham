@@ -6,7 +6,7 @@ from plotly.subplots import make_subplots
 import base64
 from datetime import datetime
 import os
-import pdfkit
+import fpdf
 
 # --- MENGGUNAKAN RELATIVE IMPORT SEBAGAI PENGAMAN ---
 try:
