@@ -279,7 +279,7 @@ def generate_pdf_report(data_dict):
 
 def run_fundamental():
     # REVISI 1: Menambahkan Judul Halaman di modul
-    st.title("📊 Analisa Fundamental & Valuasi")
+    st.title("📊 Analisa Fundamental & Valuasi Pro")
     st.markdown("---")
     
     col_inp, _ = st.columns([1, 2])
