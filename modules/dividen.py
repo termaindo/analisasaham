@@ -37,28 +37,53 @@ def run_dividen():
             fcf = info.get('freeCashflow', 0)
             roe = info.get('returnOnEquity', 0) * 100
             der = info.get('debtToEquity', 0) / 100 if info.get('debtToEquity') else 0
+            eps_growth = info.get('earningsGrowth', 0) * 100
             
-            # Hitung CAGR Dividen
+            # Hitung CAGR & Konsistensi Dividen
             df_div = divs.to_frame(name='Dividends')
             df_div.index = pd.to_datetime(df_div.index).tz_localize(None)
             df_div_annual = df_div.resample('YE').sum().tail(5)
+            
+            konsistensi = len(df_div_annual)
             cagr = 0
-            if len(df_div_annual) >= 2:
+            if konsistensi >= 2:
                 awal, akhir = df_div_annual['Dividends'].iloc[0], df_div_annual['Dividends'].iloc[-1]
                 if awal > 0:
-                    cagr = ((akhir / awal) ** (1 / (len(df_div_annual)-1))) - 1
+                    cagr = ((akhir / awal) ** (1 / (konsistensi - 1))) - 1
             
-            # --- 2. LOGIKA SCORING (DIPINDAH KE ATAS) ---
+            # --- 2. LOGIKA SCORING AKURAT (100 POIN) ---
             total_score = 0
-            if yield_val > 6: total_score += 25
-            if 30 <= payout <= 70: total_score += 25
-            if fcf > 0: total_score += 25
-            if cagr > 0 and roe > 10: total_score += 25
+            
+            # A. Kualitas Kas (Max 20)
+            if fcf > 0: total_score += 20
+            
+            # B. Konsistensi & Pertumbuhan (Max 20)
+            if konsistensi == 5 and cagr > 0.05: total_score += 20
+            elif konsistensi == 5 and cagr > 0: total_score += 15
+            elif konsistensi >= 3: total_score += 10
+            
+            # C. Dividend Yield (Max 20)
+            if yield_val >= 8: total_score += 20
+            elif yield_val >= 6: total_score += 15
+            elif yield_val >= 4: total_score += 10
+            
+            # D. Kesehatan Utang (Max 15)
+            if der < 1.0: total_score += 15
+            elif der <= 2.0: total_score += 10
+            
+            # E. Payout Ratio (Max 15)
+            if 30 <= payout <= 70: total_score += 15
+            elif 70 < payout <= 90: total_score += 10
+            elif payout > 0: total_score += 5
+            
+            # F. Kinerja Bisnis (Max 10)
+            if roe > 15 and eps_growth > 0: total_score += 10
+            elif roe > 8: total_score += 5
 
             # Teks Status Skor
-            if total_score >= 75:
+            if total_score >= 80:
                 score_status = "Luar Biasa (Sangat Layak Dikoleksi)"
-            elif total_score >= 50:
+            elif total_score >= 60:
                 score_status = "Cukup (Layak dengan Pantauan)"
             else:
                 score_status = "Kurang (Resiko Tinggi / Watchlist)"
@@ -106,12 +131,11 @@ def run_dividen():
             m1, m2, m3, m4 = st.columns(4)
             m1.metric("Dividend Yield", f"{yield_val:.2f}%")
             m2.metric("Payout Ratio", f"{payout:.1f}%")
-            m3.metric("Konsistensi", f"{len(df_div_annual)}/5 Thn")
+            m3.metric("Konsistensi", f"{konsistensi}/5 Thn")
             m4.metric("Growth (CAGR)", f"{cagr*100:.1f}%")
 
             # --- SEKSI 2: KINERJA BISNIS ---
             st.header("2. Kinerja Bisnis")
-            eps_growth = info.get('earningsGrowth', 0) * 100
             col_biz1, col_biz2 = st.columns(2)
             with col_biz1:
                 st.write("**EPS Growth (YoY):**")
@@ -148,7 +172,7 @@ def run_dividen():
             deposito_rate = 5.0
             entry_price = est_dps / (deposito_rate/100) if est_dps > 0 else 0
             
-            status_final = "SANGAT LAYAK (Top Pick)" if (curr_price < entry_price and total_score >= 75) else "LAYAK" if curr_price < entry_price else "TUNGGU KOREKSI"
+            status_final = "SANGAT LAYAK (Top Pick)" if (curr_price < entry_price and total_score >= 80) else "LAYAK" if curr_price < entry_price else "TUNGGU KOREKSI"
             st.subheader(f"Status: {status_final}")
             st.write(f"**Harga wajar bila dividen setara dengan deposito dengan bagi hasil 5%:** Rp {entry_price:,.0f}")
             st.write(f"**Harga Saham Saat Ini:** Rp {curr_price:,.0f}")
