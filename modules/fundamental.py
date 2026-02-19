@@ -307,9 +307,9 @@ def generate_pdf_report(data_dict, logo_path="logo_expert_stock_pro.png"):
     pdf.cell(0, 6, f"Batas Cutloss: Tembus Rp {data_dict['sl']:,.0f} (Penurunan ~30%)", ln=True)
     pdf.ln(10)
     
-    # Disclaimer yang telah diperbarui
+    # Disclaimer PDF (Tanpa Markdown Bold agar format teks murni rapi di FPDF)
     pdf.set_font("Arial", 'I', 8)
-    pdf.multi_cell(0, 4, "**DISCLAIMER:** Semua informasi, analisa teknikal, Analisa fundamental, ataupun sinyal trading dan analisa-analisa lain yang disediakan di modul ini hanya untuk tujuan edukasi dan informasi. Ini bukan merupakan rekomendasi, ajakan, atau nasihat keuangan untuk membeli atau menjual saham tertentu. Keputusan investasi sepenuhnya berada di tangan Anda. Harap lakukan riset Anda sendiri (*Do Your Own Research*) dan pertimbangkan profil risiko sebelum mengambil keputusan di pasar modal.")
+    pdf.multi_cell(0, 4, "DISCLAIMER: Semua informasi, analisa teknikal, Analisa fundamental, ataupun sinyal trading dan analisa-analisa lain yang disediakan di modul ini hanya untuk tujuan edukasi dan informasi. Ini bukan merupakan rekomendasi, ajakan, atau nasihat keuangan untuk membeli atau menjual saham tertentu. Keputusan investasi sepenuhnya berada di tangan Anda. Harap lakukan riset Anda sendiri (Do Your Own Research) dan pertimbangkan profil risiko sebelum mengambil keputusan di pasar modal.")
     
     # Output sebagai Bytes
     return bytes(pdf.output(dest='S').encode('latin1'))
@@ -328,9 +328,9 @@ def run_fundamental():
         with c2:
             st.image(logo_file, use_container_width=True)
         # Menengahkan teks judul menggunakan Markdown HTML
-        st.markdown("<h1 style='text-align: center;'>🏛️ Analisa Fundamental & Kualitatif Pro</h1>", unsafe_allow_html=True)
+        st.markdown("<h1 style='text-align: center;'>Analisa Fundamental & Kualitatif Pro</h1>", unsafe_allow_html=True)
     else:
-        st.markdown("<h1 style='text-align: center;'>🏛️ Analisa Fundamental & Kualitatif Pro</h1>", unsafe_allow_html=True)
+        st.markdown("<h1 style='text-align: center;'>Analisa Fundamental & Kualitatif Pro</h1>", unsafe_allow_html=True)
         st.warning("⚠️ File logo belum ditemukan.")
         
     st.markdown("---")
@@ -395,7 +395,7 @@ def run_fundamental():
                 keputusan = "✅ LAYAK DIBELI"
                 warna_keputusan = "info"
                 alasan_keputusan = f"Perusahaan sehat secara operasional dan harga masih masuk akal (Undervalued dengan MOS memadai)."
-            elif skor_akhir >= 60 and konf_pct >= 50 and mos < 15:
+            elif skor_akhir >= 60 and mos < 15:
                 keputusan = "⏳ TUNGGU KOREKSI (Hold)"
                 warna_keputusan = "warning"
                 alasan_keputusan = f"Perusahaan bagus, namun harga saat ini belum cukup aman (Margin of Safety terlalu tipis). Kesabaran diperlukan."
@@ -528,9 +528,14 @@ def run_fundamental():
             
             # Waktu Analisa
             waktu_sekarang = datetime.now().strftime("%d-%m-%Y %H:%M")
+            
+            # Mendapatkan format tanggal cetak untuk nama file PDF (Contoh: 20260219)
+            tanggal_cetak = datetime.now().strftime("%Y%m%d")
+            ticker_bersih = ticker_input.replace(".JK", "")
+            nama_file_pdf = f"ExpertStockPro_Fundamental_{ticker_bersih}_{tanggal_cetak}.pdf"
 
             data_to_pdf = {
-                'ticker': ticker_input,
+                'ticker': ticker_bersih,
                 'nama': nama_perusahaan,
                 'sektor': sektor_indo,
                 'syariah': status_syariah,
@@ -571,9 +576,10 @@ def run_fundamental():
             st.download_button(
                 label="📥 Simpan Laporan sebagai PDF",
                 data=pdf_bytes,
-                file_name=f"Expert_Stock_Pro_Fundamental_{ticker_input}_{datetime.now().strftime('%Y%m%d')}.pdf",
+                file_name=nama_file_pdf,
                 mime="application/pdf",
                 use_container_width=True
             )
             
+            # Disclaimer Web
             st.caption("**DISCLAIMER:** Semua informasi, analisa teknikal, Analisa fundamental, ataupun sinyal trading dan analisa-analisa lain yang disediakan di modul ini hanya untuk tujuan edukasi dan informasi. Ini bukan merupakan rekomendasi, ajakan, atau nasihat keuangan untuk membeli atau menjual saham tertentu. Keputusan investasi sepenuhnya berada di tangan Anda. Harap lakukan riset Anda sendiri (*Do Your Own Research*) dan pertimbangkan profil risiko sebelum mengambil keputusan di pasar modal.")
