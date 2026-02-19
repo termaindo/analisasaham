@@ -309,7 +309,7 @@ def generate_pdf_report(data_dict, logo_path="logo_expert_stock_pro.png"):
     
     # Disclaimer yang telah diperbarui
     pdf.set_font("Arial", 'I', 8)
-    pdf.multi_cell(0, 4, "DISCLAIMER: Analisa ini bersifat edukatif dan berbasis formula kuantitatif & kualitatif menggunakan algoritme Expert Stock Pro. Keputusan investasi sepenuhnya di tangan Anda. Kinerja masa lalu tidak menjamin hasil masa depan.")
+    pdf.multi_cell(0, 4, "**DISCLAIMER:** Semua informasi, analisa teknikal, Analisa fundamental, ataupun sinyal trading dan analisa-analisa lain yang disediakan di modul ini hanya untuk tujuan edukasi dan informasi. Ini bukan merupakan rekomendasi, ajakan, atau nasihat keuangan untuk membeli atau menjual saham tertentu. Keputusan investasi sepenuhnya berada di tangan Anda. Harap lakukan riset Anda sendiri (*Do Your Own Research*) dan pertimbangkan profil risiko sebelum mengambil keputusan di pasar modal.")
     
     # Output sebagai Bytes
     return bytes(pdf.output(dest='S').encode('latin1'))
@@ -576,4 +576,4 @@ def run_fundamental():
                 use_container_width=True
             )
             
-            st.caption("**DISCLAIMER:** Analisa ini bersifat edukatif dan berbasis formula kuantitatif & kualitatif menggunakan algoritme Expert Stock Pro. Keputusan investasi sepenuhnya di tangan Anda. Kinerja masa lalu tidak menjamin hasil masa depan.")
+            st.caption("**DISCLAIMER:** Semua informasi, analisa teknikal, Analisa fundamental, ataupun sinyal trading dan analisa-analisa lain yang disediakan di modul ini hanya untuk tujuan edukasi dan informasi. Ini bukan merupakan rekomendasi, ajakan, atau nasihat keuangan untuk membeli atau menjual saham tertentu. Keputusan investasi sepenuhnya berada di tangan Anda. Harap lakukan riset Anda sendiri (*Do Your Own Research*) dan pertimbangkan profil risiko sebelum mengambil keputusan di pasar modal.")
