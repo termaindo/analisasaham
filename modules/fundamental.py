@@ -571,7 +571,7 @@ def run_fundamental():
             st.download_button(
                 label="📥 Simpan Laporan sebagai PDF",
                 data=pdf_bytes,
-                file_name=f"ExpertStockPro_Fundamental_{ticker_input}.pdf",
+                file_name=f"Expert_Stock_Pro_Fundamental_{clean_ticker}_{datetime.now().strftime('%Y%m%d')}.pdf",
                 mime="application/pdf",
                 use_container_width=True
             )
