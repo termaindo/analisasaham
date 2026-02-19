@@ -323,11 +323,11 @@ def run_fundamental():
         
     # Tampilkan Logo di Web
     if os.path.exists(logo_file):
-        col_logo, col_text = st.columns([1, 5])
+        col_logo, col_text = st.columns([2, 5])
         with col_logo:
             st.image(logo_file, width=100)
         with col_text:
-            st.title("Analisa Fundamental & Kualitatif Pro")
+            st.title("🏛️ Analisa Fundamental & Kualitatif Pro")
     else:
         st.title("Analisa Fundamental & Kualitatif Pro")
         st.warning("⚠️ File logo belum ditemukan.")
