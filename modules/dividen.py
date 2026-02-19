@@ -133,7 +133,7 @@ def generate_pdf_report(ticker, company, sector, syariah_status,
     # --- DISCLAIMER ---
     pdf.set_font("Arial", "I", 9)
     pdf.set_text_color(100, 100, 100)
-    disclaimer_text = "DISCLAIMER: Semua informasi, analisa teknikal, Analisa fundamental, ataupun sinyal trading dan analisa-analisa lain yang disediakan di modul ini hanya untuk tujuan edukasi dan informasi. Ini bukan merupakan rekomendasi, ajakan, atau nasihat keuangan untuk membeli atau menjual saham tertentu. Keputusan investasi sepenuhnya berada di tangan Anda. Harap lakukan riset Anda sendiri (Do Your Own Research) dan pertimbangkan profil risiko sebelum mengambil keputusan di pasar modal."
+    disclaimer_text = "DISCLAIMER: Semua informasi, analisa teknikal, analisa fundamental, ataupun sinyal trading dan analisa-analisa lain yang disediakan di modul ini hanya untuk tujuan edukasi dan informasi. Ini bukan merupakan rekomendasi, ajakan, atau nasihat keuangan untuk membeli atau menjual saham tertentu. Keputusan investasi sepenuhnya berada di tangan Anda. Harap lakukan riset Anda sendiri (Do Your Own Research) dan pertimbangkan profil risiko sebelum mengambil keputusan di pasar modal."
     pdf.multi_cell(0, 5, disclaimer_text)
 
     # Kembalikan sebagai bytes (Sanitasi FPDF versi lama dan baru)
@@ -166,7 +166,7 @@ def run_dividen():
     
     col_inp, _ = st.columns([1, 2])
     with col_inp:
-        ticker_input = st.text_input("Kode Saham (Contoh: BBRI):", value="BBRI").upper()
+        ticker_input = st.text_input("Kode Saham (Contoh: ADRO):", value="ADRO").upper()
     ticker = ticker_input if ticker_input.endswith(".JK") else f"{ticker_input}.JK"
     kode_bersih = ticker_input.replace(".JK", "").upper()
 
@@ -351,5 +351,5 @@ def run_dividen():
             # --- DISCLAIMER BARU ---
             st.markdown("---")
             st.caption("""
-            **DISCLAIMER:** Semua informasi, analisa teknikal, Analisa fundamental, ataupun sinyal trading dan analisa-analisa lain yang disediakan di modul ini hanya untuk tujuan edukasi dan informasi. Ini bukan merupakan rekomendasi, ajakan, atau nasihat keuangan untuk membeli atau menjual saham tertentu. Keputusan investasi sepenuhnya berada di tangan Anda. Harap lakukan riset Anda sendiri (*Do Your Own Research*) dan pertimbangkan profil risiko sebelum mengambil keputusan di pasar modal.
+            **DISCLAIMER:** Semua informasi, analisa teknikal, analisa fundamental, ataupun sinyal trading dan analisa-analisa lain yang disediakan di modul ini hanya untuk tujuan edukasi dan informasi. Ini bukan merupakan rekomendasi, ajakan, atau nasihat keuangan untuk membeli atau menjual saham tertentu. Keputusan investasi sepenuhnya berada di tangan Anda. Harap lakukan riset Anda sendiri (*Do Your Own Research*) dan pertimbangkan profil risiko sebelum mengambil keputusan di pasar modal.
             """)
