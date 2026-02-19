@@ -98,40 +98,67 @@ def calculate_technical_pro(df):
     return df
 
 # --- FUNGSI PDF MENGGUNAKAN FPDF ---
-def generate_pdf_fpdf(data):
-    """Membangun PDF dari awal menggunakan fpdf agar bebas dari wkhtmltopdf"""
+def generate_pdf_fpdf(data, logo_path="logo_expert_stock_pro.png"):
+    """Membangun PDF dari awal menggunakan fpdf dengan Header Box Hitam elegan"""
     pdf = FPDF()
     pdf.add_page()
     
     # Menghapus emoji untuk fpdf karena hanya mendukung Latin-1
     status_syariah_teks = "Syariah" if "✅" in data['syariah'] else "Non-Syariah"
     
-    # --- HEADER PDF DISESUAIKAN ---
+    # --- 1. HEADER BOX HITAM ---
+    pdf.set_fill_color(20, 20, 20)  # Warna Hitam (Almost Black)
+    pdf.rect(0, 0, 210, 25, 'F')    # Lebar A4 = 210mm
+    
+    # Cari lokasi logo jika dipanggil dari sub-folder
+    if not os.path.exists(logo_path):
+        if os.path.exists("../logo_expert_stock_pro.png"):
+            logo_path = "../logo_expert_stock_pro.png"
+
+    # a) LOGO dengan Bingkai Emas
+    if os.path.exists(logo_path):
+        pdf.set_fill_color(218, 165, 32) # Goldenrod color
+        pdf.rect(10, 3, 19, 19, 'F')
+        pdf.image(logo_path, x=10.5, y=3.5, w=18, h=18)
+    
+    # b) & c) NAMA APLIKASI & MODUL (Teks Putih)
+    pdf.set_text_color(255, 255, 255)
     pdf.set_font("Arial", 'B', 16)
-    pdf.cell(0, 10, txt="Expert Stock Pro - Analisa Teknikal & Sentimen Berita", ln=True, align='C')
+    pdf.set_xy(35, 8) 
+    pdf.cell(0, 10, "Expert Stock Pro - Analisa Teknikal Pro", ln=True)
     
-    # Membuat Link Bisa Diklik dan Berwarna Biru
-    pdf.set_font("Arial", 'U', 11)
-    pdf.set_text_color(37, 99, 235) # Warna biru khas link
-    pdf.cell(0, 6, txt="Sumber: https://lynk.id/hahastoresby", ln=True, align='C', link="https://lynk.id/hahastoresby")
-    pdf.set_text_color(0, 0, 0) # Kembalikan teks ke warna hitam
+    # Reset posisi Y ke bawah kotak hitam
+    pdf.set_y(28)
     
-    pdf.ln(8) # Jarak spasi
+    # --- 2. HYPERLINK SUMBER ---
+    pdf.set_font("Arial", 'I', 10)
+    pdf.set_text_color(0, 0, 255)  # Warna Biru
+    pdf.cell(0, 5, "Sumber: https://lynk.id/hahastoresby", ln=True, align='C', link="https://lynk.id/hahastoresby")
+    pdf.ln(2)
     
-    pdf.set_font("Arial", 'B', 15)
-    pdf.cell(0, 8, txt=f"{data['ticker']} - {data['nama_perusahaan']}", ln=True, align='C')
+    # --- 3. NAMA SAHAM & PERUSAHAAN (CENTER) ---
+    pdf.set_text_color(0, 0, 0) # Kembali ke Hitam
+    pdf.set_font("Arial", 'B', 20)
+    pdf.cell(0, 8, f"{data['ticker']} - {data['nama_perusahaan']}", ln=True, align='C')
     
-    pdf.set_font("Arial", '', 12)
-    pdf.cell(0, 6, txt=f"Sektor: {data['sektor']} | Status: {status_syariah_teks}", ln=True, align='C')
+    # --- 4. INFO SEKTOR & SYARIAH (CENTER) ---
+    pdf.set_font("Arial", '', 11)
+    pdf.cell(0, 6, f"Sektor: {data['sektor']} | Status: {status_syariah_teks}", ln=True, align='C')
+    pdf.ln(2)
     
-    pdf.ln(10) # Jarak sebelum mulai konten
-    # ---------------------------------
+    # --- 5. INFO TANGGAL & HARGA (RATA KANAN) ---
+    pdf.set_font("Arial", 'B', 10)
+    waktu_analisa = data.get('waktu', datetime.now().strftime("%d-%m-%Y %H:%M"))
+    pdf.cell(0, 5, f"Analisa: {waktu_analisa} | Harga: Rp {data['harga']:,.0f}", ln=True, align='R')
     
-    pdf.set_font("Arial", '', 10)
-    pdf.cell(0, 6, txt=f"Tanggal Analisa: {data['tanggal']} | Harga: Rp {data['harga']:,.0f}", ln=True, align='R')
-    pdf.line(10, pdf.get_y(), 200, pdf.get_y())
-    
+    # Garis Bawah Header
+    pdf.set_line_width(0.5)
+    pdf.line(10, pdf.get_y()+2, 200, pdf.get_y()+2)
     pdf.ln(5)
+    
+    # ---------------------------------
+    # MULAI KONTEN UTAMA TEKNIKAL
+    # ---------------------------------
     pdf.set_font("Arial", 'B', 12)
     pdf.cell(0, 10, txt=f"SKOR TEKNIKAL: {data['score']}/100", ln=True)
     pdf.set_font("Arial", '', 11)
@@ -179,7 +206,6 @@ def generate_pdf_fpdf(data):
     pdf.set_font("Arial", 'B', 11)
     pdf.cell(0, 8, txt="5. TRADING PLAN", ln=True)
     pdf.set_font("Arial", '', 11)
-    # Spasi disejajarkan agar rapi dan mudah dibaca
     pdf.cell(0, 6, txt=f"Harga Saat Ini : Rp {data['harga']:,.0f}", ln=True)
     pdf.cell(0, 6, txt=f"Area Entry     : Rp {data['entry_bawah']:,.0f} - Rp {data['entry_atas']:,.0f}", ln=True)
     pdf.cell(0, 6, txt=f"Stop Loss      : Rp {data['sl_final']:,.0f} (-{data['risk_pct']:.1f}%)", ln=True)
@@ -205,12 +231,26 @@ def generate_pdf_fpdf(data):
     return bytes(pdf.output(dest='S').encode('latin1'))
 
 def run_teknikal():
-    st.title("📈 Analisa Teknikal Pro (6 Dimensi Lengkap)")
+    # --- TAMPILAN WEB & LOGO ---
+    logo_file = "logo_expert_stock_pro.png"
+    if not os.path.exists(logo_file):
+        logo_file = "../logo_expert_stock_pro.png"
+        
+    # Tampilkan Logo di Web bagian TENGAH dengan ukuran BESAR
+    if os.path.exists(logo_file):
+        c1, c2, c3 = st.columns([1, 1, 1])
+        with c2:
+            st.image(logo_file, use_container_width=True)
+        st.markdown("<h1 style='text-align: center;'>📈 Analisa Teknikal Pro (6 Dimensi Lengkap)</h1>", unsafe_allow_html=True)
+    else:
+        st.markdown("<h1 style='text-align: center;'>📈 Analisa Teknikal Pro (6 Dimensi Lengkap)</h1>", unsafe_allow_html=True)
+        st.warning("⚠️ File logo belum ditemukan.")
+        
     st.markdown("---")
 
     col_inp, _ = st.columns([1, 2])
     with col_inp:
-        ticker_input = st.text_input("Kode Saham:", value="BBRI").upper()
+        ticker_input = st.text_input("Kode Saham (Contoh: BBRI):", value="BBRI").upper()
     ticker = ticker_input if ticker_input.endswith(".JK") else f"{ticker_input}.JK"
 
     if st.button(f"Jalankan Analisa Lengkap {ticker_input}"):
@@ -422,7 +462,7 @@ def run_teknikal():
                 'nama_perusahaan': nama_perusahaan,
                 'sektor': sektor_id,
                 'syariah': status_syariah,
-                'tanggal': datetime.now().strftime("%d %B %Y"),
+                'waktu': datetime.now().strftime("%d-%m-%Y %H:%M"),
                 'harga': curr_price,
                 'score': score,
                 'signal': signal,
