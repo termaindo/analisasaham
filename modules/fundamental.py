@@ -189,7 +189,7 @@ def hitung_skor_fundamental(info, financials, cashflow, mean_pe_5y, mean_pbv_5y,
     return skor, konf_pct, label_konf, ocf_sehat
 
 # --- FUNGSI GENERATE PDF (HEADER BARU) ---
-def generate_pdf_report(data_dict, logo_path="Logo Expert Stock Pro.jpg"):
+def generate_pdf_report(data_dict, logo_path="logo_expert_stock_pro.png"):
     pdf = FPDF()
     pdf.add_page()
     
@@ -307,17 +307,21 @@ def generate_pdf_report(data_dict, logo_path="Logo Expert Stock Pro.jpg"):
     pdf.cell(0, 6, f"Batas Cutloss: Tembus Rp {data_dict['sl']:,.0f} (Penurunan ~30%)", ln=True)
     pdf.ln(10)
     
-    # Disclaimer
+    # Disclaimer yang telah diperbarui
     pdf.set_font("Arial", 'I', 8)
-    pdf.multi_cell(0, 4, "DISCLAIMER: Analisa ini bersifat edukatif dan berbasis formula kuantitatif. Keputusan investasi sepenuhnya di tangan Anda. Kinerja masa lalu tidak menjamin hasil masa depan.")
+    pdf.multi_cell(0, 4, "DISCLAIMER: Analisa ini bersifat edukatif dan berbasis formula kuantitatif & kualitatif menggunakan algoritme Expert Stock Pro. Keputusan investasi sepenuhnya di tangan Anda. Kinerja masa lalu tidak menjamin hasil masa depan.")
     
     # Output sebagai Bytes
     return bytes(pdf.output(dest='S').encode('latin1'))
 
 def run_fundamental():
     # --- TAMPILAN WEB ---
+    # Mencari lokasi file logo. 
+    logo_file = "logo_expert_stock_pro.png"
+    if not os.path.exists(logo_file):
+        logo_file = "../logo_expert_stock_pro.png"
+        
     # Tampilkan Logo di Web
-    logo_file = "Logo Expert Stock Pro.jpg"
     if os.path.exists(logo_file):
         col_logo, col_text = st.columns([1, 5])
         with col_logo:
@@ -326,6 +330,7 @@ def run_fundamental():
             st.title("Analisa Fundamental & Kualitatif Pro")
     else:
         st.title("Analisa Fundamental & Kualitatif Pro")
+        st.warning("⚠️ File logo belum ditemukan.")
         
     st.markdown("---")
     
@@ -560,7 +565,7 @@ def run_fundamental():
                 'waktu': waktu_sekarang
             }
             
-            # Pastikan nama file logo sesuai
+            # Menggunakan logo_file yang path-nya sudah disesuaikan
             pdf_bytes = generate_pdf_report(data_to_pdf, logo_path=logo_file)
             st.download_button(
                 label="📥 Simpan Laporan sebagai PDF",
@@ -570,4 +575,4 @@ def run_fundamental():
                 use_container_width=True
             )
             
-            st.caption("⚠️ **DISCLAIMER:** Analisa ini bersifat edukatif dan berbasis formula kuantitatif & kualitatif menggunakan algoritme Expert Stock Pro. Keputusan investasi sepenuhnya di tangan Anda. Kinerja masa lalu tidak menjamin hasil masa depan.")
+            st.caption("**DISCLAIMER:** Analisa ini bersifat edukatif dan berbasis formula kuantitatif & kualitatif menggunakan algoritme Expert Stock Pro. Keputusan investasi sepenuhnya di tangan Anda. Kinerja masa lalu tidak menjamin hasil masa depan.")
