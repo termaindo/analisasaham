@@ -2,7 +2,9 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import base64
-import yfinance as yf  
+import yfinance as yf
+import os
+from datetime import datetime
 from io import BytesIO
 from fpdf import FPDF
 from modules.data_loader import get_full_stock_data, hitung_div_yield_normal
@@ -186,31 +188,61 @@ def hitung_skor_fundamental(info, financials, cashflow, mean_pe_5y, mean_pbv_5y,
     
     return skor, konf_pct, label_konf, ocf_sehat
 
-# --- FUNGSI GENERATE PDF ---
-def generate_pdf_report(data_dict):
+# --- FUNGSI GENERATE PDF (HEADER BARU) ---
+def generate_pdf_report(data_dict, logo_path="Logo Expert Stock Pro.jpg"):
     pdf = FPDF()
     pdf.add_page()
     
-    # --- HEADER UTAMA (Desain Sementara) ---
+    # 1. HEADER BOX HITAM
+    # Menggambar kotak hitam penuh di bagian atas
+    pdf.set_fill_color(20, 20, 20)  # Warna Hitam (Almost Black)
+    pdf.rect(0, 0, 210, 25, 'F')    # Lebar A4 = 210mm
+    
+    # a) LOGO dengan Bingkai Emas
+    if os.path.exists(logo_path):
+        # Gambar bingkai emas (rect di belakang logo)
+        pdf.set_fill_color(218, 165, 32) # Goldenrod color
+        pdf.rect(10, 3, 19, 19, 'F')
+        # Tampilkan logo
+        pdf.image(logo_path, x=10.5, y=3.5, w=18, h=18)
+    
+    # b) & c) NAMA APLIKASI & MODUL (Teks Putih)
+    pdf.set_text_color(255, 255, 255)
     pdf.set_font("Arial", 'B', 16)
-    pdf.set_fill_color(33, 37, 41) # Background abu-abu gelap
-    pdf.set_text_color(255, 255, 255) # Teks putih
-    pdf.cell(0, 15, " Expert Stock Pro - Analisa Fundamental & Kualitatif ", ln=True, align='C', fill=True)
+    # Posisi di sebelah kanan logo (logo width ~20 + margin 10 = 30)
+    pdf.set_xy(35, 8) 
+    pdf.cell(0, 10, "Expert Stock Pro - Analisa Fundamental & Kualitatif Pro", ln=True)
     
-    # PENYESUAIAN HYPERLINK
+    # Reset posisi Y ke bawah kotak hitam
+    pdf.set_y(28)
+    
+    # 2. HYPERLINK SUMBER
     pdf.set_font("Arial", 'I', 10)
-    pdf.set_text_color(0, 0, 255)  
-    pdf.cell(0, 8, "Sumber: lynk.id/hahastoresby", ln=True, align='C', link="https://lynk.id/hahastoresby")
-    pdf.set_text_color(0, 0, 0)  # Kembalikan ke teks hitam
-    pdf.ln(5)
+    pdf.set_text_color(0, 0, 255)  # Warna Biru
+    pdf.cell(0, 5, "Sumber: https://lynk.id/hahastoresby", ln=True, align='C', link="https://lynk.id/hahastoresby")
+    pdf.ln(2)
     
-    # Info Emiten
-    pdf.set_font("Arial", 'B', 14)
-    pdf.cell(0, 10, f"{data_dict['ticker']} - {data_dict['nama']}", ln=True, align='C')
+    # 3. NAMA SAHAM & PERUSAHAAN (CENTER)
+    pdf.set_text_color(0, 0, 0) # Kembali ke Hitam
+    pdf.set_font("Arial", 'B', 20)
+    pdf.cell(0, 8, f"{data_dict['ticker']} - {data_dict['nama']}", ln=True, align='C')
     
+    # 4. INFO SEKTOR & SYARIAH (CENTER)
     pdf.set_font("Arial", '', 11)
     pdf.cell(0, 6, f"Sektor: {data_dict['sektor']} | Status: {data_dict['syariah']}", ln=True, align='C')
-    pdf.ln(10)
+    pdf.ln(2)
+    
+    # 5. INFO TANGGAL & HARGA (RATA KANAN)
+    pdf.set_font("Arial", 'B', 10)
+    waktu_analisa = data_dict.get('waktu', datetime.now().strftime("%d-%m-%Y %H:%M"))
+    pdf.cell(0, 5, f"Analisa: {waktu_analisa} | Harga: Rp {data_dict['curr_price']:,.0f}", ln=True, align='R')
+    
+    # Garis Bawah Header
+    pdf.set_line_width(0.5)
+    pdf.line(10, pdf.get_y()+2, 200, pdf.get_y()+2)
+    pdf.ln(5)
+    
+    # --- MULAI KONTEN LAPORAN ---
     
     # 1. Skor & Keputusan
     pdf.set_font("Arial", 'B', 12)
@@ -283,7 +315,18 @@ def generate_pdf_report(data_dict):
     return bytes(pdf.output(dest='S').encode('latin1'))
 
 def run_fundamental():
-    st.title("📊 Analisa Fundamental & Valuasi Pro")
+    # --- TAMPILAN WEB ---
+    # Tampilkan Logo di Web
+    logo_file = "Logo Expert Stock Pro.jpg"
+    if os.path.exists(logo_file):
+        col_logo, col_text = st.columns([1, 5])
+        with col_logo:
+            st.image(logo_file, width=100)
+        with col_text:
+            st.title("Analisa Fundamental & Kualitatif Pro")
+    else:
+        st.title("Analisa Fundamental & Kualitatif Pro")
+        
     st.markdown("---")
     
     col_inp, _ = st.columns([1, 2])
@@ -309,7 +352,7 @@ def run_fundamental():
             # --- AMBIL DATA SENTIMEN ---
             sentimen_kesimpulan, daftar_berita, sentimen_alasan = analisa_sentimen_berita(ticker)
 
-            # --- HEADER UTAMA ---
+            # --- HEADER UTAMA WEB ---
             nama_perusahaan = info.get('longName', info.get('shortName', 'Nama Tidak Diketahui'))
             st.markdown(f"<h1 style='text-align: center; color: #4CAF50; margin-bottom: 0;'>🏢 {ticker_input} - {nama_perusahaan}</h1>", unsafe_allow_html=True)
             
@@ -476,6 +519,9 @@ def run_fundamental():
             
             # --- TOMBOL EXPORT PDF ---
             pdf_sentimen_kesimpulan = sentimen_kesimpulan.replace("🌟", "").replace("⚠️", "").replace("⚖️", "").strip()
+            
+            # Waktu Analisa
+            waktu_sekarang = datetime.now().strftime("%d-%m-%Y %H:%M")
 
             data_to_pdf = {
                 'ticker': ticker_input,
@@ -510,10 +556,12 @@ def run_fundamental():
                 'der': (info.get('debtToEquity') or 0) / 100,
                 'cr': info.get('currentRatio') or 0,
                 'div_rate': div_rate,
-                'div_yield': div_yield
+                'div_yield': div_yield,
+                'waktu': waktu_sekarang
             }
             
-            pdf_bytes = generate_pdf_report(data_to_pdf)
+            # Pastikan nama file logo sesuai
+            pdf_bytes = generate_pdf_report(data_to_pdf, logo_path=logo_file)
             st.download_button(
                 label="📥 Simpan Laporan sebagai PDF",
                 data=pdf_bytes,
@@ -522,4 +570,4 @@ def run_fundamental():
                 use_container_width=True
             )
             
-            st.caption("⚠️ **DISCLAIMER:** Laporan ini dihasilkan secara otomatis oleh sistem algoritma Expert Stock Pro. Semua informasi, analisa, dan sinyal trading disediakan hanya untuk tujuan edukasi. Keputusan investasi sepenuhnya berada di tangan Anda. Kinerja masa lalu tidak selalu menjamin hasil masa depan.")
+            st.caption("⚠️ **DISCLAIMER:** Analisa ini bersifat edukatif dan berbasis formula kuantitatif & kualitatif menggunakan algoritme Expert Stock Pro. Keputusan investasi sepenuhnya di tangan Anda. Kinerja masa lalu tidak menjamin hasil masa depan.")
