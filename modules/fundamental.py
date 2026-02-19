@@ -395,7 +395,7 @@ def run_fundamental():
                 keputusan = "✅ LAYAK DIBELI"
                 warna_keputusan = "info"
                 alasan_keputusan = f"Perusahaan sehat secara operasional dan harga masih masuk akal (Undervalued dengan MOS memadai)."
-            elif skor_akhir >= 60 and mos < 15:
+            elif skor_akhir >= 60 and konf_pct >= 50 and mos < 15:
                 keputusan = "⏳ TUNGGU KOREKSI (Hold)"
                 warna_keputusan = "warning"
                 alasan_keputusan = f"Perusahaan bagus, namun harga saat ini belum cukup aman (Margin of Safety terlalu tipis). Kesabaran diperlukan."
