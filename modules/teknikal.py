@@ -254,9 +254,9 @@ def run_teknikal():
             unsafe_allow_html=True
         )
         # Menengahkan teks judul menggunakan Markdown HTML
-        st.markdown("<h1 style='text-align: center;'>Analisa Fundamental & Kualitatif Pro</h1>", unsafe_allow_html=True)
+        st.markdown("<h1 style='text-align: center;'>Analisa Teknikal Pro</h1>", unsafe_allow_html=True)
     else:
-        st.markdown("<h1 style='text-align: center;'>Analisa Fundamental & Kualitatif Pro</h1>", unsafe_allow_html=True)
+        st.markdown("<h1 style='text-align: center;'>Analisa Teknikal Pro</h1>", unsafe_allow_html=True)
         st.warning("⚠️ File logo belum ditemukan.")
         
     st.markdown("---")
