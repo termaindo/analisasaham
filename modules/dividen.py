@@ -143,7 +143,7 @@ def generate_pdf_report(ticker, company, sector, syariah_status,
     except Exception:
         return bytes(pdf.output())
 
-def run_fundamental():
+def run_dividen():
     # --- TAMPILAN WEB ---
     # Mencari lokasi file logo. 
     logo_file = "logo_expert_stock_pro.png"
