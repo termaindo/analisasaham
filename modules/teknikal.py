@@ -509,7 +509,7 @@ def run_teknikal():
                 st.download_button(
                     label="📄 Unduh Laporan Analisa (PDF)",
                     data=pdf_bytes,
-                    file_name=f"Expert_Stock_Pro_Teknikal_{clean_ticker}_{datetime.now().strftime('%Y%m%d')}.pdf",
+                    file_name=f"ExpertStockPro_Teknikal_{clean_ticker}_{datetime.now().strftime('%Y%m%d')}.pdf",
                     mime="application/pdf",
                     use_container_width=True
                 )
