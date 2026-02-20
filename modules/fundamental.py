@@ -321,12 +321,14 @@ def run_fundamental():
     if not os.path.exists(logo_file):
         logo_file = "../logo_expert_stock_pro.png"
         
-    # Tampilkan Logo di Web bagian TENGAH dengan ukuran BESAR
+# Tampilkan Logo di Web bagian TENGAH dengan ukuran LEBIH KECIL
     if os.path.exists(logo_file):
-        # Menggunakan 3 kolom dengan kolom tengah paling besar untuk menengahkan gambar
-        c1, c2, c3 = st.columns([1, 1, 1])
+        # Menggunakan 3 kolom dengan kolom tengah yang disesuaikan
+        c1, c2, c3 = st.columns([1.5, 1, 1.5])
         with c2:
-            st.image(logo_file, use_container_width=True)
+            # Menggunakan lebar tetap (misal: 150 atau 200 pixel) agar terlihat lebih kecil
+            # Hilangkan 'use_container_width=True' jika menggunakan parameter 'width'
+            st.image(logo_file, width=200) 
         # Menengahkan teks judul menggunakan Markdown HTML
         st.markdown("<h1 style='text-align: center;'>Analisa Fundamental & Kualitatif Pro</h1>", unsafe_allow_html=True)
     else:
