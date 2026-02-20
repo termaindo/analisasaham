@@ -164,7 +164,7 @@ def show_dashboard():
 
     c1, c2 = st.columns(2)
     with c1:
-        if st.button("🔍 Screening Harian Pro", use_container_width=True):
+        if st.button("🔍 Screening Saham Harian Pro", use_container_width=True):
             st.session_state.current_menu = "screening"; st.rerun()
     with c2:
         label = "⚡ Analisa Cepat Pro" if mod_cepat else "⚡ Analisa Cepat (Rusak)"
@@ -224,6 +224,7 @@ if __name__ == "__main__":
         main_app()
     else:
         login_page()
+
 
 
 
