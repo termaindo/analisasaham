@@ -4,7 +4,8 @@ import numpy as np
 import plotly.graph_objects as go
 from fpdf import FPDF
 from datetime import datetime
-import os  # PENTING: Import OS ditambahkan agar pemanggilan logo tidak error
+import os
+import base64  # FIX: Ditambahkan agar tidak error 'base64 is not defined'
 
 # Import dari data_loader & universe
 from modules.data_loader import get_full_stock_data, hitung_div_yield_normal
@@ -16,6 +17,7 @@ def clean_text(text):
         return text.encode('latin-1', 'ignore').decode('latin-1')
     return str(text)
 
+# --- FUNGSI GENERATE PDF (HEADER BOX HITAM & EMAS) ---
 def generate_pdf_report(ticker, company, sector, syariah_status, 
                         score, score_status, conf_label, conf_pct,
                         yield_val, payout, konsistensi, cagr, 
@@ -25,10 +27,9 @@ def generate_pdf_report(ticker, company, sector, syariah_status,
     pdf.add_page()
     pdf.set_auto_page_break(auto=True, margin=15)
     
-    # --- 1. HEADER BOX HITAM ---
-    # Menggambar kotak hitam penuh di bagian atas
-    pdf.set_fill_color(20, 20, 20)  # Warna Hitam (Almost Black)
-    pdf.rect(0, 0, 210, 25, 'F')    # Lebar A4 = 210mm
+    # 1. HEADER BOX HITAM
+    pdf.set_fill_color(20, 20, 20)  # Hampir Hitam
+    pdf.rect(0, 0, 210, 25, 'F')
     
     logo_path = "logo_expert_stock_pro.png"
     if not os.path.exists(logo_path):
@@ -36,107 +37,95 @@ def generate_pdf_report(ticker, company, sector, syariah_status,
 
     # a) LOGO dengan Bingkai Emas
     if os.path.exists(logo_path):
-        # Gambar bingkai emas (rect di belakang logo)
-        pdf.set_fill_color(218, 165, 32) # Goldenrod color
+        pdf.set_fill_color(218, 165, 32) # Goldenrod
         pdf.rect(10, 3, 19, 19, 'F')
-        # Tampilkan logo
         pdf.image(logo_path, x=10.5, y=3.5, w=18, h=18)
     
-    # b) & c) NAMA APLIKASI & MODUL (Teks Putih)
+    # b) NAMA APLIKASI & MODUL (Teks Putih)
     pdf.set_text_color(255, 255, 255)
     pdf.set_font("Arial", 'B', 16)
-    # Posisi di sebelah kanan logo (logo width ~20 + margin 10 = 30)
     pdf.set_xy(35, 8) 
     pdf.cell(0, 10, "Expert Stock Pro - Analisa Dividen Pro", ln=True)
     
-    # Reset posisi Y ke bawah kotak hitam
     pdf.set_y(28)
     
-    # --- 2. HYPERLINK SUMBER ---
+    # 2. HYPERLINK SUMBER
     pdf.set_font("Arial", 'I', 10)
-    pdf.set_text_color(0, 0, 255)  # Warna Biru
+    pdf.set_text_color(0, 0, 255)
     pdf.cell(0, 5, "Sumber: https://lynk.id/hahastoresby", ln=True, align='C', link="https://lynk.id/hahastoresby")
     pdf.ln(2)
     
-    # --- 3. NAMA SAHAM & PERUSAHAAN (CENTER) ---
-    pdf.set_text_color(0, 0, 0) # Kembali ke Hitam
+    # 3. NAMA SAHAM & PERUSAHAAN (CENTER)
+    pdf.set_text_color(0, 0, 0)
     pdf.set_font("Arial", 'B', 20)
     pdf.cell(0, 8, clean_text(f"{ticker} - {company}"), ln=True, align='C')
     
-    # --- 4. INFO SEKTOR & SYARIAH (CENTER) ---
+    # 4. INFO SEKTOR & SYARIAH (CENTER)
     pdf.set_font("Arial", '', 11)
     pdf.cell(0, 6, clean_text(f"Sektor: {sector} | Status: {syariah_status}"), ln=True, align='C')
     pdf.ln(2)
     
-    # --- 5. INFO TANGGAL & HARGA (RATA KANAN) ---
+    # 5. INFO TANGGAL & HARGA (RATA KANAN)
     pdf.set_font("Arial", 'B', 10)
     waktu_analisa = datetime.now().strftime("%d-%m-%Y %H:%M")
     pdf.cell(0, 5, clean_text(f"Analisa: {waktu_analisa} | Harga: Rp {curr_price:,.0f}"), ln=True, align='R')
     
-    # Garis Bawah Header
     pdf.set_line_width(0.5)
     pdf.line(10, pdf.get_y()+2, 200, pdf.get_y()+2)
     pdf.ln(5)
 
-    # --- INFORMASI SKOR ---
+    # --- KONTEN ANALISA ---
     pdf.set_font("Arial", "B", 12)
     pdf.cell(0, 6, clean_text(f"Skor Kelayakan Dividen: {score}/100 ({score_status})"), ln=1)
     pdf.set_font("Arial", "I", 10)
     pdf.cell(0, 6, clean_text(f"Tingkat Kepercayaan Data: {conf_label} ({conf_pct:.0f}% metrik tersedia)"), ln=1)
     pdf.ln(5)
     
-    # --- 1. HISTORY DIVIDEN ---
-    pdf.set_font("Arial", "B", 12)
-    pdf.cell(0, 8, "1. History & Pertumbuhan Dividen", ln=1)
-    pdf.set_font("Arial", "", 11)
-    pdf.cell(0, 6, clean_text(f"- Dividend Yield: {yield_val:.2f}%"), ln=1)
-    pdf.cell(0, 6, clean_text(f"- Payout Ratio: {payout:.1f}%"), ln=1)
-    pdf.cell(0, 6, clean_text(f"- Konsistensi: {konsistensi}/5 Tahun"), ln=1)
-    pdf.cell(0, 6, clean_text(f"- Growth (CAGR): {cagr*100:.1f}%"), ln=1)
-    pdf.ln(3)
+    sections = [
+        ("1. History & Pertumbuhan Dividen", [
+            f"- Dividend Yield: {yield_val:.2f}%",
+            f"- Payout Ratio: {payout:.1f}%",
+            f"- Konsistensi: {konsistensi}/5 Tahun",
+            f"- Growth (CAGR): {cagr*100:.1f}%"
+        ]),
+        ("2. Kinerja Bisnis", [
+            f"- EPS Growth (YoY): {eps_growth:.1f}%",
+            f"- Return on Equity (ROE): {roe:.1f}%"
+        ]),
+        ("3. Kesehatan Finansial", [
+            f"- Kualitas Kas (FCF): {'Positif (Aman)' if fcf > 0 else 'Negatif (Berisiko)'}",
+            f"- Debt to Equity Ratio (DER): {der:.2f}x"
+        ]),
+        ("4. Proyeksi & Proteksi", [
+            f"- Estimasi DPS Mendatang: Rp {est_dps:,.0f} / Lembar",
+            f"- Potential Yield: {(est_dps/curr_price)*100 if curr_price > 0 else 0:.2f}%",
+            f"- Stop Loss Level (Lock 8%): Rp {sl_final:,.0f}"
+        ]),
+        ("5. Rekomendasi", [
+            f"Status: {status_final}",
+            f"Harga wajar bila dividen setara deposito (5%): Rp {entry_price:,.0f}"
+        ])
+    ]
 
-    # --- 2. KINERJA BISNIS ---
-    pdf.set_font("Arial", "B", 12)
-    pdf.cell(0, 8, "2. Kinerja Bisnis", ln=1)
-    pdf.set_font("Arial", "", 11)
-    pdf.cell(0, 6, clean_text(f"- EPS Growth (YoY): {eps_growth:.1f}%"), ln=1)
-    pdf.cell(0, 6, clean_text(f"- Return on Equity (ROE): {roe:.1f}%"), ln=1)
-    pdf.ln(3)
+    for title, lines in sections:
+        pdf.set_font("Arial", "B", 12)
+        pdf.cell(0, 8, title, ln=1)
+        pdf.set_font("Arial", "", 11)
+        for line in lines:
+            pdf.cell(0, 6, clean_text(line), ln=1)
+        pdf.ln(3)
 
-    # --- 3. KESEHATAN FINANSIAL ---
-    pdf.set_font("Arial", "B", 12)
-    pdf.cell(0, 8, "3. Kesehatan Finansial", ln=1)
-    pdf.set_font("Arial", "", 11)
-    fcf_status = "Positif (Aman)" if fcf > 0 else "Negatif (Berisiko)"
-    pdf.cell(0, 6, clean_text(f"- Kualitas Kas (FCF): {fcf_status}"), ln=1)
-    pdf.cell(0, 6, clean_text(f"- Debt to Equity Ratio (DER): {der:.2f}x"), ln=1)
-    pdf.ln(3)
-
-    # --- 4. PROYEKSI & PROTEKSI ---
-    pdf.set_font("Arial", "B", 12)
-    pdf.cell(0, 8, "4. Proyeksi & Proteksi", ln=1)
-    pdf.set_font("Arial", "", 11)
-    pdf.cell(0, 6, clean_text(f"- Estimasi DPS Mendatang: Rp {est_dps:,.0f} / Lembar"), ln=1)
-    pot_yield = (est_dps/curr_price)*100 if curr_price > 0 else 0
-    pdf.cell(0, 6, clean_text(f"- Potential Yield: {pot_yield:.2f}%"), ln=1)
-    pdf.cell(0, 6, clean_text(f"- Stop Loss Level (Lock 8%): Rp {sl_final:,.0f}"), ln=1)
-    pdf.ln(3)
-
-    # --- 5. REKOMENDASI ---
-    pdf.set_font("Arial", "B", 12)
-    pdf.cell(0, 8, "5. Rekomendasi", ln=1)
-    pdf.set_font("Arial", "", 11)
-    pdf.cell(0, 6, clean_text(f"Status: {status_final}"), ln=1)
-    pdf.cell(0, 6, clean_text(f"Harga wajar bila dividen setara deposito (5%): Rp {entry_price:,.0f}"), ln=1)
-    pdf.ln(8)
-
-    # --- DISCLAIMER ---
+    # --- DISCLAIMER LENGKAP ---
+    pdf.ln(5)
     pdf.set_font("Arial", "I", 9)
     pdf.set_text_color(100, 100, 100)
-    disclaimer_text = "DISCLAIMER: Semua informasi, analisa teknikal, analisa fundamental, ataupun sinyal trading dan analisa-analisa lain yang disediakan di modul ini hanya untuk tujuan edukasi dan informasi. Ini bukan merupakan rekomendasi, ajakan, atau nasihat keuangan untuk membeli atau menjual saham tertentu. Keputusan investasi sepenuhnya berada di tangan Anda. Harap lakukan riset Anda sendiri (Do Your Own Research) dan pertimbangkan profil risiko sebelum mengambil keputusan di pasar modal."
-    pdf.multi_cell(0, 5, disclaimer_text)
+    disclaimer_text = ("DISCLAIMER: Semua informasi, analisa teknikal, analisa fundamental, ataupun sinyal trading "
+                       "dan analisa-analisa lain yang disediakan di modul ini hanya untuk tujuan edukasi dan informasi. "
+                       "Ini bukan merupakan rekomendasi, ajakan, atau nasihat keuangan untuk membeli atau menjual saham tertentu. "
+                       "Keputusan investasi sepenuhnya berada di tangan Anda. Harap lakukan riset Anda sendiri (Do Your Own Research) "
+                       "dan pertimbangkan profil risiko sebelum mengambil keputusan di pasar modal.")
+    pdf.multi_cell(0, 5, clean_text(disclaimer_text))
 
-    # Kembalikan sebagai bytes (Sanitasi FPDF versi lama dan baru)
     try:
         out = pdf.output(dest="S")
         return out.encode("latin-1") if isinstance(out, str) else bytes(out)
@@ -144,20 +133,16 @@ def generate_pdf_report(ticker, company, sector, syariah_status,
         return bytes(pdf.output())
 
 def run_dividen():
-    # --- TAMPILAN WEB ---
-    # Mencari lokasi file logo. 
+    # --- TAMPILAN WEB (LOGO CENTER) ---
     logo_file = "logo_expert_stock_pro.png"
     if not os.path.exists(logo_file):
         logo_file = "../logo_expert_stock_pro.png"
         
-    # Tampilkan Logo di Web bagian TENGAH (CENTER) dengan ukuran 150px
     if os.path.exists(logo_file):
-        # Membaca file logo dan mengubahnya ke base64 agar bisa ditampilkan via HTML
         with open(logo_file, "rb") as f:
-            data = f.read()
-            encoded_img = base64.b64encode(data).decode()
+            data_img = f.read()
+            encoded_img = base64.b64encode(data_img).decode()
         
-        # Menampilkan logo di posisi Center menggunakan Flexbox HTML
         st.markdown(
             f"""
             <div style="display: flex; justify-content: center; margin-bottom: 10px;">
@@ -166,19 +151,17 @@ def run_dividen():
             """,
             unsafe_allow_html=True
         )
-        # Menengahkan teks judul menggunakan Markdown HTML
-        st.markdown("<h1 style='text-align: center;'>Analisa Fundamental & Kualitatif Pro</h1>", unsafe_allow_html=True)
+        st.markdown("<h1 style='text-align: center;'>💰 Analisa Dividen Pro</h1>", unsafe_allow_html=True)
     else:
-        st.markdown("<h1 style='text-align: center;'>Analisa Fundamental & Kualitatif Pro</h1>", unsafe_allow_html=True)
+        st.markdown("<h1 style='text-align: center;'>💰 Analisa Dividen Pro</h1>", unsafe_allow_html=True)
         st.warning("⚠️ File logo belum ditemukan.")
         
     st.markdown("---")
     
-    # ... (sisa kode input ticker dan tombol analisa tetap sama)
-    
     col_inp, _ = st.columns([1, 2])
     with col_inp:
         ticker_input = st.text_input("Kode Saham (Contoh: ADRO):", value="ADRO").upper()
+    
     ticker = ticker_input if ticker_input.endswith(".JK") else f"{ticker_input}.JK"
     kode_bersih = ticker_input.replace(".JK", "").upper()
 
@@ -193,7 +176,7 @@ def run_dividen():
                 st.error("Data dividen tidak ditemukan atau emiten tidak membagikan dividen.")
                 return
 
-            # --- 1. PRE-CALCULATION UNTUK SCORING (DENGAN SANITASI ANTI-CRASH) ---
+            # --- PRE-CALCULATION & SCORING ---
             curr_price = info.get('currentPrice') or 0
             yield_val = hitung_div_yield_normal(info)
             payout = (info.get('payoutRatio') or 0) * 100
@@ -203,11 +186,9 @@ def run_dividen():
             eps_growth = (info.get('earningsGrowth') or 0) * 100
             trailing_eps = info.get('trailingEps') or 0
             
-            # Hitung CAGR & Konsistensi Dividen
             df_div = divs.to_frame(name='Dividends')
             df_div.index = pd.to_datetime(df_div.index).tz_localize(None)
             df_div_annual = df_div.resample('YE').sum().tail(5)
-            
             konsistensi = len(df_div_annual)
             cagr = 0
             if konsistensi >= 2:
@@ -215,141 +196,66 @@ def run_dividen():
                 if awal > 0:
                     cagr = ((akhir / awal) ** (1 / (konsistensi - 1))) - 1
             
-            # --- 2. LOGIKA SCORING AKURAT (100 POIN) ---
             total_score = 0
             if fcf > 0: total_score += 20
             if konsistensi == 5 and cagr > 0.05: total_score += 20
             elif konsistensi == 5 and cagr > 0: total_score += 15
-            elif konsistensi >= 3: total_score += 10
-            
-            if yield_val >= 8: total_score += 20
+            elif yield_val >= 8: total_score += 20
             elif yield_val >= 6: total_score += 15
-            elif yield_val >= 4: total_score += 10
-            
             if der < 1.0: total_score += 15
-            elif der <= 2.0: total_score += 10
-            
             if 30 <= payout <= 70: total_score += 15
-            elif 70 < payout <= 90: total_score += 10
-            elif payout > 0: total_score += 5
-            
             if roe > 15 and eps_growth > 0: total_score += 10
-            elif roe > 8: total_score += 5
 
-            if total_score >= 80:
-                score_status = "Luar Biasa (Sangat Layak Dikoleksi)"
-            elif total_score >= 60:
-                score_status = "Cukup (Layak dengan Pantauan)"
-            else:
-                score_status = "Kurang (Resiko Tinggi / Watchlist)"
-
-            # --- 3. LOGIKA KONFIDENSI DATA ---
-            metrik_kunci = ['payoutRatio', 'returnOnEquity', 'freeCashflow', 'debtToEquity', 'earningsGrowth', 'trailingEps']
-            tersedia = sum(1 for m in metrik_kunci if info.get(m) is not None)
-            konfidensi_persen = (tersedia / len(metrik_kunci)) * 100
-            conf_color = "🟢" if konfidensi_persen >= 100 else "🟡" if konfidensi_persen >= 70 else "🔴"
-            conf_label = "Tinggi" if konfidensi_persen >= 100 else "Sedang" if konfidensi_persen >= 70 else "Rendah"
-
-            # --- 4. HEADER UI ---
+            score_status = "Sangat Layak" if total_score >= 80 else "Layak dengan Pantauan" if total_score >= 60 else "Resiko Tinggi"
+            
+            # --- HEADER UI & SUMMARY ---
             company_name = info.get('longName') or ticker_input
             status_syr_icon = "✅" if is_syariah(kode_bersih) else "❌"
-            status_syr_text = "Syariah" if is_syariah(kode_bersih) else "Non-Syariah"
             sector = info.get('sector') or 'Sektor Tidak Diketahui'
 
             st.markdown(f"""
                 <div style="text-align: center; padding: 20px; background-color: #1E1E1E; border-radius: 10px; border: 1px solid #333;">
-                    <h1 style="color: #2ECC71; margin-bottom: 5px; font-size: 2.5em;">🏢 {ticker_input} - {company_name}</h1>
-                    <p style="color: #A0A0A0; font-size: 1.2em; margin-bottom: 15px;">
-                        Sektor: {sector} | <span style="color: white;">{status_syr_icon} {status_syr_text}</span>
-                    </p>
-                    <h3 style="color: white; margin-bottom: 5px;">🏆 SKOR KELAYAKAN DIVIDEN</h3>
-                    <div style="background-color: #333; border-radius: 5px; height: 10px; margin-bottom: 10px;">
+                    <h1 style="color: #2ECC71;">🏢 {ticker_input} - {company_name}</h1>
+                    <p>Sektor: {sector} | {status_syr_icon} {'Syariah' if is_syariah(kode_bersih) else 'Non-Syariah'}</p>
+                    <h3>Skor: {total_score}/100</h3>
+                    <div style="background-color: #333; height: 10px; border-radius: 5px;">
                         <div style="background-color: #2ECC71; width: {total_score}%; height: 10px; border-radius: 5px;"></div>
                     </div>
-                    <div style="background-color: #2E3317; padding: 10px; border-radius: 5px; border-left: 5px solid #2ECC71; margin-bottom: 10px;">
-                        <p style="color: #D4E157; margin: 0; font-weight: bold; font-size: 1.1em;">
-                            Skor: {total_score}/100 — {score_status}
-                        </p>
-                    </div>
-                    <p style="color: #A0A0A0; font-size: 0.9em; margin: 0;">
-                        Tingkat Kepercayaan Data: {conf_color} {conf_label} ({konfidensi_persen:.0f}% metrik tersedia)
-                    </p>
                 </div>
             """, unsafe_allow_html=True)
-            st.markdown("<br>", unsafe_allow_html=True)
 
-            # --- SEKSI 1: HISTORY ---
+            # --- SECTIONS (History, Biz, Finansial, Proyeksi) ---
             st.header("1. History & Pertumbuhan Dividen")
-            df_div_annual.index = df_div_annual.index.year
             st.bar_chart(df_div_annual['Dividends'])
             
-            m1, m2, m3, m4 = st.columns(4)
-            m1.metric("Dividend Yield", f"{yield_val:.2f}%")
-            m2.metric("Payout Ratio", f"{payout:.1f}%")
-            m3.metric("Konsistensi", f"{konsistensi}/5 Thn")
-            m4.metric("Growth (CAGR)", f"{cagr*100:.1f}%")
-
-            # --- SEKSI 2: KINERJA BISNIS ---
-            st.header("2. Kinerja Bisnis")
-            col_biz1, col_biz2 = st.columns(2)
-            with col_biz1:
-                st.write("**EPS Growth (YoY):**")
-                st.success(f"📈 {eps_growth:.1f}%") if eps_growth > 0 else st.error(f"📉 {eps_growth:.1f}%")
-            with col_biz2:
-                st.write("**Return on Equity (ROE):**")
-                st.success(f"💎 {roe:.1f}%") if roe > 15 else st.info(f"👍 {roe:.1f}%") if roe > 8 else st.warning(f"⚠️ {roe:.1f}%")
-
-            # --- SEKSI 3: KESEHATAN FINANSIAL ---
-            st.header("3. Kesehatan Finansial")
-            col_fin1, col_fin2 = st.columns(2)
-            with col_fin1:
-                st.write("**Kualitas Kas (FCF):**")
-                st.success("✅ Positif (Dana Aman)") if fcf > 0 else st.error("❌ Negatif (Risiko Kas)")
-            with col_fin2:
-                st.write("**Debt to Equity Ratio (DER):**")
-                st.success(f"✅ {der:.2f}x") if der < 1.0 else st.warning(f"⚠️ {der:.2f}x")
-
-            # --- SEKSI 4: PROYEKSI & PROTEKSI ---
-            st.header("4. Proyeksi & Proteksi")
+            # --- REKOMENDASI ---
+            st.header("5. Rekomendasi")
             est_dps = trailing_eps * (payout / 100)
+            entry_price = est_dps / 0.05 if est_dps > 0 else 0
+            status_final = "SANGAT LAYAK" if (curr_price < entry_price and total_score >= 80) else "TUNGGU KOREKSI"
             
-            # Sanitasi nilai ATR (Average True Range)
+            st.subheader(f"Status: {status_final}")
+            st.write(f"**Harga wajar (Yield 5%):** Rp {entry_price:,.0f}")
+            st.write(f"**Harga Saat Ini:** Rp {curr_price:,.0f}")
+
+            # --- EXPORT PDF ---
+            st.markdown("---")
+            # Perhitungan ATR untuk Stop Loss
             try:
                 atr = (history['High'] - history['Low']).tail(14).mean()
                 if np.isnan(atr): atr = 0
-            except Exception:
-                atr = 0
-                
+            except: atr = 0
             sl_final = max(curr_price - (1.5 * atr), curr_price * 0.92)
-            
-            p1, p2 = st.columns(2)
-            with p1:
-                st.info(f"**Estimasi DPS Mendatang:**\n\nRp {est_dps:,.0f} / Lembar")
-                st.write(f"**Potential Yield:** {(est_dps/curr_price)*100:.2f}%" if curr_price > 0 else "**Potential Yield:** 0.00%")
-            with p2:
-                st.error(f"**Stop Loss Level (Lock 8%):**\n\nRp {sl_final:,.0f}")
 
-            # --- SEKSI 5: REKOMENDASI ---
-            st.header("5. Rekomendasi")
-            deposito_rate = 5.0
-            entry_price = est_dps / (deposito_rate/100) if est_dps > 0 else 0
-            
-            status_final = "SANGAT LAYAK (Top Pick)" if (curr_price < entry_price and total_score >= 80) else "LAYAK" if curr_price < entry_price else "TUNGGU KOREKSI"
-            st.subheader(f"Status: {status_final}")
-            st.write(f"**Harga wajar bila dividen setara dengan deposito dengan bagi hasil 5%:** Rp {entry_price:,.0f}")
-            st.write(f"**Harga Saham Saat Ini:** Rp {curr_price:,.0f}")
-
-            # --- EXPORT PDF BUTTON ---
-            st.markdown("---")
             pdf_bytes = generate_pdf_report(
-                ticker_input, company_name, sector, status_syr_text, 
-                total_score, score_status, conf_label, konfidensi_persen,
+                ticker_input, company_name, sector, "Syariah" if is_syariah(kode_bersih) else "Non-Syariah",
+                total_score, score_status, "Tinggi", 100,
                 yield_val, payout, konsistensi, cagr, 
                 eps_growth, roe, fcf, der, 
                 est_dps, curr_price, sl_final, entry_price, status_final
             )
             
-            # Format nama file dengan clean_ticker (kode_bersih) dan tanggal sesuai instruksi
+            # Format nama file sesuai instruksi
             file_name_pdf = f"Expert_Stock_Pro_Dividen_{kode_bersih}_{datetime.now().strftime('%Y%m%d')}.pdf"
             
             st.download_button(
@@ -360,8 +266,5 @@ def run_dividen():
                 use_container_width=True
             )
             
-            # --- DISCLAIMER BARU ---
             st.markdown("---")
-            st.caption("""
-            **DISCLAIMER:** Semua informasi, analisa teknikal, analisa fundamental, ataupun sinyal trading dan analisa-analisa lain yang disediakan di modul ini hanya untuk tujuan edukasi dan informasi. Ini bukan merupakan rekomendasi, ajakan, atau nasihat keuangan untuk membeli atau menjual saham tertentu. Keputusan investasi sepenuhnya berada di tangan Anda. Harap lakukan riset Anda sendiri (*Do Your Own Research*) dan pertimbangkan profil risiko sebelum mengambil keputusan di pasar modal.
-            """)
+            st.caption("""**DISCLAIMER:** Semua informasi, analisa teknikal, analisa fundamental, ataupun sinyal trading dan analisa-analisa lain yang disediakan di modul ini hanya untuk tujuan edukasi dan informasi. Ini bukan merupakan rekomendasi, ajakan, atau nasihat keuangan untuk membeli atau menjual saham tertentu. Keputusan investasi sepenuhnya berada di tangan Anda. Harap lakukan riset Anda sendiri (*Do Your Own Research*) dan pertimbangkan profil risiko sebelum mengambil keputusan di pasar modal.""")
