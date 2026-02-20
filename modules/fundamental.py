@@ -321,14 +321,22 @@ def run_fundamental():
     if not os.path.exists(logo_file):
         logo_file = "../logo_expert_stock_pro.png"
         
-# Tampilkan Logo di Web bagian TENGAH dengan ukuran LEBIH KECIL
+    # Tampilkan Logo di Web bagian TENGAH (CENTER) dengan ukuran 150px
     if os.path.exists(logo_file):
-        # Menggunakan 3 kolom dengan kolom tengah yang disesuaikan
-        c1, c2, c3 = st.columns([1.5, 1, 1.5])
-        with c2:
-            # Menggunakan lebar tetap (misal: 150 atau 200 pixel) agar terlihat lebih kecil
-            # Hilangkan 'use_container_width=True' jika menggunakan parameter 'width'
-            st.image(logo_file, width=150) 
+        # Membaca file logo dan mengubahnya ke base64 agar bisa ditampilkan via HTML
+        with open(logo_file, "rb") as f:
+            data = f.read()
+            encoded_img = base64.b64encode(data).decode()
+        
+        # Menampilkan logo di posisi Center menggunakan Flexbox HTML
+        st.markdown(
+            f"""
+            <div style="display: flex; justify-content: center; margin-bottom: 10px;">
+                <img src="data:image/png;base64,{encoded_img}" width="150">
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
         # Menengahkan teks judul menggunakan Markdown HTML
         st.markdown("<h1 style='text-align: center;'>Analisa Fundamental & Kualitatif Pro</h1>", unsafe_allow_html=True)
     else:
@@ -336,6 +344,8 @@ def run_fundamental():
         st.warning("⚠️ File logo belum ditemukan.")
         
     st.markdown("---")
+    
+    # ... (sisa kode input ticker dan tombol analisa tetap sama)
     
     col_inp, _ = st.columns([1, 2])
     with col_inp:
