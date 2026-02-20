@@ -5,6 +5,8 @@ import requests
 from bs4 import BeautifulSoup
 from datetime import datetime
 from fpdf import FPDF
+import os
+import base64
 from modules.data_loader import get_full_stock_data, hitung_div_yield_normal
 
 # --- FUNGSI FALLBACK SCRAPING RASIO BANK ---
@@ -35,45 +37,67 @@ def get_bank_ratios_fallback(ticker):
         
     return car_val, npl_val
 
-# --- FUNGSI GENERATOR PDF ANALISA CEPAT ---
+# --- FUNGSI GENERATOR PDF ANALISA CEPAT (HEADER BARU) ---
 def export_analisa_cepat_to_pdf(ticker, company_name, sector, f_score, roe, lbl_solv, eps_g, rev_g,
                                 t_score, avg_value_ma20, rsi, sentiment, curr_per, div_yield,
                                 rekomen, curr, entry_bawah, entry_atas, tp, reward_pct, sl_final, risk_pct, alasan_tek):
     pdf = FPDF()
     pdf.add_page()
     
-    # --- HEADER APLIKASI ---
-    pdf.set_font("Arial", 'B', 18)
-    pdf.set_text_color(30, 136, 229) 
-    pdf.cell(190, 10, "EXPERT STOCK PRO", ln=True, align='C')
+    # 1. HEADER BOX HITAM
+    logo_path = "logo_expert_stock_pro.png"
+    if not os.path.exists(logo_path):
+        logo_path = "../logo_expert_stock_pro.png"
+
+    # Menggambar kotak hitam penuh di bagian atas
+    pdf.set_fill_color(20, 20, 20)  # Warna Hitam (Almost Black)
+    pdf.rect(0, 0, 210, 25, 'F')    # Lebar A4 = 210mm
     
-    pdf.set_font("Arial", 'B', 10)
-    pdf.set_text_color(0, 0, 0)
-    pdf.cell(190, 5, "Quantitative Quick Analysis Report", ln=True, align='C')
+    # a) LOGO dengan Bingkai Emas
+    if os.path.exists(logo_path):
+        # Gambar bingkai emas (rect di belakang logo)
+        pdf.set_fill_color(218, 165, 32) # Goldenrod color
+        pdf.rect(10, 3, 19, 19, 'F')
+        # Tampilkan logo
+        pdf.image(logo_path, x=10.5, y=3.5, w=18, h=18)
     
-    pdf.set_font("Arial", 'I', 9)
-    pdf.cell(190, 6, f"Dihasilkan pada: {datetime.now().strftime('%d-%m-%Y %H:%M WIB')}", ln=True, align='C')
+    # b) & c) NAMA APLIKASI & MODUL (Teks Putih)
+    pdf.set_text_color(255, 255, 255)
+    pdf.set_font("Arial", 'B', 16)
+    # Posisi di sebelah kanan logo (logo width ~20 + margin 10 = 30)
+    pdf.set_xy(35, 8) 
+    pdf.cell(0, 10, "Expert Stock Pro - Analisa Cepat Pro", ln=True)
+    
+    # Reset posisi Y ke bawah kotak hitam
+    pdf.set_y(28)
+    
+    # 2. HYPERLINK SUMBER
+    pdf.set_font("Arial", 'I', 10)
+    pdf.set_text_color(0, 0, 255)  # Warna Biru
+    pdf.cell(0, 5, "Sumber: https://lynk.id/hahastoresby", ln=True, align='C', link="https://lynk.id/hahastoresby")
     pdf.ln(2)
     
-    # --- AKSES APLIKASI ---
+    # 3. NAMA SAHAM & PERUSAHAAN (CENTER)
+    pdf.set_text_color(0, 0, 0) # Kembali ke Hitam
+    pdf.set_font("Arial", 'B', 20)
+    pdf.cell(0, 8, f"{ticker} - {company_name}", ln=True, align='C')
+    
+    # 4. INFO SEKTOR & SYARIAH (CENTER)
+    pdf.set_font("Arial", '', 11)
+    pdf.cell(0, 6, f"Sektor: {sector.title()} | Status: Perlu Cek ISSI/JII", ln=True, align='C')
+    pdf.ln(2)
+    
+    # 5. INFO TANGGAL & HARGA (RATA KANAN)
     pdf.set_font("Arial", 'B', 10)
-    pdf.cell(40, 6, "Akses Full App:", 0)
-    pdf.set_font("Arial", 'U', 10)
-    pdf.set_text_color(0, 0, 255)
-    pdf.cell(150, 6, "lynk.id/hahastoresby", ln=True, link="https://lynk.id/hahastoresby")
-    pdf.set_text_color(0, 0, 0)
-    pdf.ln(3)
-    pdf.line(10, pdf.get_y(), 200, pdf.get_y()) 
+    waktu_analisa = datetime.now().strftime("%d-%m-%Y %H:%M WIB")
+    pdf.cell(0, 5, f"Analisa: {waktu_analisa} | Harga: Rp {int(curr):,.0f}", ln=True, align='R')
+    
+    # Garis Bawah Header
+    pdf.set_line_width(0.5)
+    pdf.line(10, pdf.get_y()+2, 200, pdf.get_y()+2)
     pdf.ln(5)
 
-    # --- INFORMASI SAHAM ---
-    pdf.set_fill_color(240, 240, 240)
-    pdf.set_font("Arial", 'B', 14)
-    pdf.cell(190, 10, f" {company_name} ({ticker})", 0, ln=True, fill=True)
-    pdf.set_font("Arial", '', 10)
-    pdf.cell(190, 8, f" Sektor: {sector.title()} | Syariah: Perlu Cek ISSI/JII", ln=True)
-    pdf.ln(3)
-
+    # --- BAGIAN KONTEN ANALISA ---
     # --- 1. SKOR FUNDAMENTAL & TEKNIKAL ---
     pdf.set_font("Arial", 'B', 11)
     pdf.cell(190, 8, "1. Ringkasan Skor & Sentimen", ln=True)
@@ -116,14 +140,15 @@ def export_analisa_cepat_to_pdf(ticker, company_name, sector, f_score, roe, lbl_
     pdf.ln(10)
 
     # --- FOOTER & DISCLAIMER ---
-    pdf.set_y(-30)
+    pdf.set_y(-35)
     pdf.set_font("Arial", 'B', 8)
     pdf.cell(190, 5, "DISCLAIMER:", ln=True) 
     pdf.set_font("Arial", 'I', 7)
-    disclaimer_text = ("Laporan analisa ini dihasilkan secara otomatis menggunakan perhitungan algoritma indikator teknikal "
-                       "dan fundamental. Seluruh informasi yang disajikan bukan merupakan ajakan, rekomendasi pasti, atau "
-                       "paksaan untuk membeli/menjual saham. Keputusan investasi dan trading sepenuhnya menjadi tanggung jawab "
-                       "pribadi masing-masing investor. Selalu terapkan manajemen risiko yang baik dan DYOR.")
+    disclaimer_text = ("Semua informasi, analisa teknikal, analisa fundamental, ataupun sinyal trading dan analisa-analisa lain "
+                       "yang disediakan di modul ini hanya untuk tujuan edukasi dan informasi. Ini bukan merupakan rekomendasi, "
+                       "ajakan, atau nasihat keuangan untuk membeli atau menjual saham tertentu. Keputusan investasi sepenuhnya "
+                       "berada di tangan Anda. Harap lakukan riset Anda sendiri (Do Your Own Research) dan pertimbangkan "
+                       "profil risiko sebelum mengambil keputusan di pasar modal.")
     pdf.multi_cell(190, 4, disclaimer_text)
 
     return pdf.output(dest='S').encode('latin-1', 'ignore')
@@ -131,7 +156,33 @@ def export_analisa_cepat_to_pdf(ticker, company_name, sector, f_score, roe, lbl_
 # -----------------------------------------------------
 
 def run_analisa_cepat():
-    st.title("⚡ Analisa Cepat Pro")
+    # --- TAMPILAN WEB & LOGO ---
+    logo_file = "logo_expert_stock_pro.png"
+    if not os.path.exists(logo_file):
+        logo_file = "../logo_expert_stock_pro.png"
+        
+    # Tampilkan Logo di Web bagian TENGAH (CENTER) dengan ukuran 150px
+    if os.path.exists(logo_file):
+        # Membaca file logo dan mengubahnya ke base64 agar bisa ditampilkan via HTML
+        with open(logo_file, "rb") as f:
+            data = f.read()
+            encoded_img = base64.b64encode(data).decode()
+        
+        # Menampilkan logo di posisi Center menggunakan Flexbox HTML
+        st.markdown(
+            f"""
+            <div style="display: flex; justify-content: center; margin-bottom: 10px;">
+                <img src="data:image/png;base64,{encoded_img}" width="150">
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+        # Menengahkan teks judul menggunakan Markdown HTML
+        st.markdown("<h1 style='text-align: center;'>Analisa Cepat Pro</h1>", unsafe_allow_html=True)
+    else:
+        st.markdown("<h1 style='text-align: center;'>Analisa Cepat Pro</h1>", unsafe_allow_html=True)
+        st.warning("⚠️ File logo belum ditemukan.")
+        
     st.markdown("---")
 
     col_inp, _ = st.columns([1, 2])
@@ -202,13 +253,11 @@ def run_analisa_cepat():
 
             # 1. KESEHATAN KEUANGAN & SOLVABILITAS (Maks 25)
             if is_bank:
-                # SEKTOR BANK: CAR (Maks 15) & NPL (Maks 10)
                 car_scraped, npl_scraped = get_bank_ratios_fallback(ticker)
                 
                 npl_approx = npl_scraped if (npl_scraped is not None and not pd.isna(npl_scraped)) else info.get('nonPerformingLoan', 2.5)
                 if npl_approx < 2: f_score += 10
                 elif npl_approx <= 3.5: f_score += 5
-                # NPL > 3.5% = 0 poin (otomatis terlewat)
                 
                 if car_scraped is not None and not pd.isna(car_scraped):
                     car_approx = car_scraped
@@ -222,14 +271,11 @@ def run_analisa_cepat():
                 if car_approx > 20: f_score += 15
                 elif car_approx >= 15: f_score += 10
                 elif car_approx >= 10: f_score += 5
-                # CAR < 10% = 0 poin
                 
             elif is_infra:
-                # SEKTOR INFRA: DER Khusus (Maks 15) & ICR (Maks 10)
                 if der_ratio < 1.5: f_score += 15
                 elif der_ratio <= 2.5: f_score += 10
                 elif der_ratio <= 4.0: f_score += 5
-                # DER > 4.0 = 0 poin
                 
                 icr = 2.0
                 try:
@@ -240,20 +286,16 @@ def run_analisa_cepat():
                 
                 if icr > 3.0: f_score += 10
                 elif icr >= 1.5: f_score += 5
-                # ICR < 1.5x = 0 poin
                 lbl_solv = f"DER {der_ratio:.2f}x | ICR {icr:.1f}x"
                 
             else: 
-                # SEKTOR UMUM: DER Umum (Maks 15) & Current Ratio (Maks 10)
                 if der_ratio < 0.5: f_score += 15
                 elif der_ratio <= 1.0: f_score += 10
                 elif der_ratio <= 2.0: f_score += 5
-                # DER > 2.0 = 0 poin
                 
                 cr = info.get('currentRatio', 0)
                 if cr > 1.5: f_score += 10
                 elif cr >= 1.0: f_score += 5
-                # CR < 1.0 = 0 poin
                 lbl_solv = f"DER {der_ratio:.2f}x | CR {cr:.2f}x"
 
             # 2. PROFITABILITAS / EFISIENSI (Maks 25)
@@ -261,12 +303,10 @@ def run_analisa_cepat():
             if roe > 15: f_score += 15
             elif roe >= 10: f_score += 10
             elif roe >= 5: f_score += 5
-            # ROE < 5% / Negatif = 0 Poin
             
             npm = info.get('profitMargins', 0) * 100 if info.get('profitMargins') else 0
             if npm > 10: f_score += 10
             elif npm >= 5: f_score += 5
-            # NPM < 5% / Negatif = 0 Poin
 
             # 3. VALUASI HARGA DINAMIS (Maks 20)
             curr_per = info.get('trailingPE', 0)
@@ -279,21 +319,18 @@ def run_analisa_cepat():
                 if pe_discount > 20: f_score += 10
                 elif pe_discount >= 0: f_score += 7
                 elif pe_discount >= -20: f_score += 3
-                # Premium > 20% (atau negatif yang disaring oleh if > 0) = 0 Poin
             
             if curr_pbv > 0 and mean_pbv_5y > 0:
                 pbv_discount = ((mean_pbv_5y - curr_pbv) / mean_pbv_5y) * 100
                 if pbv_discount > 20: f_score += 10
                 elif pbv_discount >= 0: f_score += 7
                 elif pbv_discount >= -20: f_score += 3
-                # Premium > 20% = 0 Poin
 
             # 4. PERTUMBUHAN / GROWTH (Maks 20)
             eps_g = info.get('earningsGrowth', 0) * 100 if info.get('earningsGrowth') else 0
             if eps_g > 15: f_score += 10
             elif eps_g >= 5: f_score += 7
             elif eps_g >= 0: f_score += 3
-            # Laba Menurun / Negatif = 0 Poin
             
             cagr_rev = 0
             if not financials.empty and 'Total Revenue' in financials.index:
@@ -307,13 +344,11 @@ def run_analisa_cepat():
             rev_g = cagr_rev * 100 if cagr_rev != 0 else (info.get('revenueGrowth', 0) * 100 if info.get('revenueGrowth') else 0)
             if rev_g > 10: f_score += 10
             elif rev_g >= 0: f_score += 5
-            # Penjualan Menyusut / Negatif = 0 Poin
 
             # 5. DIVIDEN & BUKTI KAS (Maks 10)
             div_yield = hitung_div_yield_normal(info)
             if div_yield > 5: f_score += 10
             elif div_yield >= 2: f_score += 5
-            # Yield < 2% / Tidak Bagi Dividen = 0 Poin
 
 
             # === B. PENILAIAN TEKNIKAL SWING TRADING (Skala 100 Poin) ===
@@ -410,20 +445,6 @@ def run_analisa_cepat():
             """
             st.markdown(html_output, unsafe_allow_html=True)
             
-            # --- 5.5 TAMPILKAN TOMBOL DOWNLOAD PDF ---
-            pdf_data = export_analisa_cepat_to_pdf(
-                ticker, company_name, sector, f_score, roe, lbl_solv, eps_g, rev_g,
-                t_score, avg_value_ma20, rsi_curr, sentiment, curr_per, div_yield,
-                rekomen, curr, entry_bawah, entry_atas, tp, reward_pct, sl_final, risk_pct, teks_alasan
-            )
-            
-            st.download_button(
-                label="📄 Simpan Analisa Cepat (PDF)",
-                data=pdf_data,
-                file_name=f"Analisa_Cepat_{ticker}_{datetime.now().strftime('%Y%m%d')}.pdf",
-                mime="application/pdf"
-            )
-            
             with st.expander("Lihat Detail Data Mentah"):
                 st.write(f"Sektor Terdeteksi: {sector.title()} | Bank? {is_bank}")
                 st.write(f"Raw DER: {raw_der} | Normalized Ratio: {der_ratio:.2f}")
@@ -433,6 +454,24 @@ def run_analisa_cepat():
                     st.write(f"CAR Terpakai: {car_approx:.2f}% ({'Hasil Scraping' if car_scraped is not None else 'Estimasi Proxy'})")
                     st.write(f"NPL Terpakai: {npl_approx:.2f}% ({'Hasil Scraping' if npl_scraped is not None else 'Estimasi Proxy'})")
 
+            # --- 5.5 TAMPILKAN TOMBOL DOWNLOAD PDF (Posisi Baru) ---
+            pdf_data = export_analisa_cepat_to_pdf(
+                ticker, company_name, sector, f_score, roe, lbl_solv, eps_g, rev_g,
+                t_score, avg_value_ma20, rsi_curr, sentiment, curr_per, div_yield,
+                rekomen, curr, entry_bawah, entry_atas, tp, reward_pct, sl_final, risk_pct, teks_alasan
+            )
+            
+            # Format Nama File: ExpertStockPro_AnalisaCepat_(kode saham)_(tanggal)
+            tanggal_cetak = datetime.now().strftime('%Y%m%d')
+            nama_file_pdf = f"ExpertStockPro_AnalisaCepat_{ticker.replace('.JK', '')}_{tanggal_cetak}.pdf"
+            
+            st.download_button(
+                label="📄 Simpan Analisa Cepat (PDF)",
+                data=pdf_data,
+                file_name=nama_file_pdf,
+                mime="application/pdf"
+            )
+
             # --- 6. DISCLAIMER ---
             st.markdown("---")
-            st.caption("⚠️ **DISCLAIMER:** Laporan analisa ini dihasilkan secara otomatis menggunakan perhitungan algoritma indikator teknikal dan fundamental. Seluruh informasi yang disajikan bukan merupakan ajakan, rekomendasi pasti, atau paksaan untuk membeli/menjual saham. Keputusan investasi dan trading sepenuhnya menjadi tanggung jawab pribadi masing-masing investor. Selalu terapkan manajemen risiko yang baik dan *Do Your Own Research* (DYOR).")
+            st.markdown("**DISCLAIMER:** Semua informasi, analisa teknikal, analisa fundamental, ataupun sinyal trading dan analisa-analisa lain yang disediakan di modul ini hanya untuk tujuan edukasi dan informasi. Ini bukan merupakan rekomendasi, ajakan, atau nasihat keuangan untuk membeli atau menjual saham tertentu. Keputusan investasi sepenuhnya berada di tangan Anda. Harap lakukan riset Anda sendiri (*Do Your Own Research*) dan pertimbangkan profil risiko sebelum mengambil keputusan di pasar modal.")
