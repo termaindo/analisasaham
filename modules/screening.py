@@ -102,24 +102,28 @@ def export_to_pdf(hasil_lolos, trade_mode, session, logo_path="logo_expert_stock
     pdf.cell(190, 10, "B. RADAR WATCHLIST (RANK 4-10)", 0, ln=True, fill=True)
     pdf.ln(3)
 
-    pdf.set_font("Arial", 'B', 9)
-    pdf.cell(20, 8, "Ticker", 1, 0, 'C')
-    pdf.cell(45, 8, "Sektor", 1, 0, 'C')
-    pdf.cell(20, 8, "Skor", 1, 0, 'C')
-    pdf.cell(40, 8, "Area Entry", 1, 0, 'C')
-    pdf.cell(40, 8, "Target (TP)", 1, 0, 'C')
-    pdf.cell(25, 8, "RRR", 1, 1, 'C')
+    # Penyesuaian lebar kolom PDF agar total tetap 190mm
+    pdf.set_font("Arial", 'B', 8)
+    pdf.cell(16, 8, "Ticker", 1, 0, 'C')
+    pdf.cell(38, 8, "Sektor", 1, 0, 'C')
+    pdf.cell(12, 8, "Skor", 1, 0, 'C')
+    pdf.cell(32, 8, "Area Entry", 1, 0, 'C')
+    pdf.cell(36, 8, "Stop Loss", 1, 0, 'C')
+    pdf.cell(36, 8, "Target (TP)", 1, 0, 'C')
+    pdf.cell(20, 8, "RRR", 1, 1, 'C')
 
     pdf.set_font("Arial", '', 8)
     for item in hasil_lolos[3:10]:
-        pdf.cell(20, 8, item['Ticker'], 1, 0, 'C')
+        pdf.cell(16, 8, item['Ticker'], 1, 0, 'C')
         sektor_pendek = str(item['Sektor'])[:15] 
-        pdf.cell(45, 8, sektor_pendek, 1, 0, 'C')
-        pdf.cell(20, 8, str(f"{item['Skor']:g}"), 1, 0, 'C')
+        pdf.cell(38, 8, sektor_pendek, 1, 0, 'C')
+        pdf.cell(12, 8, str(f"{item['Skor']:g}"), 1, 0, 'C')
         rentang_pendek = str(item['Rentang_Entry']).replace("Rp ", "")
-        pdf.cell(40, 8, rentang_pendek, 1, 0, 'C')
-        pdf.cell(40, 8, f"{item['TP']} (+{item['Reward_Pct']}%)", 1, 0, 'C')
-        pdf.cell(25, 8, str(item['RRR']), 1, 1, 'C')
+        pdf.cell(32, 8, rentang_pendek, 1, 0, 'C')
+        # Menambahkan SL dan TP dengan persentase di tabel watchlist PDF
+        pdf.cell(36, 8, f"{item['SL']} (-{item['Risk_Pct']}%)", 1, 0, 'C')
+        pdf.cell(36, 8, f"{item['TP']} (+{item['Reward_Pct']}%)", 1, 0, 'C')
+        pdf.cell(20, 8, str(item['RRR']), 1, 1, 'C')
 
     # --- FOOTER & DISCLAIMER ---
     pdf.ln(10)
@@ -329,7 +333,15 @@ def run_screening():
         st.markdown("---")
         if watchlist:
             st.subheader(f"📋 Radar Watchlist {trade_mode}")
-            st.dataframe(pd.DataFrame(watchlist)[["Ticker", "Sektor", "Syariah", "Conf", "Skor", "Rentang_Entry", "RRR"]], use_container_width=True, hide_index=True)
+            
+            # --- UPDATE: Menambahkan SL dan TP di Tabel Web ---
+            df_watch = pd.DataFrame(watchlist)
+            # Membuat kolom format baru khusus untuk tampilan web
+            df_watch['Stop Loss'] = "Rp " + df_watch['SL'].astype(str) + " (-" + df_watch['Risk_Pct'].astype(str) + "%)"
+            df_watch['Take Profit'] = "Rp " + df_watch['TP'].astype(str) + " (+" + df_watch['Reward_Pct'].astype(str) + "%)"
+            
+            kolom_tampil = ["Ticker", "Sektor", "Syariah", "Conf", "Skor", "Rentang_Entry", "Stop Loss", "Take Profit", "RRR"]
+            st.dataframe(df_watch[kolom_tampil], use_container_width=True, hide_index=True)
 
         st.markdown("---")
 
