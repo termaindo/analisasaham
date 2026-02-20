@@ -176,10 +176,10 @@ def show_dashboard():
 
     c3, c4 = st.columns(2)
     with c3:
-        if st.button("📈 Teknikal Pro", use_container_width=True):
+        if st.button("📈 Analisa Teknikal Pro", use_container_width=True):
             st.session_state.current_menu = "teknikal"; st.rerun()
     with c4:
-        if st.button("📊 Fundamental Pro", use_container_width=True):
+        if st.button("📊 Analisa Fundamental Pro", use_container_width=True):
             st.session_state.current_menu = "fundamental"; st.rerun()
 
     c5, c6 = st.columns(2)
@@ -224,6 +224,7 @@ if __name__ == "__main__":
         main_app()
     else:
         login_page()
+
 
 
 
