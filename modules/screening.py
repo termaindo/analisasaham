@@ -3,44 +3,61 @@ import pandas as pd
 import numpy as np
 import pytz
 import io 
+import os
+import base64
 from datetime import datetime
 from fpdf import FPDF 
 from modules.data_loader import get_full_stock_data 
 from modules.universe import UNIVERSE_SAHAM, is_syariah, get_sector_data 
 
-# --- FUNGSI GENERATOR PDF ---
-def export_to_pdf(hasil_lolos, trade_mode, session):
+# --- FUNGSI GENERATOR PDF (HEADER BARU) ---
+def export_to_pdf(hasil_lolos, trade_mode, session, logo_path="logo_expert_stock_pro.png"):
     pdf = FPDF()
     pdf.add_page()
     
-    # --- HEADER APLIKASI ---
+    # 1. HEADER BOX HITAM
+    pdf.set_fill_color(20, 20, 20)  # Hitam pekat
+    pdf.rect(0, 0, 210, 25, 'F')    # 210mm adalah lebar A4 standar
+    
+    # a) LOGO dengan Bingkai Emas
+    if os.path.exists(logo_path):
+        pdf.set_fill_color(218, 165, 32) # Goldenrod
+        pdf.rect(10, 3, 19, 19, 'F')
+        pdf.image(logo_path, x=10.5, y=3.5, w=18, h=18)
+    elif os.path.exists(f"../{logo_path}"):
+        pdf.set_fill_color(218, 165, 32)
+        pdf.rect(10, 3, 19, 19, 'F')
+        pdf.image(f"../{logo_path}", x=10.5, y=3.5, w=18, h=18)
+    
+    # b) & c) NAMA APLIKASI & MODUL (Teks Putih)
+    pdf.set_text_color(255, 255, 255)
+    pdf.set_font("Arial", 'B', 16)
+    pdf.set_xy(35, 8) 
+    pdf.cell(0, 10, "Expert Stock Pro - Screening Saham Harian Pro", ln=True)
+    
+    # Reset posisi Y ke bawah kotak hitam
+    pdf.set_y(28)
+    
+    # 2. HYPERLINK SUMBER
+    pdf.set_font("Arial", 'I', 10)
+    pdf.set_text_color(0, 0, 255)  
+    pdf.cell(0, 5, "Sumber: https://lynk.id/hahastoresby", ln=True, align='C', link="https://lynk.id/hahastoresby")
+    pdf.ln(2)
+    
+    # 3. INFO STRATEGI & SESI (CENTER)
+    pdf.set_text_color(0, 0, 0)
     pdf.set_font("Arial", 'B', 18)
-    pdf.set_text_color(30, 136, 229) 
-    pdf.cell(190, 12, "EXPERT STOCK PRO", ln=True, align='C')
+    pdf.cell(0, 8, f"Strategi: {trade_mode}", ln=True, align='C')
     
+    # 4. INFO TANGGAL PENCETAKAN (RATA KANAN)
     pdf.set_font("Arial", 'B', 10)
-    pdf.set_text_color(0, 0, 0)
-    pdf.cell(190, 5, "Quantitative Technical Analysis Report", ln=True, align='C')
-    
-    pdf.set_font("Arial", 'I', 9)
     safe_session = session.encode('ascii', 'ignore').decode('ascii')
-    pdf.cell(190, 8, f"Dihasilkan pada: {datetime.now().strftime('%d-%m-%Y %H:%M WIB')} | Sesi: {safe_session}", ln=True, align='C')
-    pdf.ln(5)
-    pdf.line(10, pdf.get_y(), 200, pdf.get_y()) 
-    pdf.ln(5)
-
-    # --- INFORMASI STRATEGI ---
-    pdf.set_font("Arial", 'B', 11)
-    pdf.cell(50, 8, "Strategi Trading:", 0)
-    pdf.set_font("Arial", '', 11)
-    pdf.cell(140, 8, f"{trade_mode}", ln=True)
+    waktu_analisa = datetime.now().strftime("%d-%m-%Y %H:%M")
+    pdf.cell(0, 5, f"Dicetak: {waktu_analisa} | Sesi: {safe_session}", ln=True, align='R')
     
-    pdf.set_font("Arial", 'B', 11)
-    pdf.cell(50, 8, "Akses Aplikasi Full:", 0)
-    pdf.set_font("Arial", 'U', 11)
-    pdf.set_text_color(0, 0, 255)
-    pdf.cell(140, 8, "lynk.id/hahastoresby", ln=True, link="https://lynk.id/hahastoresby")
-    pdf.set_text_color(0, 0, 0)
+    # Garis Bawah Header
+    pdf.set_line_width(0.5)
+    pdf.line(10, pdf.get_y()+2, 200, pdf.get_y()+2)
     pdf.ln(5)
 
     # --- SEKSI A: TOP 3 ANALISA MENDALAM ---
@@ -57,7 +74,6 @@ def export_to_pdf(hasil_lolos, trade_mode, session):
         pdf.cell(190, 8, f"Ticker: {item['Ticker']} | Sektor: {item['Sektor']} | Syariah: {syariah_txt}", ln=True)
         
         pdf.set_font("Arial", '', 10)
-        # Menampilkan tipe data float dengan rapi jika ada koma (misal 82.5)
         pdf.cell(95, 7, f"Confidence Score: {item['Skor']:g} Pts ({item['Conf']})", 0)
         pdf.cell(95, 7, f"Risk/Reward Ratio: {item['RRR']}", ln=True)
         
@@ -110,10 +126,11 @@ def export_to_pdf(hasil_lolos, trade_mode, session):
     pdf.set_font("Arial", 'B', 8)
     pdf.cell(190, 5, "DISCLAIMER:", ln=True) 
     pdf.set_font("Arial", 'I', 7)
-    disclaimer_text = ("Laporan analisa ini dihasilkan secara otomatis menggunakan perhitungan algoritma indikator teknikal "
-                       "dan fundamental. Seluruh informasi yang disajikan bukan merupakan ajakan, rekomendasi pasti, atau "
-                       "paksaan untuk membeli/menjual saham. Keputusan investasi dan trading sepenuhnya menjadi tanggung jawab "
-                       "pribadi masing-masing investor. Selalu terapkan manajemen risiko yang baik dan DYOR.")
+    disclaimer_text = ("Semua informasi, analisa teknikal, analisa fundamental, ataupun sinyal trading dan analisa-analisa "
+                       "lain yang disediakan di modul ini hanya untuk tujuan edukasi dan informasi. Ini bukan merupakan "
+                       "rekomendasi, ajakan, atau nasihat keuangan untuk membeli atau menjual saham tertentu. Keputusan investasi "
+                       "sepenuhnya berada di tangan Anda. Harap lakukan riset Anda sendiri (Do Your Own Research) dan pertimbangkan "
+                       "profil risiko sebelum mengambil keputusan di pasar modal.")
     pdf.multi_cell(190, 4, disclaimer_text)
 
     pdf.set_y(-15)
@@ -163,10 +180,32 @@ def get_market_session():
 
 # --- 3. MODUL UTAMA ---
 def run_screening():
-    st.title("🔔 Multi-Mode Screener Pro (Day Trade atau Swing Trade)")
+    # --- TAMPILAN WEB (LOGO & JUDUL) ---
+    logo_file = "logo_expert_stock_pro.png"
+    if not os.path.exists(logo_file):
+        logo_file = "../logo_expert_stock_pro.png"
+        
+    if os.path.exists(logo_file):
+        with open(logo_file, "rb") as f:
+            data = f.read()
+            encoded_img = base64.b64encode(data).decode()
+        
+        st.markdown(
+            f"""
+            <div style="display: flex; justify-content: center; margin-bottom: 10px;">
+                <img src="data:image/png;base64,{encoded_img}" width="150">
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+        st.markdown("<h1 style='text-align: center;'>Screening Saham Harian Pro</h1>", unsafe_allow_html=True)
+    else:
+        st.markdown("<h1 style='text-align: center;'>Screening Saham Harian Pro</h1>", unsafe_allow_html=True)
+        st.warning("⚠️ File logo belum ditemukan.")
+        
     st.markdown("---")
 
-    trade_mode = st.radio("Pilih Strategi Trading:", ["Day Trade", "Swing Trade"], horizontal=True)
+    trade_mode = st.radio("Pilih Strategi Trading:", ["Day Trading", "Swing Trading"], horizontal=True)
     
     session, status_desc = get_market_session()
     st.info(f"**Mode Aktif:** {trade_mode} | **Sesi:** {session} ({status_desc})")
@@ -174,7 +213,7 @@ def run_screening():
     if 'hasil_screening' not in st.session_state:
         st.session_state.hasil_screening = []
 
-    if st.button(f"Mulai Scan {trade_mode}  (perlu waktu +/- 2 menit)"):
+    if st.button(f"Mulai Scan {trade_mode}"):
         saham_list = []
         for sektor, tickers in UNIVERSE_SAHAM.items():
             for ticker in tickers:
@@ -206,7 +245,6 @@ def run_screening():
                 score = 0
                 alasan = []
 
-                # --- 1. LOGIKA SCORING KETAT & TRADING PLAN ---
                 if trade_mode == "Day Trading":
                     if curr_price > last['VWAP']: score += 25; alasan.append("Above VWAP")
                     if last['Volume'] > (avg_vol_20 * 1.2): score += 20; alasan.append("Vol Spike")
@@ -221,11 +259,8 @@ def run_screening():
                     if 50 <= last['RSI'] <= 70: score += 5; alasan.append("RSI Ideal")
                     if last['RSI'] > prev['RSI']: score += 5; alasan.append("RSI Trend")
 
-                    # Entry Bawah: Maksimal turun 1.5% atau di VWAP
                     entry_bawah = max(last['VWAP'], curr_price * 0.985)
-                    # SL: Maksimal turun 3% dari harga beli
                     sl_final = curr_price * 0.97 
-                    # TP: RRR 1:1.5
                     tp_target = curr_price + (curr_price - sl_final) * 1.5
 
                 else: # Swing Trading Mode
@@ -242,19 +277,15 @@ def run_screening():
                     
                     if avg_val_20 > 5e9: score += 10; alasan.append("Liquid (>5M)")
 
-                    # Entry Bawah: Maksimal turun 4% atau di EMA9
                     entry_bawah = max(last['EMA9'], curr_price * 0.96)
-                    # SL: Maksimal turun 8% (menggunakan 2,5x ATR)
                     sl_atr = curr_price - (2.5 * last['ATR'])
                     sl_final = max(sl_atr, curr_price * 0.92) 
-                    # TP: RRR 1:2
                     tp_target = curr_price + (curr_price - sl_final) * 2
 
                 rsi_val = f"{last['RSI']:.1f} {'↗️' if last['RSI'] > prev['RSI'] else '↘️'}"
                 rrr = (tp_target - curr_price) / (curr_price - sl_final) if curr_price > sl_final else 0
 
-                # Hanya lolos jika RR ratio sesuai batas minimum (otomatis menyesuaikan mode)
-                if score >= 60 and rrr >= 1.4: # Diberi buffer ke 1.4 agar 1.5 tetap aman lolos
+                if score >= 60 and rrr >= 1.4: 
                     conf = "High" if score >= 80 else "Medium"
                     if conf == "High": high_score_found = True
                     sektor_nama, _ = get_sector_data(ticker_bersih)
@@ -284,12 +315,17 @@ def run_screening():
         top_3 = res[:3]
         watchlist = res[3:10]
 
-        # Tombol Simpan PDF
+        # Penamaan File PDF
+        mode_str = trade_mode.replace(" ", "") # Menghapus spasi (DayTrading/SwingTrading)
+        tanggal_str = datetime.now().strftime('%Y%m%d')
+        # Format nama file: ExpertStockPro_Screening_[DayTrading/SwingTrading]_[YYYYMMDD].pdf
+        nama_file_pdf = f"ExpertStockPro_Screening_{mode_str}_{tanggal_str}.pdf"
+
         pdf_data = export_to_pdf(res, trade_mode, session)
         st.download_button(
             label="📄 Simpan Hasil Analisa (PDF)",
             data=pdf_data,
-            file_name=f"Analisa_{trade_mode.replace(' ', '_')}_{datetime.now().strftime('%Y%m%d')}.pdf",
+            file_name=nama_file_pdf,
             mime="application/pdf"
         )
 
@@ -310,7 +346,8 @@ def run_screening():
             st.dataframe(pd.DataFrame(watchlist)[["Ticker", "Sektor", "Syariah", "Conf", "Skor", "Rentang_Entry", "RRR"]], use_container_width=True, hide_index=True)
 
         st.markdown("---")
-        st.caption("""⚠️ **DISCLAIMER:** Laporan analisa ini dihasilkan secara otomatis menggunakan perhitungan algoritma indikator teknikal dan fundamental. Seluruh informasi yang disajikan bukan merupakan ajakan, rekomendasi pasti, atau paksaan untuk membeli/menjual saham. Keputusan investasi dan trading sepenuhnya menjadi tanggung jawab pribadi masing-masing investor. Selalu terapkan manajemen risiko yang baik dan DYOR.""")
+        # Update teks disclaimer di web
+        st.caption("""**DISCLAIMER:** Semua informasi, analisa teknikal, analisa fundamental, ataupun sinyal trading dan analisa-analisa lain yang disediakan di modul ini hanya untuk tujuan edukasi dan informasi. Ini bukan merupakan rekomendasi, ajakan, atau nasihat keuangan untuk membeli atau menjual saham tertentu. Keputusan investasi sepenuhnya berada di tangan Anda. Harap lakukan riset Anda sendiri (*Do Your Own Research*) dan pertimbangkan profil risiko sebelum mengambil keputusan di pasar modal.""")
 
 if __name__ == "__main__":
     run_screening()
