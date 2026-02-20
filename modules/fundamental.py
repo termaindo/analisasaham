@@ -347,6 +347,8 @@ def run_fundamental():
     
     # ... (sisa kode input ticker dan tombol analisa tetap sama)
     
+    # ... (sisa kode input ticker dan tombol analisa tetap sama)
+    
     col_inp, _ = st.columns([1, 2])
     with col_inp:
         ticker_input = st.text_input("Kode Saham (Contoh: ASII):", value="ASII").upper()
