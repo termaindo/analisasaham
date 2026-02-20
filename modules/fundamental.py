@@ -328,7 +328,7 @@ def run_fundamental():
         with c2:
             # Menggunakan lebar tetap (misal: 150 atau 200 pixel) agar terlihat lebih kecil
             # Hilangkan 'use_container_width=True' jika menggunakan parameter 'width'
-            st.image(logo_file, width=200) 
+            st.image(logo_file, width=150) 
         # Menengahkan teks judul menggunakan Markdown HTML
         st.markdown("<h1 style='text-align: center;'>Analisa Fundamental & Kualitatif Pro</h1>", unsafe_allow_html=True)
     else:
