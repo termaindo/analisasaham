@@ -315,20 +315,6 @@ def run_screening():
         top_3 = res[:3]
         watchlist = res[3:10]
 
-        # Penamaan File PDF
-        mode_str = trade_mode.replace(" ", "") # Menghapus spasi (DayTrading/SwingTrading)
-        tanggal_str = datetime.now().strftime('%Y%m%d')
-        # Format nama file: ExpertStockPro_Screening_[DayTrading/SwingTrading]_[YYYYMMDD].pdf
-        nama_file_pdf = f"ExpertStockPro_Screening_{mode_str}_{tanggal_str}.pdf"
-
-        pdf_data = export_to_pdf(res, trade_mode, session)
-        st.download_button(
-            label="📄 Simpan Hasil Analisa (PDF)",
-            data=pdf_data,
-            file_name=nama_file_pdf,
-            mime="application/pdf"
-        )
-
         st.header(f"🏆 Top 3 Pilihan {trade_mode}")
         cols = st.columns(len(top_3))
         for idx, item in enumerate(top_3):
@@ -346,7 +332,28 @@ def run_screening():
             st.dataframe(pd.DataFrame(watchlist)[["Ticker", "Sektor", "Syariah", "Conf", "Skor", "Rentang_Entry", "RRR"]], use_container_width=True, hide_index=True)
 
         st.markdown("---")
-        # Update teks disclaimer di web
+
+        # Tombol Simpan PDF dipindah ke bawah, dibuat memanjang (lebar penuh)
+        mode_str = trade_mode.replace(" ", "") 
+        tanggal_str = datetime.now().strftime('%Y%m%d')
+        nama_file_pdf = f"ExpertStockPro_Screening_{mode_str}_{tanggal_str}.pdf"
+
+        pdf_data = export_to_pdf(res, trade_mode, session)
+        
+        # Menggunakan kolom untuk me-layout tombol agar lebih besar/proporsional
+        col1, col2, col3 = st.columns([1, 2, 1])
+        with col2:
+            st.download_button(
+                label="📥 UNDUH LAPORAN SCREENING LENGKAP (PDF)",
+                data=pdf_data,
+                file_name=nama_file_pdf,
+                mime="application/pdf",
+                use_container_width=True # Membuat tombol selebar kolom tengah
+            )
+        
+        st.markdown("<br>", unsafe_allow_html=True) # Jarak pandang sebelum disclaimer
+
+        # Teks disclaimer di web
         st.caption("""**DISCLAIMER:** Semua informasi, analisa teknikal, analisa fundamental, ataupun sinyal trading dan analisa-analisa lain yang disediakan di modul ini hanya untuk tujuan edukasi dan informasi. Ini bukan merupakan rekomendasi, ajakan, atau nasihat keuangan untuk membeli atau menjual saham tertentu. Keputusan investasi sepenuhnya berada di tangan Anda. Harap lakukan riset Anda sendiri (*Do Your Own Research*) dan pertimbangkan profil risiko sebelum mengambil keputusan di pasar modal.""")
 
 if __name__ == "__main__":
