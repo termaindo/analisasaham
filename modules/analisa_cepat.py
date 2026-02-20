@@ -454,7 +454,7 @@ def run_analisa_cepat():
                     st.write(f"CAR Terpakai: {car_approx:.2f}% ({'Hasil Scraping' if car_scraped is not None else 'Estimasi Proxy'})")
                     st.write(f"NPL Terpakai: {npl_approx:.2f}% ({'Hasil Scraping' if npl_scraped is not None else 'Estimasi Proxy'})")
 
-            # --- 5.5 TAMPILKAN TOMBOL DOWNLOAD PDF (Posisi Baru) ---
+            # --- 5.5 TAMPILKAN TOMBOL DOWNLOAD PDF (Posisi Baru & Menonjol) ---
             pdf_data = export_analisa_cepat_to_pdf(
                 ticker, company_name, sector, f_score, roe, lbl_solv, eps_g, rev_g,
                 t_score, avg_value_ma20, rsi_curr, sentiment, curr_per, div_yield,
@@ -465,12 +465,16 @@ def run_analisa_cepat():
             tanggal_cetak = datetime.now().strftime('%Y%m%d')
             nama_file_pdf = f"ExpertStockPro_AnalisaCepat_{ticker.replace('.JK', '')}_{tanggal_cetak}.pdf"
             
-            st.download_button(
-                label="📄 Simpan Analisa Cepat (PDF)",
-                data=pdf_data,
-                file_name=nama_file_pdf,
-                mime="application/pdf"
-            )
+            st.markdown("<br>", unsafe_allow_html=True) # Tambahan spasi agar lebih rapi
+            _, col_pdf, _ = st.columns([1, 2, 1])
+            with col_pdf:
+                st.download_button(
+                    label="📄 Simpan Analisa Cepat (PDF)",
+                    data=pdf_data,
+                    file_name=nama_file_pdf,
+                    mime="application/pdf",
+                    use_container_width=True
+                )
 
             # --- 6. DISCLAIMER ---
             st.markdown("---")
