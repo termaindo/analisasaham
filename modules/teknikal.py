@@ -226,42 +226,28 @@ def generate_pdf_fpdf(data, logo_path="logo_expert_stock_pro.png"):
     pdf.ln(15)
     pdf.line(10, pdf.get_y(), 200, pdf.get_y())
     pdf.set_font("Arial", 'I', 8)
-    pdf.multi_cell(0, 4, txt="**DISCLAIMER:** Semua informasi, analisa teknikal, analisa fundamental, ataupun sinyal trading dan analisa-analisa lain yang disediakan di modul ini hanya untuk tujuan edukasi dan informasi. Ini bukan merupakan rekomendasi, ajakan, atau nasihat keuangan untuk membeli atau menjual saham tertentu. Keputusan investasi sepenuhnya berada di tangan Anda. Harap lakukan riset Anda sendiri (*Do Your Own Research*) dan pertimbangkan profil risiko sebelum mengambil keputusan di pasar modal.")
+    pdf.multi_cell(0, 4, txt="DISCLAIMER: Laporan ini dihasilkan secara otomatis oleh sistem algoritma Expert Stock Pro. Semua informasi, analisa, dan sinyal trading disediakan hanya untuk tujuan edukasi. Keputusan investasi sepenuhnya berada di tangan Anda.")
     
     return bytes(pdf.output(dest='S').encode('latin1'))
 
 def run_teknikal():
-    # --- TAMPILAN WEB ---
-    # Mencari lokasi file logo. 
+    # --- TAMPILAN WEB & LOGO ---
     logo_file = "logo_expert_stock_pro.png"
     if not os.path.exists(logo_file):
         logo_file = "../logo_expert_stock_pro.png"
         
-    # Tampilkan Logo di Web bagian TENGAH (CENTER) dengan ukuran 150px
+    # Tampilkan Logo di Web bagian TENGAH dengan ukuran BESAR
     if os.path.exists(logo_file):
-        # Membaca file logo dan mengubahnya ke base64 agar bisa ditampilkan via HTML
-        with open(logo_file, "rb") as f:
-            data = f.read()
-            encoded_img = base64.b64encode(data).decode()
-        
-        # Menampilkan logo di posisi Center menggunakan Flexbox HTML
-        st.markdown(
-            f"""
-            <div style="display: flex; justify-content: center; margin-bottom: 10px;">
-                <img src="data:image/png;base64,{encoded_img}" width="150">
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
-        # Menengahkan teks judul menggunakan Markdown HTML
-        st.markdown("<h1 style='text-align: center;'>Analisa Teknikal Pro</h1>", unsafe_allow_html=True)
+        c1, c2, c3 = st.columns([1, 1, 1])
+        with c2:
+            st.image(logo_file, use_container_width=True)
+        st.markdown("<h1 style='text-align: center;'>📈 Analisa Teknikal Pro (6 Dimensi Lengkap)</h1>", unsafe_allow_html=True)
     else:
-        st.markdown("<h1 style='text-align: center;'>Analisa Teknikal Pro</h1>", unsafe_allow_html=True)
+        st.markdown("<h1 style='text-align: center;'>📈 Analisa Teknikal Pro (6 Dimensi Lengkap)</h1>", unsafe_allow_html=True)
         st.warning("⚠️ File logo belum ditemukan.")
         
     st.markdown("---")
-    
-    # ... (sisa kode input ticker dan tombol analisa tetap sama)
+
     col_inp, _ = st.columns([1, 2])
     with col_inp:
         ticker_input = st.text_input("Kode Saham (Contoh: BBRI):", value="BBRI").upper()
@@ -509,12 +495,12 @@ def run_teknikal():
                 st.download_button(
                     label="📄 Unduh Laporan Analisa (PDF)",
                     data=pdf_bytes,
-                    file_name=f"ExpertStockPro_Teknikal_{clean_ticker}_{datetime.now().strftime('%Y%m%d')}.pdf",
+                    file_name=f"Expert_Stock_Pro_Teknikal_{clean_ticker}_{datetime.now().strftime('%Y%m%d')}.pdf",
                     mime="application/pdf",
                     use_container_width=True
                 )
 
             # --- DISCLAIMER (UI) ---
             st.warning("""
-            **DISCLAIMER:** Semua informasi, analisa teknikal, analisa fundamental, ataupun sinyal trading dan analisa-analisa lain yang disediakan di modul ini hanya untuk tujuan edukasi dan informasi. Ini bukan merupakan rekomendasi, ajakan, atau nasihat keuangan untuk membeli atau menjual saham tertentu. Keputusan investasi sepenuhnya berada di tangan Anda. Harap lakukan riset Anda sendiri (*Do Your Own Research*) dan pertimbangkan profil risiko sebelum mengambil keputusan di pasar modal.
+            **DISCLAIMER:** Semua informasi, analisa teknikal, dan sinyal trading yang disediakan di modul ini hanya untuk tujuan edukasi dan informasi. Ini bukan merupakan rekomendasi, ajakan, atau nasihat keuangan untuk membeli atau menjual saham tertentu. Keputusan investasi sepenuhnya berada di tangan Anda. Harap lakukan riset Anda sendiri (*Do Your Own Research*) dan pertimbangkan profil risiko sebelum mengambil keputusan di pasar modal.
             """)
