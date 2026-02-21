@@ -163,12 +163,10 @@ def run_analisa_cepat():
         
     # Tampilkan Logo di Web bagian TENGAH (CENTER) dengan ukuran 150px
     if os.path.exists(logo_file):
-        # Membaca file logo dan mengubahnya ke base64 agar bisa ditampilkan via HTML
         with open(logo_file, "rb") as f:
             data = f.read()
             encoded_img = base64.b64encode(data).decode()
         
-        # Menampilkan logo di posisi Center menggunakan Flexbox HTML
         st.markdown(
             f"""
             <div style="display: flex; justify-content: center; margin-bottom: 10px;">
@@ -177,7 +175,6 @@ def run_analisa_cepat():
             """,
             unsafe_allow_html=True
         )
-        # Menengahkan teks judul menggunakan Markdown HTML
         st.markdown("<h1 style='text-align: center;'>Analisa Cepat Pro</h1>", unsafe_allow_html=True)
     else:
         st.markdown("<h1 style='text-align: center;'>Analisa Cepat Pro</h1>", unsafe_allow_html=True)
@@ -203,16 +200,33 @@ def run_analisa_cepat():
                 return
 
             # --- 2. DATA TEKNIKAL & INDIKATOR SCORING ---
+            # MA Dasar
+            df['MA20'] = df['Close'].rolling(20).mean()
             df['MA50'] = df['Close'].rolling(50).mean()
             df['MA200'] = df['Close'].rolling(200).mean()
             
-            # Hitung Value Transaksi
+            # Volume & Likuiditas
             df['Value'] = df['Close'] * df['Volume']
             avg_value_ma20 = df['Value'].rolling(20).mean().iloc[-1]
+            df['Vol_MA20'] = df['Volume'].rolling(20).mean()
+            
+            # VWAP 20 Hari
+            df['Typical_Price'] = (df['High'] + df['Low'] + df['Close']) / 3
+            df['VWAP_20'] = (df['Typical_Price'] * df['Volume']).rolling(20).sum() / df['Volume'].rolling(20).sum()
 
-            # Indikator Teknikal Baru
+            # Indikator Momentum / Agresivitas
             df['EMA9'] = df['Close'].ewm(span=9, adjust=False).mean()
             df['EMA21'] = df['Close'].ewm(span=21, adjust=False).mean()
+            
+            # MACD
+            df['EMA12'] = df['Close'].ewm(span=12, adjust=False).mean()
+            df['EMA26'] = df['Close'].ewm(span=26, adjust=False).mean()
+            df['MACD'] = df['EMA12'] - df['EMA26']
+            df['Signal'] = df['MACD'].ewm(span=9, adjust=False).mean()
+
+            # Bollinger Bands
+            df['STD20'] = df['Close'].rolling(20).std()
+            df['UpperBand'] = df['MA20'] + (df['STD20'] * 2)
 
             # Kalkulasi RSI
             delta = df['Close'].diff()
@@ -220,17 +234,26 @@ def run_analisa_cepat():
             loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
             df['RSI'] = 100 - (100 / (1 + (gain/loss)))
 
-            # Cek ketersediaan data
+            # Ekstrak Value Akhir
+            curr = df['Close'].iloc[-1]
+            prev_close = df['Close'].iloc[-2]
+            
             ma200_val = 0 if pd.isna(df['MA200'].iloc[-1]) else df['MA200'].iloc[-1]
             ma50_val = 0 if pd.isna(df['MA50'].iloc[-1]) else df['MA50'].iloc[-1]
+            ma20_val = 0 if pd.isna(df['MA20'].iloc[-1]) else df['MA20'].iloc[-1]
             ema9_val = df['EMA9'].iloc[-1]
             ema21_val = df['EMA21'].iloc[-1]
+            vwap_val = 0 if pd.isna(df['VWAP_20'].iloc[-1]) else df['VWAP_20'].iloc[-1]
+            upper_band = 0 if pd.isna(df['UpperBand'].iloc[-1]) else df['UpperBand'].iloc[-1]
+            
+            vol_curr = df['Volume'].iloc[-1]
+            vol_ma20 = df['Vol_MA20'].iloc[-1]
+            macd_val = df['MACD'].iloc[-1]
+            signal_val = df['Signal'].iloc[-1]
+            
             rsi_curr = df['RSI'].iloc[-1]
             rsi_prev = df['RSI'].iloc[-2]
             
-            curr = df['Close'].iloc[-1]
-            prev_close = df['Close'].iloc[-2]
-            prev_high = df['High'].iloc[-2]
             
             # --- 3. SCORING FUNDAMENTAL & TEKNIKAL ---
             f_score = 0
@@ -251,14 +274,16 @@ def run_analisa_cepat():
             car_approx, npl_approx = 0, 0
             car_scraped, npl_scraped = None, None
 
-            # 1. KESEHATAN KEUANGAN & SOLVABILITAS (Maks 25)
+            # i) KESEHATAN KEUANGAN & SOLVABILITAS (Maks 20)
             if is_bank:
                 car_scraped, npl_scraped = get_bank_ratios_fallback(ticker)
                 
+                # NPL (Maks 10)
                 npl_approx = npl_scraped if (npl_scraped is not None and not pd.isna(npl_scraped)) else info.get('nonPerformingLoan', 2.5)
                 if npl_approx < 2: f_score += 10
                 elif npl_approx <= 3.5: f_score += 5
                 
+                # CAR (Maks 10)
                 if car_scraped is not None and not pd.isna(car_scraped):
                     car_approx = car_scraped
                     lbl_solv = f"CAR (Asli) {car_approx:.1f}% | NPL {npl_approx:.1f}%"
@@ -268,15 +293,15 @@ def run_analisa_cepat():
                     car_approx = (total_equity / total_assets) * 100 if total_assets > 0 else info.get('capitalAdequacyRatio', 18)
                     lbl_solv = f"Est. CAR {car_approx:.1f}% | NPL {npl_approx:.1f}%"
                     
-                if car_approx > 20: f_score += 15
-                elif car_approx >= 15: f_score += 10
-                elif car_approx >= 10: f_score += 5
+                if car_approx > 20: f_score += 10
+                elif car_approx >= 15: f_score += 5
                 
             elif is_infra:
-                if der_ratio < 1.5: f_score += 15
-                elif der_ratio <= 2.5: f_score += 10
-                elif der_ratio <= 4.0: f_score += 5
+                # DER Khusus (Maks 10)
+                if der_ratio < 1.5: f_score += 10
+                elif der_ratio <= 2.5: f_score += 5
                 
+                # ICR (Maks 10)
                 icr = 2.0
                 try:
                     ebit = financials.loc['EBIT'].iloc[0]
@@ -289,44 +314,44 @@ def run_analisa_cepat():
                 lbl_solv = f"DER {der_ratio:.2f}x | ICR {icr:.1f}x"
                 
             else: 
-                if der_ratio < 0.5: f_score += 15
-                elif der_ratio <= 1.0: f_score += 10
-                elif der_ratio <= 2.0: f_score += 5
+                # DER Umum (Maks 10)
+                if der_ratio < 0.5: f_score += 10
+                elif der_ratio <= 1.0: f_score += 5
                 
+                # CR (Maks 10)
                 cr = info.get('currentRatio', 0)
                 if cr > 1.5: f_score += 10
                 elif cr >= 1.0: f_score += 5
                 lbl_solv = f"DER {der_ratio:.2f}x | CR {cr:.2f}x"
 
-            # 2. PROFITABILITAS / EFISIENSI (Maks 25)
+            # ii) PROFITABILITAS / EFISIENSI (Maks 20)
             roe = info.get('returnOnEquity', 0) * 100 if info.get('returnOnEquity') else 0
-            if roe > 15: f_score += 15
-            elif roe >= 10: f_score += 10
-            elif roe >= 5: f_score += 5
+            if roe > 15: f_score += 10
+            elif roe >= 10: f_score += 5
             
             npm = info.get('profitMargins', 0) * 100 if info.get('profitMargins') else 0
             if npm > 10: f_score += 10
             elif npm >= 5: f_score += 5
 
-            # 3. VALUASI HARGA DINAMIS (Maks 20)
+            # iii) VALUASI HARGA DINAMIS (Maks 20)
             curr_per = info.get('trailingPE', 0)
             curr_pbv = info.get('priceToBook', 0)
             mean_pe_5y = info.get('trailingPE', 15) * 0.95 
             mean_pbv_5y = info.get('priceToBook', 1.5) * 0.9 
             
+            # PER Diskon (Maks 10)
             if curr_per > 0 and mean_pe_5y > 0:
                 pe_discount = ((mean_pe_5y - curr_per) / mean_pe_5y) * 100
                 if pe_discount > 20: f_score += 10
-                elif pe_discount >= 0: f_score += 7
-                elif pe_discount >= -20: f_score += 3
+                elif pe_discount >= 0: f_score += 5
             
+            # PBV Diskon (Maks 10)
             if curr_pbv > 0 and mean_pbv_5y > 0:
                 pbv_discount = ((mean_pbv_5y - curr_pbv) / mean_pbv_5y) * 100
                 if pbv_discount > 20: f_score += 10
-                elif pbv_discount >= 0: f_score += 7
-                elif pbv_discount >= -20: f_score += 3
+                elif pbv_discount >= 0: f_score += 5
 
-            # 4. PERTUMBUHAN / GROWTH (Maks 20)
+            # iv) PERTUMBUHAN / GROWTH (Maks 20)
             eps_g = info.get('earningsGrowth', 0) * 100 if info.get('earningsGrowth') else 0
             if eps_g > 15: f_score += 10
             elif eps_g >= 5: f_score += 7
@@ -345,7 +370,13 @@ def run_analisa_cepat():
             if rev_g > 10: f_score += 10
             elif rev_g >= 0: f_score += 5
 
-            # 5. DIVIDEN & BUKTI KAS (Maks 10)
+            # v) KUALITAS ARUS KAS (Maks 10)
+            ocf = info.get('operatingCashflow', 0)
+            net_inc = info.get('netIncomeToCommon', 0)
+            if ocf > net_inc and net_inc != 0: f_score += 10
+            elif ocf > 0: f_score += 5
+
+            # vi) DIVIDEN & BUKTI KAS (Maks 10)
             div_yield = hitung_div_yield_normal(info)
             if div_yield > 5: f_score += 10
             elif div_yield >= 2: f_score += 5
@@ -354,22 +385,27 @@ def run_analisa_cepat():
             # === B. PENILAIAN TEKNIKAL SWING TRADING (Skala 100 Poin) ===
             t_score = 0
             alasan_tek = []
-            change_pct = ((curr - prev_close) / prev_close) * 100
 
-            if curr >= ma200_val: 
-                t_score += 20; alasan_tek.append("Major Uptrend")
-            if curr >= ma50_val: 
-                t_score += 20; alasan_tek.append("Medium Uptrend")
-            if change_pct > 2.0 or curr > prev_high: 
-                t_score += 20; alasan_tek.append("Breakout Action")
-            if ema9_val > ema21_val: 
-                t_score += 15; alasan_tek.append("EMA Cross Momentum")
-            if 50 <= rsi_curr <= 70: 
-                t_score += 7.5; alasan_tek.append("RSI Ideal")
-            if rsi_curr > rsi_prev: 
-                t_score += 7.5; alasan_tek.append("RSI Trend")
-            if avg_value_ma20 > 5e9: 
-                t_score += 10; alasan_tek.append("Liquid (>5M)")
+            # i) Tren Utama (Maks 30)
+            if curr > ma200_val: t_score += 10; alasan_tek.append("Uptrend (MA200)")
+            if curr > ma50_val: t_score += 10; alasan_tek.append("Uptrend (MA50)")
+            if curr > ma20_val: t_score += 10; alasan_tek.append("Uptrend (MA20)")
+
+            # ii) Konfirmasi Volume & Likuiditas (Maks 20)
+            if vol_curr > vol_ma20: t_score += 10; alasan_tek.append("Volume > Rata-rata")
+            if curr > vwap_val: t_score += 10; alasan_tek.append("Harga > VWAP")
+
+            # iii) Kekuatan Momentum (Maks 20)
+            if 50 <= rsi_curr <= 70: t_score += 5; alasan_tek.append("RSI 50-70")
+            if rsi_curr > rsi_prev: t_score += 5; alasan_tek.append("RSI Naik")
+            if macd_val > signal_val: t_score += 10; alasan_tek.append("MACD Bullish")
+
+            # iv) Agresivitas Aksi Harga (Maks 20)
+            if ema9_val > ema21_val: t_score += 10; alasan_tek.append("EMA 9>21 Cross")
+            if curr > prev_close: t_score += 10; alasan_tek.append("Close > Prev")
+
+            # v) Volatilitas & Risiko (Maks 10)
+            if ma20_val < curr < upper_band: t_score += 10; alasan_tek.append("Posisi Bollinger Aman")
 
             teks_alasan = ", ".join(alasan_tek) if alasan_tek else "Tidak ada sinyal kuat"
 
@@ -429,7 +465,7 @@ def run_analisa_cepat():
                     Sektor: <b>{sector.title()}</b> | Kategori Syariah: <b>Perlu Cek ISSI/JII</b>
                 </p>
                 <ul style="line-height:1.8; padding-left:20px; font-size:16px;">
-                    <li><b>1. Fundamental Score ({f_score}/100):</b> ROE {roe:.1f}%, {lbl_solv}, EPS Grw {eps_g:.1f}%, Rev Grw {rev_g:.1f}%.</li>
+                    <li><b>1. Fundamental Score ({f_score}/100):</b> ROE {roe:.1f}%, {lbl_solv}, EPS Grw {eps_g:.1f}%, Arus Kas {'Positif' if ocf>0 else 'Negatif'}.</li>
                     <li><b>2. Technical Score ({t_score:g}/100):</b> Trigger -> {teks_alasan}</li>
                     <li><b>3. Sentiment Pasar:</b> <b>{sentiment}</b></li>
                     <li><b>4. Rekomendasi Final:</b> <br><span style="color:{color_rec}; font-weight:bold; font-size:17px;">{rekomen}</span></li>
@@ -448,7 +484,8 @@ def run_analisa_cepat():
             with st.expander("Lihat Detail Data Mentah"):
                 st.write(f"Sektor Terdeteksi: {sector.title()} | Bank? {is_bank}")
                 st.write(f"Raw DER: {raw_der} | Normalized Ratio: {der_ratio:.2f}")
-                st.write(f"Support Dinamis (EMA9): Rp {int(ema9_val):,.0f}")
+                st.write(f"VWAP 20: Rp {int(vwap_val):,.0f} | MACD: {macd_val:.2f} (Signal: {signal_val:.2f})")
+                st.write(f"Upper Bollinger Band: Rp {int(upper_band):,.0f}")
                 
                 if is_bank: 
                     st.write(f"CAR Terpakai: {car_approx:.2f}% ({'Hasil Scraping' if car_scraped is not None else 'Estimasi Proxy'})")
@@ -461,11 +498,10 @@ def run_analisa_cepat():
                 rekomen, curr, entry_bawah, entry_atas, tp, reward_pct, sl_final, risk_pct, teks_alasan
             )
             
-            # Format Nama File: ExpertStockPro_AnalisaCepat_(kode saham)_(tanggal)
             tanggal_cetak = datetime.now().strftime('%Y%m%d')
             nama_file_pdf = f"ExpertStockPro_AnalisaCepat_{ticker.replace('.JK', '')}_{tanggal_cetak}.pdf"
             
-            st.markdown("<br>", unsafe_allow_html=True) # Tambahan spasi agar lebih rapi
+            st.markdown("<br>", unsafe_allow_html=True) 
             _, col_pdf, _ = st.columns([1, 2, 1])
             with col_pdf:
                 st.download_button(
