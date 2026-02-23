@@ -1,9 +1,34 @@
 import streamlit as st
 import pandas as pd
+import os
+import base64
 from modules.data_loader import get_full_stock_data, hitung_div_yield_normal
 
 def run_perbandingan():
-    st.title("⚖️ Perbandingan Saham Pro (Head-to-Head)")
+    # --- TAMPILAN WEB ---
+    logo_file = "logo_expert_stock_pro.png"
+    if not os.path.exists(logo_file):
+        logo_file = "../logo_expert_stock_pro.png"
+        
+    # Tampilkan Logo di Web bagian TENGAH (CENTER) dengan ukuran 150px
+    if os.path.exists(logo_file):
+        with open(logo_file, "rb") as f:
+            data = f.read()
+            encoded_img = base64.b64encode(data).decode()
+        
+        st.markdown(
+            f"""
+            <div style="display: flex; justify-content: center; margin-bottom: 10px;">
+                <img src="data:image/png;base64,{encoded_img}" width="150">
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+        st.markdown("<h1 style='text-align: center;'>⚖️ Perbandingan Saham Pro (Head to Head)</h1>", unsafe_allow_html=True)
+    else:
+        st.markdown("<h1 style='text-align: center;'>⚖️ Perbandingan Saham Pro (Head to Head)</h1>", unsafe_allow_html=True)
+        st.warning("⚠️ File logo belum ditemukan.")
+
     st.markdown("---")
 
     c_input1, c_input2 = st.columns(2)
@@ -107,7 +132,7 @@ def run_perbandingan():
 
             st.success(f"**JAWABAN:** {best}. **ALASAN:** {reason}")
 
-            # --- TRADING PLAN (DAY TRADE) ---
+            # --- TRADING PLAN (DAY TRADE) DENGAN KONTRAS WARNA ---
             def render_trading_plan(ticker, df):
                 curr = df['Close'].iloc[-1]
                 # Proksi VWAP harian sederhana menggunakan Typical Price
@@ -117,13 +142,18 @@ def run_perbandingan():
                 batas_bawah = curr * 0.985
                 entry_bawah = max(batas_bawah, vwap)
                 
-                st.info(f"""
-                **🎯 Trading Plan {ticker}**
-                * **Harga Saat Ini:** Rp {curr:,.0f}
-                * **Rentang Entry (Support Dinamis):** dengan Entry Bawah di kisaran **Rp {entry_bawah:,.0f}** *(Maksimal turun 1.5% dari harga saat ini atau di garis VWAP, ambil mana yang lebih tinggi agar tidak menawar terlalu bawah).*
-                * **SL:** Maksimal turun **3%** dari harga beli.
-                * **Target (TP):** RRR 1:1.5 (Profit sekitar **4.5% - 5%**).
-                """)
+                # Menggunakan HTML/CSS untuk memaksakan background biru tua dan font putih
+                st.markdown(f"""
+                <div style="background-color: #0c2b4b; padding: 15px; border-radius: 8px; color: #ffffff; margin-bottom: 15px;">
+                    <h4 style="color: #ffffff; margin-top: 0;">🎯 Trading Plan {ticker}</h4>
+                    <ul style="color: #ffffff; margin-bottom: 0;">
+                        <li><b>Harga Saat Ini:</b> Rp {curr:,.0f}</li>
+                        <li><b>Rentang Entry (Support Dinamis):</b> dengan Entry Bawah di kisaran <b>Rp {entry_bawah:,.0f}</b> <i>(Maksimal turun 1.5% dari harga saat ini atau di garis VWAP, ambil mana yang lebih tinggi agar tidak menawar terlalu bawah).</i></li>
+                        <li><b>SL:</b> Maksimal turun <b>3%</b> dari harga beli.</li>
+                        <li><b>Target (TP):</b> RRR 1:1.5 (Profit sekitar <b>4.5% - 5%</b>).</li>
+                    </ul>
+                </div>
+                """, unsafe_allow_html=True)
 
             # Menentukan data history untuk saham rekomendasi dan alternatif
             best_history = h1 if best == tk1 else h2
@@ -140,7 +170,4 @@ def run_perbandingan():
             # --- PERNYATAAN DISCLAIMER ---
             st.markdown("<br><br>", unsafe_allow_html=True)
             st.divider()
-            st.caption(f"⚠️ **Sanggahan (Disclaimer):** Analisis perbandingan antara {tk1} dan {tk2} ini dihasilkan secara otomatis untuk tujuan edukasi dan informasi semata. "
-                       "Ini bukan merupakan perintah beli atau jual. Keputusan investasi sepenuhnya berada di tangan Anda. "
-                       "Kinerja masa lalu tidak menjamin hasil di masa depan. Selalu lakukan analisis fundamental dan teknikal mandiri (DYOR) "
-                       "sebelum menempatkan modal pada instrumen saham.")
+            st.caption(f"⚠️ **DISCLAIMER:** Laporan analisa ini dihasilkan secara otomatis menggunakan perhitungan algoritma indikator teknikal dan fundamental. Seluruh informasi yang disajikan bukan merupakan ajakan, rekomendasi pasti, atau paksaan untuk membeli/menjual saham. Keputusan investasi dan trading sepenuhnya menjadi tanggung jawab pribadi masing-masing investor. Selalu terapkan manajemen risiko yang baik dan *Do Your Own Research* (DYOR).")
