@@ -107,7 +107,37 @@ def run_perbandingan():
 
             st.success(f"**JAWABAN:** {best}. **ALASAN:** {reason}")
 
-            # --- PERNYATAAN DISCLAIMER (PENAMBAHAN BARU) ---
+            # --- TRADING PLAN (DAY TRADE) ---
+            def render_trading_plan(ticker, df):
+                curr = df['Close'].iloc[-1]
+                # Proksi VWAP harian sederhana menggunakan Typical Price
+                vwap = (df['High'].iloc[-1] + df['Low'].iloc[-1] + df['Close'].iloc[-1]) / 3
+                
+                # Kalkulasi Entry Bawah (Maksimal turun 1.5% atau VWAP, ambil yang tertinggi)
+                batas_bawah = curr * 0.985
+                entry_bawah = max(batas_bawah, vwap)
+                
+                st.info(f"""
+                **🎯 Trading Plan {ticker}**
+                * **Harga Saat Ini:** Rp {curr:,.0f}
+                * **Rentang Entry (Support Dinamis):** dengan Entry Bawah di kisaran **Rp {entry_bawah:,.0f}** *(Maksimal turun 1.5% dari harga saat ini atau di garis VWAP, ambil mana yang lebih tinggi agar tidak menawar terlalu bawah).*
+                * **SL:** Maksimal turun **3%** dari harga beli.
+                * **Target (TP):** RRR 1:1.5 (Profit sekitar **4.5% - 5%**).
+                """)
+
+            # Menentukan data history untuk saham rekomendasi dan alternatif
+            best_history = h1 if best == tk1 else h2
+            second_ticker = tk2 if best == tk1 else tk1
+            second_history = h2 if best == tk1 else h1
+
+            st.markdown("<br>", unsafe_allow_html=True)
+            st.write(f"Untuk saham **{best}** yang disarankan di atas, berikut adalah Trading Plan untuk mode Day Trade:")
+            render_trading_plan(best, best_history)
+
+            st.write(f"Bila Anda juga tetap mempertimbangkan saham yang kedua (**{second_ticker}**), maka berikut trading plan untuk mode Day Trading:")
+            render_trading_plan(second_ticker, second_history)
+
+            # --- PERNYATAAN DISCLAIMER ---
             st.markdown("<br><br>", unsafe_allow_html=True)
             st.divider()
             st.caption(f"⚠️ **Sanggahan (Disclaimer):** Analisis perbandingan antara {tk1} dan {tk2} ini dihasilkan secara otomatis untuk tujuan edukasi dan informasi semata. "
