@@ -9,35 +9,7 @@ import os
 import base64
 from modules.data_loader import get_full_stock_data, hitung_div_yield_normal
 
-# --- FUNGSI FALLBACK SCRAPING RASIO BANK ---
-def get_bank_ratios_fallback(ticker):
-    """
-    Mencoba melakukan scraping data CAR dan NPL dari portal finansial.
-    Mengembalikan tuple (car_val, npl_val). Jika gagal, mengembalikan (None, None).
-    """
-    clean_ticker = ticker.replace(".JK", "").upper()
-    car_val, npl_val = None, None
-    try:
-        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
-        url = f"https://www.idnfinancials.com/{clean_ticker}/financial-ratios"
-        res = requests.get(url, headers=headers, timeout=5)
-        
-        if res.status_code == 200:
-            tables = pd.read_html(res.text)
-            for df in tables:
-                if len(df.columns) > 1:
-                    for _, row in df.iterrows():
-                        col_name = str(row[0]).lower()
-                        if 'capital adequacy' in col_name or 'car' in col_name:
-                            car_val = pd.to_numeric(str(row[1]).replace('%', '').strip(), errors='coerce')
-                        elif 'non-performing' in col_name or 'npl' in col_name:
-                            npl_val = pd.to_numeric(str(row[1]).replace('%', '').strip(), errors='coerce')
-    except Exception:
-        pass
-        
-    return car_val, npl_val
-
-# --- FUNGSI GENERATOR PDF ANALISA CEPAT (HEADER BARU) ---
+# --- FUNGSI GENERATOR PDF ANALISA CEPAT ---
 def export_analisa_cepat_to_pdf(ticker, company_name, sector, f_score, roe, lbl_solv, eps_g, rev_g,
                                 t_score, avg_value_ma20, rsi, sentiment, curr_per, div_yield,
                                 rekomen, curr, entry_bawah, entry_atas, tp, reward_pct, sl_final, risk_pct, alasan_tek):
@@ -55,30 +27,26 @@ def export_analisa_cepat_to_pdf(ticker, company_name, sector, f_score, roe, lbl_
     
     # a) LOGO dengan Bingkai Emas
     if os.path.exists(logo_path):
-        # Gambar bingkai emas (rect di belakang logo)
         pdf.set_fill_color(218, 165, 32) # Goldenrod color
         pdf.rect(10, 3, 19, 19, 'F')
-        # Tampilkan logo
         pdf.image(logo_path, x=10.5, y=3.5, w=18, h=18)
     
     # b) & c) NAMA APLIKASI & MODUL (Teks Putih)
     pdf.set_text_color(255, 255, 255)
     pdf.set_font("Arial", 'B', 16)
-    # Posisi di sebelah kanan logo (logo width ~20 + margin 10 = 30)
     pdf.set_xy(35, 8) 
     pdf.cell(0, 10, "Expert Stock Pro - Analisa Cepat Pro", ln=True)
     
-    # Reset posisi Y ke bawah kotak hitam
     pdf.set_y(28)
     
     # 2. HYPERLINK SUMBER
     pdf.set_font("Arial", 'I', 10)
-    pdf.set_text_color(0, 0, 255)  # Warna Biru
+    pdf.set_text_color(0, 0, 255)  
     pdf.cell(0, 5, "Sumber: https://lynk.id/hahastoresby", ln=True, align='C', link="https://lynk.id/hahastoresby")
     pdf.ln(2)
     
     # 3. NAMA SAHAM & PERUSAHAAN (CENTER)
-    pdf.set_text_color(0, 0, 0) # Kembali ke Hitam
+    pdf.set_text_color(0, 0, 0) 
     pdf.set_font("Arial", 'B', 20)
     pdf.cell(0, 8, f"{ticker} - {company_name}", ln=True, align='C')
     
@@ -92,7 +60,6 @@ def export_analisa_cepat_to_pdf(ticker, company_name, sector, f_score, roe, lbl_
     waktu_analisa = datetime.now().strftime("%d-%m-%Y %H:%M WIB")
     pdf.cell(0, 5, f"Analisa: {waktu_analisa} | Harga: Rp {int(curr):,.0f}", ln=True, align='R')
     
-    # Garis Bawah Header
     pdf.set_line_width(0.5)
     pdf.line(10, pdf.get_y()+2, 200, pdf.get_y()+2)
     pdf.ln(5)
@@ -161,7 +128,6 @@ def run_analisa_cepat():
     if not os.path.exists(logo_file):
         logo_file = "../logo_expert_stock_pro.png"
         
-    # Tampilkan Logo di Web bagian TENGAH (CENTER) dengan ukuran 150px
     if os.path.exists(logo_file):
         with open(logo_file, "rb") as f:
             data = f.read()
@@ -194,47 +160,40 @@ def run_analisa_cepat():
             info = data['info']
             df = data['history']
             financials = data.get('financials', pd.DataFrame()) 
+            cashflow = data.get('cashflow', pd.DataFrame())  # DITAMBAHKAN UNTUK KESELARASAN OCF
             
             if df.empty or not info:
                 st.error("Data gagal dimuat. Mohon tunggu 1 menit lalu 'Clear Cache' di pojok kanan atas.")
                 return
 
             # --- 2. DATA TEKNIKAL & INDIKATOR SCORING ---
-            # MA Dasar
             df['MA20'] = df['Close'].rolling(20).mean()
             df['MA50'] = df['Close'].rolling(50).mean()
             df['MA200'] = df['Close'].rolling(200).mean()
             
-            # Volume & Likuiditas
             df['Value'] = df['Close'] * df['Volume']
             avg_value_ma20 = df['Value'].rolling(20).mean().iloc[-1]
             df['Vol_MA20'] = df['Volume'].rolling(20).mean()
             
-            # VWAP 20 Hari
             df['Typical_Price'] = (df['High'] + df['Low'] + df['Close']) / 3
             df['VWAP_20'] = (df['Typical_Price'] * df['Volume']).rolling(20).sum() / df['Volume'].rolling(20).sum()
 
-            # Indikator Momentum / Agresivitas
             df['EMA9'] = df['Close'].ewm(span=9, adjust=False).mean()
             df['EMA21'] = df['Close'].ewm(span=21, adjust=False).mean()
             
-            # MACD
             df['EMA12'] = df['Close'].ewm(span=12, adjust=False).mean()
             df['EMA26'] = df['Close'].ewm(span=26, adjust=False).mean()
             df['MACD'] = df['EMA12'] - df['EMA26']
             df['Signal'] = df['MACD'].ewm(span=9, adjust=False).mean()
 
-            # Bollinger Bands
             df['STD20'] = df['Close'].rolling(20).std()
             df['UpperBand'] = df['MA20'] + (df['STD20'] * 2)
 
-            # Kalkulasi RSI
             delta = df['Close'].diff()
             gain = (delta.where(delta > 0, 0)).rolling(14).mean()
             loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
             df['RSI'] = 100 - (100 / (1 + (gain/loss)))
 
-            # Ekstrak Value Akhir
             curr = df['Close'].iloc[-1]
             prev_close = df['Close'].iloc[-2]
             
@@ -254,58 +213,41 @@ def run_analisa_cepat():
             rsi_curr = df['RSI'].iloc[-1]
             rsi_prev = df['RSI'].iloc[-2]
             
-            
             # --- 3. SCORING FUNDAMENTAL & TEKNIKAL ---
             f_score = 0
             t_score = 0
             
-            # === A. PENILAIAN FUNDAMENTAL (Skala 100 Poin) ===
-            sector = str(info.get('sector', '')).lower()
-            industry = str(info.get('industry', '')).lower()
-            name = str(info.get('longName', '')).lower()
+            # === A. PENILAIAN FUNDAMENTAL (IDENTIK 100% DENGAN fundamental.py) ===
+            sector = info.get('sector', '')
+            industry = info.get('industry', '')
             
-            is_bank = 'bank' in industry or 'bank' in sector or 'bank' in name or sector == 'financial services'
-            is_infra = 'infrastructure' in industry or sector in ['utilities', 'real estate', 'industrials'] or 'construction' in industry or 'karya' in name
+            is_bank = 'Bank' in industry or sector == 'Financial Services'
+            is_infra = 'Infrastructure' in industry or sector in ['Utilities', 'Real Estate', 'Industrials', 'Energy', 'Basic Materials']
             
-            raw_der = info.get('debtToEquity', 0)
-            der_ratio = raw_der / 100 if raw_der > 10 else raw_der
-
+            der_ratio = info.get('debtToEquity', 0) / 100 if info.get('debtToEquity') else 0
             lbl_solv = ""
-            car_approx, npl_approx = 0, 0
-            car_scraped, npl_scraped = None, None
+            car, npl = 0, 0 # Setup untuk tampilan data raw
 
             # i) KESEHATAN KEUANGAN & SOLVABILITAS (Maks 20)
             if is_bank:
-                car_scraped, npl_scraped = get_bank_ratios_fallback(ticker)
+                car = info.get('capitalAdequacyRatio', 18) 
+                if car > 20: f_score += 10
+                elif car >= 15: f_score += 5
                 
-                # NPL (Maks 10)
-                npl_approx = npl_scraped if (npl_scraped is not None and not pd.isna(npl_scraped)) else info.get('nonPerformingLoan', 2.5)
-                if npl_approx < 2: f_score += 10
-                elif npl_approx <= 3.5: f_score += 5
+                npl = info.get('nonPerformingLoan', 2.5)   
+                if npl < 2: f_score += 10
+                elif npl <= 3.5: f_score += 5
                 
-                # CAR (Maks 10)
-                if car_scraped is not None and not pd.isna(car_scraped):
-                    car_approx = car_scraped
-                    lbl_solv = f"CAR (Asli) {car_approx:.1f}% | NPL {npl_approx:.1f}%"
-                else:
-                    total_assets = info.get('totalAssets', 1)
-                    total_equity = info.get('totalStockholderEquity', 0)
-                    car_approx = (total_equity / total_assets) * 100 if total_assets > 0 else info.get('capitalAdequacyRatio', 18)
-                    lbl_solv = f"Est. CAR {car_approx:.1f}% | NPL {npl_approx:.1f}%"
-                    
-                if car_approx > 20: f_score += 10
-                elif car_approx >= 15: f_score += 5
+                lbl_solv = f"CAR {car:.1f}% | NPL {npl:.1f}%"
                 
             elif is_infra:
-                # DER Khusus (Maks 10)
                 if der_ratio < 1.5: f_score += 10
                 elif der_ratio <= 2.5: f_score += 5
                 
-                # ICR (Maks 10)
-                icr = 2.0
+                icr = 2.0 
                 try:
-                    ebit = financials.loc['EBIT'].iloc[0]
-                    interest = abs(financials.loc['Interest Expense'].iloc[0])
+                    ebit = financials.loc['EBIT'].iloc[0] if 'EBIT' in financials.index else (financials.loc['Operating Income'].iloc[0] if 'Operating Income' in financials.index else 0)
+                    interest = abs(financials.loc['Interest Expense'].iloc[0]) if 'Interest Expense' in financials.index else 0
                     if interest > 0: icr = ebit / interest
                 except: pass
                 
@@ -314,11 +256,9 @@ def run_analisa_cepat():
                 lbl_solv = f"DER {der_ratio:.2f}x | ICR {icr:.1f}x"
                 
             else: 
-                # DER Umum (Maks 10)
                 if der_ratio < 0.5: f_score += 10
                 elif der_ratio <= 1.0: f_score += 5
                 
-                # CR (Maks 10)
                 cr = info.get('currentRatio', 0)
                 if cr > 1.5: f_score += 10
                 elif cr >= 1.0: f_score += 5
@@ -334,18 +274,19 @@ def run_analisa_cepat():
             elif npm >= 5: f_score += 5
 
             # iii) VALUASI HARGA DINAMIS (Maks 20)
+            try:
+                mean_pe_5y = info.get('trailingPE', 15) * 0.95 
+                mean_pbv_5y = info.get('priceToBook', 1.5) * 0.9 
+            except: 
+                mean_pe_5y, mean_pbv_5y = 15.0, 1.5
+
             curr_per = info.get('trailingPE', 0)
-            curr_pbv = info.get('priceToBook', 0)
-            mean_pe_5y = info.get('trailingPE', 15) * 0.95 
-            mean_pbv_5y = info.get('priceToBook', 1.5) * 0.9 
-            
-            # PER Diskon (Maks 10)
             if curr_per > 0 and mean_pe_5y > 0:
                 pe_discount = ((mean_pe_5y - curr_per) / mean_pe_5y) * 100
                 if pe_discount > 20: f_score += 10
                 elif pe_discount >= 0: f_score += 5
             
-            # PBV Diskon (Maks 10)
+            curr_pbv = info.get('priceToBook', 0)
             if curr_pbv > 0 and mean_pbv_5y > 0:
                 pbv_discount = ((mean_pbv_5y - curr_pbv) / mean_pbv_5y) * 100
                 if pbv_discount > 20: f_score += 10
@@ -355,26 +296,23 @@ def run_analisa_cepat():
             eps_g = info.get('earningsGrowth', 0) * 100 if info.get('earningsGrowth') else 0
             if eps_g > 15: f_score += 10
             elif eps_g >= 5: f_score += 7
-            elif eps_g >= 0: f_score += 3
+            elif eps_g > 0: f_score += 3
             
-            cagr_rev = 0
-            if not financials.empty and 'Total Revenue' in financials.index:
-                try:
-                    revs = financials.loc['Total Revenue']
-                    if len(revs) >= 2:
-                        years = len(revs) - 1
-                        cagr_rev = ((revs.iloc[0] / revs.iloc[-1]) ** (1/years)) - 1
-                except: pass
-            
-            rev_g = cagr_rev * 100 if cagr_rev != 0 else (info.get('revenueGrowth', 0) * 100 if info.get('revenueGrowth') else 0)
+            rev_g = info.get('revenueGrowth', 0) * 100 if info.get('revenueGrowth') else 0
             if rev_g > 10: f_score += 10
             elif rev_g >= 0: f_score += 5
 
             # v) KUALITAS ARUS KAS (Maks 10)
-            ocf = info.get('operatingCashflow', 0)
-            net_inc = info.get('netIncomeToCommon', 0)
-            if ocf > net_inc and net_inc != 0: f_score += 10
-            elif ocf > 0: f_score += 5
+            ocf = 0 # Nilai awal aman
+            try:
+                if not cashflow.empty and not financials.empty:
+                    ocf = cashflow.loc['Operating Cash Flow'].iloc[0] if 'Operating Cash Flow' in cashflow.index else 0
+                    net_income = financials.loc['Net Income'].iloc[0] if 'Net Income' in financials.index else 0
+                    if ocf > net_income: 
+                        f_score += 10
+                    elif ocf > 0: 
+                        f_score += 5
+            except: pass
 
             # vi) DIVIDEN & BUKTI KAS (Maks 10)
             div_yield = hitung_div_yield_normal(info)
@@ -383,7 +321,6 @@ def run_analisa_cepat():
 
 
             # === B. PENILAIAN TEKNIKAL SWING TRADING (Skala 100 Poin) ===
-            t_score = 0
             alasan_tek = []
 
             # i) Tren Utama (Maks 30)
@@ -410,14 +347,12 @@ def run_analisa_cepat():
             teks_alasan = ", ".join(alasan_tek) if alasan_tek else "Tidak ada sinyal kuat"
 
             # --- 4. RENTANG ENTRY & TRADING PLAN ---
-            # Kalkulasi ATR untuk SL
             high_low = df['High'] - df['Low']
             high_close = np.abs(df['High'] - df['Close'].shift())
             low_close = np.abs(df['Low'] - df['Close'].shift())
             ranges = pd.concat([high_low, high_close, low_close], axis=1)
             atr = ranges.max(axis=1).rolling(14).mean().iloc[-1]
             
-            # LOGIKA RENTANG ENTRY (Maksimal -4% atau EMA9)
             entry_atas = curr
             batas_diskon_4pct = curr * 0.96
             
@@ -428,23 +363,19 @@ def run_analisa_cepat():
                 
             avg_entry = (entry_atas + entry_bawah) / 2
             
-            # LOGIKA SL: 2.5x ATR, Maksimal Loss 8%
             sl_atr = curr - (2.5 * atr)
             sl_final = max(sl_atr, curr * 0.92) 
             
-            # LOGIKA TP: RRR 1:2
             tp = int(avg_entry + (avg_entry - sl_final) * 2)
             
             risk_pct = ((avg_entry - sl_final) / avg_entry) * 100
             reward_pct = ((tp - avg_entry) / avg_entry) * 100
             
-            # Tentukan Sentimen
             if curr > ma50_val and curr > ma200_val: sentiment = "BULLISH (Sangat Kuat) 🐂"
             elif curr > ema21_val: sentiment = "MILD BULLISH (Jangka Pendek) 🐃"
             elif curr < ma200_val: sentiment = "BEARISH (Hati-hati) 🐻"
             else: sentiment = "NEUTRAL / SIDEWAYS 😐"
 
-            # --- Rekomendasi Swing Trading ---
             if t_score >= 80:
                 rekomen = "High Confidence -> Saham Super Trend, Layak All-in (Sesuaikan Sizing)"
                 color_rec = "#00ff00"
@@ -483,15 +414,15 @@ def run_analisa_cepat():
             
             with st.expander("Lihat Detail Data Mentah"):
                 st.write(f"Sektor Terdeteksi: {sector.title()} | Bank? {is_bank}")
-                st.write(f"Raw DER: {raw_der} | Normalized Ratio: {der_ratio:.2f}")
+                st.write(f"Raw DER: {der_ratio:.2f}x | Normalized Ratio: {der_ratio:.2f}")
                 st.write(f"VWAP 20: Rp {int(vwap_val):,.0f} | MACD: {macd_val:.2f} (Signal: {signal_val:.2f})")
                 st.write(f"Upper Bollinger Band: Rp {int(upper_band):,.0f}")
                 
                 if is_bank: 
-                    st.write(f"CAR Terpakai: {car_approx:.2f}% ({'Hasil Scraping' if car_scraped is not None else 'Estimasi Proxy'})")
-                    st.write(f"NPL Terpakai: {npl_approx:.2f}% ({'Hasil Scraping' if npl_scraped is not None else 'Estimasi Proxy'})")
+                    st.write(f"CAR Terpakai: {car:.2f}% (Estimasi Proxy/Default)")
+                    st.write(f"NPL Terpakai: {npl:.2f}% (Estimasi Proxy/Default)")
 
-            # --- 5.5 TAMPILKAN TOMBOL DOWNLOAD PDF (Posisi Baru & Menonjol) ---
+            # --- 5.5 TAMPILKAN TOMBOL DOWNLOAD PDF ---
             pdf_data = export_analisa_cepat_to_pdf(
                 ticker, company_name, sector, f_score, roe, lbl_solv, eps_g, rev_g,
                 t_score, avg_value_ma20, rsi_curr, sentiment, curr_per, div_yield,
