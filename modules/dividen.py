@@ -167,16 +167,22 @@ def run_dividen():
     if st.button(f"Jalankan Analisa Lengkap {ticker_input}"):
         with st.spinner("Mengevaluasi fundamental & kelayakan dividen..."):
             data = get_full_stock_data(ticker)
-            info = data['info']
-            divs = data['dividends']
-            history = data['history']
+            info = data.get('info', {})  # Pastikan berupa dictionary agar tidak error
+            divs = data.get('dividends')
+            history = data.get('history')
             
-            if not info or divs.empty:
+            # --- PERBAIKAN VALIDASI: Hanya memblokir jika dividen benar-benar tidak ada ---
+            if divs is None or len(divs) == 0:
                 st.error("Data dividen tidak ditemukan atau emiten tidak membagikan dividen.")
                 return
 
             # --- PRE-CALCULATION & SCORING ---
-            curr_price = info.get('currentPrice') or 0
+            curr_price = info.get('currentPrice')
+            # Backup: Jika info currentPrice gagal diambil dari Yahoo Finance, ambil dari tabel history
+            if not curr_price and history is not None and not history.empty:
+                curr_price = history['Close'].iloc[-1]
+            curr_price = curr_price or 0
+
             yield_val = hitung_div_yield_normal(info)
             payout = (info.get('payoutRatio') or 0) * 100
             fcf = info.get('freeCashflow') or 0
