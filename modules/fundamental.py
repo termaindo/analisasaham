@@ -346,9 +346,9 @@ def run_fundamental():
             """,
             unsafe_allow_html=True
         )
-        st.markdown("<h1 style='text-align: center;'>Analisa Fundamental & Kualitatif Pro</h1>", unsafe_allow_html=True)
+        st.markdown("<h1 style='text-align: center;'>📊 Analisa Fundamental & Kualitatif Pro</h1>", unsafe_allow_html=True)
     else:
-        st.markdown("<h1 style='text-align: center;'>Analisa Fundamental & Kualitatif Pro</h1>", unsafe_allow_html=True)
+        st.markdown("<h1 style='text-align: center;'>📊 Analisa Fundamental & Kualitatif Pro</h1>", unsafe_allow_html=True)
         st.warning("⚠️ File logo belum ditemukan.")
         
     st.markdown("---")
