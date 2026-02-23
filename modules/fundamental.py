@@ -320,9 +320,9 @@ def generate_pdf_report(data_dict, logo_path="logo_expert_stock_pro.png"):
     pdf.cell(0, 6, f"Batas Cutloss: Tembus Rp {data_dict['sl']:,.0f} (Penurunan ~30%)", ln=True)
     pdf.ln(10)
     
-    # Disclaimer PDF
+    # Disclaimer PDF (Versi Baru: Tanpa Emoji & Markdown)
     pdf.set_font("Arial", 'I', 8)
-    pdf.multi_cell(0, 4, "DISCLAIMER: Semua informasi, analisa teknikal, Analisa fundamental, ataupun sinyal trading dan analisa-analisa lain yang disediakan di modul ini hanya untuk tujuan edukasi dan informasi. Ini bukan merupakan rekomendasi, ajakan, atau nasihat keuangan untuk membeli atau menjual saham tertentu. Keputusan investasi sepenuhnya berada di tangan Anda. Harap lakukan riset Anda sendiri (Do Your Own Research) dan pertimbangkan profil risiko sebelum mengambil keputusan di pasar modal.")
+    pdf.multi_cell(0, 4, "DISCLAIMER: Laporan analisa ini dihasilkan secara otomatis menggunakan perhitungan algoritma indikator teknikal dan fundamental. Seluruh informasi yang disajikan bukan merupakan ajakan, rekomendasi pasti, atau paksaan untuk membeli/menjual saham. Keputusan investasi dan trading sepenuhnya menjadi tanggung jawab pribadi masing-masing investor. Selalu terapkan manajemen risiko yang baik dan Do Your Own Research (DYOR) dan pertimbangkan profil risiko sebelum mengambil keputusan di pasar modal.")
     
     return bytes(pdf.output(dest='S').encode('latin1'))
 
@@ -580,4 +580,5 @@ def run_fundamental():
                 use_container_width=True
             )
             
-            st.caption("**DISCLAIMER:** Semua informasi, analisa teknikal, Analisa fundamental, ataupun sinyal trading dan analisa-analisa lain yang disediakan di modul ini hanya untuk tujuan edukasi dan informasi. Ini bukan merupakan rekomendasi, ajakan, atau nasihat keuangan untuk membeli atau menjual saham tertentu. Keputusan investasi sepenuhnya berada di tangan Anda. Harap lakukan riset Anda sendiri (*Do Your Own Research*) dan pertimbangkan profil risiko sebelum mengambil keputusan di pasar modal.")
+            # Disclaimer Web (Versi Baru: Dengan Emoji & Markdown)
+            st.caption("⚠️ **DISCLAIMER:** Laporan analisa ini dihasilkan secara otomatis menggunakan perhitungan algoritma indikator teknikal dan fundamental. Seluruh informasi yang disajikan bukan merupakan ajakan, rekomendasi pasti, atau paksaan untuk membeli/menjual saham. Keputusan investasi dan trading sepenuhnya menjadi tanggung jawab pribadi masing-masing investor. Selalu terapkan manajemen risiko yang baik dan *Do Your Own Research* (DYOR) dan pertimbangkan profil risiko sebelum mengambil keputusan di pasar modal.")
