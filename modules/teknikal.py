@@ -139,7 +139,9 @@ def generate_pdf_fpdf(data, logo_path="logo_expert_stock_pro.png"):
     # --- 3. NAMA SAHAM & PERUSAHAAN (CENTER) ---
     pdf.set_text_color(0, 0, 0) # Kembali ke Hitam
     pdf.set_font("Arial", 'B', 20)
-    pdf.cell(0, 8, f"{data['ticker']} - {data['nama_perusahaan']}", ln=True, align='C')
+    # Pengaman Karakter untuk Nama Perusahaan
+    aman_nama = data['nama_perusahaan'].encode('latin-1', 'replace').decode('latin-1')
+    pdf.cell(0, 8, f"{data['ticker']} - {aman_nama}", ln=True, align='C')
     
     # --- 4. INFO SEKTOR & SYARIAH (CENTER) ---
     pdf.set_font("Arial", '', 11)
@@ -219,14 +221,16 @@ def generate_pdf_fpdf(data, logo_path="logo_expert_stock_pro.png"):
     pdf.set_font("Arial", '', 11)
     pdf.cell(0, 6, txt=f"Status Sentimen: {data['sentiment']}", ln=True)
     pdf.set_font("Arial", 'I', 10)
-    # Gunakan encoding/replace agar karakter aneh dari berita (seperti kutip melengkung) tidak error di fpdf
     aman_headline = data['headline'].encode('latin-1', 'replace').decode('latin-1')
     pdf.multi_cell(0, 6, txt=f"Headline Terakhir: {aman_headline}")
     
     pdf.ln(15)
     pdf.line(10, pdf.get_y(), 200, pdf.get_y())
     pdf.set_font("Arial", 'I', 8)
-    pdf.multi_cell(0, 4, txt="⚠️ **DISCLAIMER:** Laporan analisa ini dihasilkan secara otomatis menggunakan perhitungan algoritma indikator teknikal dan fundamental. Seluruh informasi yang disajikan bukan merupakan ajakan, rekomendasi pasti, atau paksaan untuk membeli/menjual saham. Keputusan investasi dan trading sepenuhnya menjadi tanggung jawab pribadi masing-masing investor. Selalu terapkan manajemen risiko yang baik dan *Do Your Own Research* (DYOR) dan pertimbangkan profil risiko sebelum mengambil keputusan di pasar modal.")
+    
+    # Teks Disclaimer PDF DIBERSIHKAN dari Emoji dan Markdown (bintang)
+    disclaimer_pdf = "DISCLAIMER: Laporan analisa ini dihasilkan secara otomatis menggunakan perhitungan algoritma indikator teknikal dan fundamental. Seluruh informasi yang disajikan bukan merupakan ajakan, rekomendasi pasti, atau paksaan untuk membeli/menjual saham. Keputusan investasi dan trading sepenuhnya menjadi tanggung jawab pribadi masing-masing investor. Selalu terapkan manajemen risiko yang baik dan Do Your Own Research (DYOR) dan pertimbangkan profil risiko sebelum mengambil keputusan di pasar modal."
+    pdf.multi_cell(0, 4, txt=disclaimer_pdf)
     
     return bytes(pdf.output(dest='S').encode('latin1'))
 
