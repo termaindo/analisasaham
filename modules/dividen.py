@@ -1,11 +1,11 @@
-import streamlit as st
+import streamlit st
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
 from fpdf import FPDF
 from datetime import datetime
 import os
-import base64  # FIX: Ditambahkan agar tidak error 'base64 is not defined'
+import base64
 
 # Import dari data_loader & universe
 from modules.data_loader import get_full_stock_data, hitung_div_yield_normal
@@ -115,15 +115,14 @@ def generate_pdf_report(ticker, company, sector, syariah_status,
             pdf.cell(0, 6, clean_text(line), ln=1)
         pdf.ln(3)
 
-    # --- DISCLAIMER LENGKAP ---
+    # --- DISCLAIMER LENGKAP PDF (TANPA ICON) ---
     pdf.ln(5)
     pdf.set_font("Arial", "I", 9)
     pdf.set_text_color(100, 100, 100)
-    disclaimer_text = ("DISCLAIMER: Semua informasi, analisa teknikal, analisa fundamental, ataupun sinyal trading "
-                       "dan analisa-analisa lain yang disediakan di modul ini hanya untuk tujuan edukasi dan informasi. "
-                       "Ini bukan merupakan rekomendasi, ajakan, atau nasihat keuangan untuk membeli atau menjual saham tertentu. "
-                       "Keputusan investasi sepenuhnya berada di tangan Anda. Harap lakukan riset Anda sendiri (Do Your Own Research) "
-                       "dan pertimbangkan profil risiko sebelum mengambil keputusan di pasar modal.")
+    disclaimer_text = ("DISCLAIMER: Laporan analisa ini dihasilkan secara otomatis menggunakan perhitungan algoritma indikator teknikal dan fundamental. "
+                       "Seluruh informasi yang disajikan bukan merupakan ajakan, rekomendasi pasti, atau paksaan untuk membeli/menjual saham. "
+                       "Keputusan investasi sepenuhnya menjadi tanggung jawab pribadi masing-masing investor. Selalu terapkan manajemen risiko yang baik "
+                       "dan Do Your Own Research (DYOR) dan pertimbangkan profil risiko sebelum mengambil keputusan di pasar modal.")
     pdf.multi_cell(0, 5, clean_text(disclaimer_text))
 
     try:
@@ -224,7 +223,7 @@ def run_dividen():
                 </div>
             """, unsafe_allow_html=True)
 
-            # --- SECTIONS (History, Biz, Finansial, Proyeksi) ---
+            # --- SECTIONS ---
             st.header("1. History & Pertumbuhan Dividen")
             st.bar_chart(df_div_annual['Dividends'])
             
@@ -240,7 +239,6 @@ def run_dividen():
 
             # --- EXPORT PDF ---
             st.markdown("---")
-            # Perhitungan ATR untuk Stop Loss
             try:
                 atr = (history['High'] - history['Low']).tail(14).mean()
                 if np.isnan(atr): atr = 0
@@ -255,7 +253,6 @@ def run_dividen():
                 est_dps, curr_price, sl_final, entry_price, status_final
             )
             
-            # Format nama file sesuai instruksi
             file_name_pdf = f"Expert_Stock_Pro_Dividen_{kode_bersih}_{datetime.now().strftime('%Y%m%d')}.pdf"
             
             st.download_button(
@@ -267,4 +264,5 @@ def run_dividen():
             )
             
             st.markdown("---")
-            st.caption("""**DISCLAIMER:** Semua informasi, analisa teknikal, analisa fundamental, ataupun sinyal trading dan analisa-analisa lain yang disediakan di modul ini hanya untuk tujuan edukasi dan informasi. Ini bukan merupakan rekomendasi, ajakan, atau nasihat keuangan untuk membeli atau menjual saham tertentu. Keputusan investasi sepenuhnya berada di tangan Anda. Harap lakukan riset Anda sendiri (*Do Your Own Research*) dan pertimbangkan profil risiko sebelum mengambil keputusan di pasar modal.""")
+            # --- DISCLAIMER WEB ---
+            st.caption("""⚠️ **DISCLAIMER:** Laporan analisa ini dihasilkan secara otomatis menggunakan perhitungan algoritma indikator teknikal dan fundamental. Seluruh informasi yang disajikan bukan merupakan ajakan, rekomendasi pasti, atau paksaan untuk membeli/menjual saham. Keputusan investasi dan trading sepenuhnya menjadi tanggung jawab pribadi masing-masing investor. Selalu terapkan manajemen risiko yang baik dan *Do Your Own Research* (DYOR) dan pertimbangkan profil risiko sebelum mengambil keputusan di pasar modal.""")
