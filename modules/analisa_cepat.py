@@ -111,11 +111,7 @@ def export_analisa_cepat_to_pdf(ticker, company_name, sector, f_score, roe, lbl_
     pdf.set_font("Arial", 'B', 8)
     pdf.cell(190, 5, "DISCLAIMER:", ln=True) 
     pdf.set_font("Arial", 'I', 7)
-    disclaimer_text = ("Semua informasi, analisa teknikal, analisa fundamental, ataupun sinyal trading dan analisa-analisa lain "
-                       "yang disediakan di modul ini hanya untuk tujuan edukasi dan informasi. Ini bukan merupakan rekomendasi, "
-                       "ajakan, atau nasihat keuangan untuk membeli atau menjual saham tertentu. Keputusan investasi sepenuhnya "
-                       "berada di tangan Anda. Harap lakukan riset Anda sendiri (Do Your Own Research) dan pertimbangkan "
-                       "profil risiko sebelum mengambil keputusan di pasar modal.")
+    disclaimer_text = ("⚠️ **DISCLAIMER:** Laporan analisa ini dihasilkan secara otomatis menggunakan perhitungan algoritma indikator teknikal dan fundamental. Seluruh informasi yang disajikan bukan merupakan ajakan, rekomendasi pasti, atau paksaan untuk membeli/menjual saham. Keputusan investasi dan trading sepenuhnya menjadi tanggung jawab pribadi masing-masing investor. Selalu terapkan manajemen risiko yang baik dan *Do Your Own Research* (DYOR) dan pertimbangkan profil risiko sebelum mengambil keputusan di pasar modal.")
     pdf.multi_cell(190, 4, disclaimer_text)
 
     return pdf.output(dest='S').encode('latin-1', 'ignore')
@@ -141,9 +137,9 @@ def run_analisa_cepat():
             """,
             unsafe_allow_html=True
         )
-        st.markdown("<h1 style='text-align: center;'>Analisa Cepat Pro</h1>", unsafe_allow_html=True)
+        st.markdown("<h1 style='text-align: center;'>⚡Analisa Cepat Pro</h1>", unsafe_allow_html=True)
     else:
-        st.markdown("<h1 style='text-align: center;'>Analisa Cepat Pro</h1>", unsafe_allow_html=True)
+        st.markdown("<h1 style='text-align: center;'>⚡Analisa Cepat Pro</h1>", unsafe_allow_html=True)
         st.warning("⚠️ File logo belum ditemukan.")
         
     st.markdown("---")
@@ -445,4 +441,4 @@ def run_analisa_cepat():
 
             # --- 6. DISCLAIMER ---
             st.markdown("---")
-            st.markdown("**DISCLAIMER:** Semua informasi, analisa teknikal, analisa fundamental, ataupun sinyal trading dan analisa-analisa lain yang disediakan di modul ini hanya untuk tujuan edukasi dan informasi. Ini bukan merupakan rekomendasi, ajakan, atau nasihat keuangan untuk membeli atau menjual saham tertentu. Keputusan investasi sepenuhnya berada di tangan Anda. Harap lakukan riset Anda sendiri (*Do Your Own Research*) dan pertimbangkan profil risiko sebelum mengambil keputusan di pasar modal.")
+            st.markdown("⚠️ **DISCLAIMER:** Laporan analisa ini dihasilkan secara otomatis menggunakan perhitungan algoritma indikator teknikal dan fundamental. Seluruh informasi yang disajikan bukan merupakan ajakan, rekomendasi pasti, atau paksaan untuk membeli/menjual saham. Keputusan investasi dan trading sepenuhnya menjadi tanggung jawab pribadi masing-masing investor. Selalu terapkan manajemen risiko yang baik dan *Do Your Own Research* (DYOR) dan pertimbangkan profil risiko sebelum mengambil keputusan di pasar modal.")
