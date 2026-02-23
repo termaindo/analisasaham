@@ -2,7 +2,114 @@ import streamlit as st
 import pandas as pd
 import os
 import base64
+from fpdf import FPDF
+from datetime import datetime
 from modules.data_loader import get_full_stock_data, hitung_div_yield_normal
+
+# --- FUNGSI PDF MENGGUNAKAN FPDF ---
+def generate_pdf_fpdf(data, logo_path="logo_expert_stock_pro.png"):
+    """Membangun PDF dari awal menggunakan fpdf dengan Header Box Hitam elegan"""
+    pdf = FPDF()
+    pdf.add_page()
+    
+    # --- 1. HEADER BOX HITAM ---
+    pdf.set_fill_color(20, 20, 20)  # Warna Hitam (Almost Black)
+    pdf.rect(0, 0, 210, 25, 'F')    # Lebar A4 = 210mm
+    
+    # Cari lokasi logo jika dipanggil dari sub-folder
+    if not os.path.exists(logo_path):
+        if os.path.exists("../logo_expert_stock_pro.png"):
+            logo_path = "../logo_expert_stock_pro.png"
+
+    # a) LOGO dengan Bingkai Emas
+    if os.path.exists(logo_path):
+        pdf.set_fill_color(218, 165, 32) # Goldenrod color
+        pdf.rect(10, 3, 19, 19, 'F')
+        pdf.image(logo_path, x=10.5, y=3.5, w=18, h=18)
+    
+    # b) & c) NAMA APLIKASI & MODUL (Teks Putih)
+    pdf.set_text_color(255, 255, 255)
+    pdf.set_font("Arial", 'B', 16)
+    pdf.set_xy(35, 8) 
+    pdf.cell(0, 10, "Expert Stock Pro - Perbandingan Saham Pro", ln=True)
+    
+    # Reset posisi Y ke bawah kotak hitam
+    pdf.set_y(28)
+    
+    # --- 2. HYPERLINK SUMBER ---
+    pdf.set_font("Arial", 'I', 10)
+    pdf.set_text_color(0, 0, 255)  # Warna Biru
+    pdf.cell(0, 5, "Sumber: https://lynk.id/hahastoresby", ln=True, align='C', link="https://lynk.id/hahastoresby")
+    pdf.ln(2)
+    
+    # --- 3. JUDUL PERBANDINGAN (CENTER) ---
+    pdf.set_text_color(0, 0, 0) # Kembali ke Hitam
+    pdf.set_font("Arial", 'B', 20)
+    tk1, tk2 = data['tk1'], data['tk2']
+    pdf.cell(0, 8, f"{tk1} vs {tk2}", ln=True, align='C')
+    pdf.ln(2)
+    
+    # --- 4. INFO TANGGAL (RATA KANAN) ---
+    pdf.set_font("Arial", 'B', 10)
+    waktu_analisa = datetime.now().strftime("%d-%m-%Y %H:%M")
+    pdf.cell(0, 5, f"Waktu Analisa: {waktu_analisa}", ln=True, align='R')
+    
+    # Garis Bawah Header
+    pdf.set_line_width(0.5)
+    pdf.line(10, pdf.get_y()+2, 200, pdf.get_y()+2)
+    pdf.ln(6)
+
+    # --- 5. TABEL PERBANDINGAN ---
+    pdf.set_font("Arial", 'B', 10)
+    pdf.cell(60, 8, "Kriteria", border=1, align='C')
+    pdf.cell(65, 8, tk1, border=1, align='C')
+    pdf.cell(65, 8, tk2, border=1, align='C')
+    pdf.ln()
+
+    pdf.set_font("Arial", '', 10)
+    comp_data = data['comparison_data']
+    for i in range(len(comp_data['Kriteria'])):
+        # Menghapus emoji secara manual untuk menghindari error FPDF (Latin-1)
+        val1 = str(comp_data[tk1][i]).replace("🐂", "").replace("🐻", "").strip()
+        val2 = str(comp_data[tk2][i]).replace("🐂", "").replace("🐻", "").strip()
+        
+        pdf.cell(60, 8, str(comp_data['Kriteria'][i]), border=1)
+        pdf.cell(65, 8, val1, border=1, align='C')
+        pdf.cell(65, 8, val2, border=1, align='C')
+        pdf.ln()
+
+    pdf.ln(5)
+
+    # --- 6. KESIMPULAN & REKOMENDASI ---
+    pdf.set_font("Arial", 'B', 12)
+    pdf.cell(0, 8, "KESIMPULAN & REKOMENDASI", ln=True)
+    pdf.set_font("Arial", '', 10)
+    pdf.multi_cell(0, 6, f"Pilihan #1: {data['p1']} - {data['r1']}")
+    pdf.multi_cell(0, 6, f"Pilihan #2: {data['p2']} - {data['r2']}")
+    pdf.ln(3)
+
+    pdf.set_font("Arial", 'B', 10)
+    pdf.cell(0, 6, "Saham mana yang paling worth it untuk dibeli SEKARANG?", ln=True)
+    pdf.set_font("Arial", '', 10)
+    pdf.multi_cell(0, 6, f"JAWABAN: {data['best']}\nALASAN: {data['reason']}")
+    pdf.ln(10)
+
+    # --- 7. DISCLAIMER ---
+    pdf.set_font("Arial", 'B', 9)
+    pdf.cell(0, 5, "DISCLAIMER:", ln=True)
+    pdf.set_font("Arial", 'I', 8)
+    disclaimer_text = (
+        "Laporan analisa ini dihasilkan secara otomatis menggunakan perhitungan algoritma indikator teknikal "
+        "dan fundamental. Seluruh informasi yang disajikan bukan merupakan ajakan, rekomendasi pasti, atau "
+        "paksaan untuk membeli/menjual saham. Keputusan investasi dan trading sepenuhnya menjadi tanggung "
+        "jawab pribadi masing-masing investor. Selalu terapkan manajemen risiko yang baik dan Do Your Own "
+        "Research (DYOR) dan pertimbangkan profil risiko sebelum mengambil keputusan di pasar modal."
+    )
+    pdf.multi_cell(0, 5, disclaimer_text)
+
+    # Return bytes dari string output
+    return pdf.output(dest="S").encode('latin1', errors='replace')
+
 
 def run_perbandingan():
     # --- TAMPILAN WEB ---
@@ -167,7 +274,31 @@ def run_perbandingan():
             st.write(f"Bila Anda juga tetap mempertimbangkan saham yang kedua (**{second_ticker}**), maka berikut trading plan untuk mode Day Trading:")
             render_trading_plan(second_ticker, second_history)
 
+            # --- PEMBUATAN PDF & TOMBOL DOWNLOAD ---
+            pdf_data = {
+                'tk1': tk1,
+                'tk2': tk2,
+                'comparison_data': comparison_data,
+                'p1': p1,
+                'p2': p2,
+                'r1': r1,
+                'r2': r2,
+                'best': best,
+                'reason': reason
+            }
+            pdf_bytes = generate_pdf_fpdf(pdf_data)
+            
+            st.markdown("<br>", unsafe_allow_html=True)
+            if pdf_bytes:
+                st.download_button(
+                    label="📄 Unduh Laporan Analisa Perbandingan Saham Pro (PDF)",
+                    data=pdf_bytes,
+                    file_name=f"ExpertStockPro_Perbandingan_{tk1}_vs_{tk2}_{datetime.now().strftime('%Y%m%d')}.pdf",
+                    mime="application/pdf",
+                    use_container_width=True
+                )
+
             # --- PERNYATAAN DISCLAIMER ---
-            st.markdown("<br><br>", unsafe_allow_html=True)
+            st.markdown("<br>", unsafe_allow_html=True)
             st.divider()
-            st.caption(f"⚠️ **DISCLAIMER:** Laporan analisa ini dihasilkan secara otomatis menggunakan perhitungan algoritma indikator teknikal dan fundamental. Seluruh informasi yang disajikan bukan merupakan ajakan, rekomendasi pasti, atau paksaan untuk membeli/menjual saham. Keputusan investasi dan trading sepenuhnya menjadi tanggung jawab pribadi masing-masing investor. Selalu terapkan manajemen risiko yang baik dan *Do Your Own Research* (DYOR).")
+            st.caption(f"⚠️ **DISCLAIMER:** Laporan analisa ini dihasilkan secara otomatis menggunakan perhitungan algoritma indikator teknikal dan fundamental. Seluruh informasi yang disajikan bukan merupakan ajakan, rekomendasi pasti, atau paksaan untuk membeli/menjual saham. Keputusan investasi dan trading sepenuhnya menjadi tanggung jawab pribadi masing-masing investor. Selalu terapkan manajemen risiko yang baik dan *Do Your Own Research* (DYOR) dan pertimbangkan profil risiko sebelum mengambil keputusan di pasar modal.")
