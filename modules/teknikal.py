@@ -236,11 +236,20 @@ def run_teknikal():
     if not os.path.exists(logo_file):
         logo_file = "../logo_expert_stock_pro.png"
         
-    # Tampilkan Logo di Web bagian TENGAH dengan ukuran BESAR
     if os.path.exists(logo_file):
-        c1, c2, c3 = st.columns([1, 1, 1])
-        with c2:
-            st.image(logo_file, use_container_width=True)
+        with open(logo_file, "rb") as f:
+            data = f.read()
+            encoded_img = base64.b64encode(data).decode()
+        
+        st.markdown(
+            f"""
+            <div style="display: flex; justify-content: center; margin-bottom: 10px;">
+                <img src="data:image/png;base64,{encoded_img}" width="150">
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+        
         st.markdown("<h1 style='text-align: center;'>📈 Analisa Teknikal Pro (6 Dimensi Lengkap)</h1>", unsafe_allow_html=True)
     else:
         st.markdown("<h1 style='text-align: center;'>📈 Analisa Teknikal Pro (6 Dimensi Lengkap)</h1>", unsafe_allow_html=True)
