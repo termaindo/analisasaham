@@ -1,4 +1,4 @@
-import streamlit st
+import streamlit as st
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
@@ -211,25 +211,87 @@ def run_dividen():
             company_name = info.get('longName') or ticker_input
             status_syr_icon = "✅" if is_syariah(kode_bersih) else "❌"
             sector = info.get('sector') or 'Sektor Tidak Diketahui'
+            
+            # Menghitung Konfidensi Data untuk Header UI Web
+            metrik_kunci = ['payoutRatio', 'returnOnEquity', 'freeCashflow', 'debtToEquity', 'earningsGrowth', 'trailingEps']
+            tersedia = sum(1 for m in metrik_kunci if info.get(m) is not None)
+            konfidensi_persen = (tersedia / len(metrik_kunci)) * 100
+            conf_color = "🟢" if konfidensi_persen >= 100 else "🟡" if konfidensi_persen >= 70 else "🔴"
+            conf_label = "Tinggi" if konfidensi_persen >= 100 else "Sedang" if konfidensi_persen >= 70 else "Rendah"
 
             st.markdown(f"""
                 <div style="text-align: center; padding: 20px; background-color: #1E1E1E; border-radius: 10px; border: 1px solid #333;">
-                    <h1 style="color: #2ECC71;">🏢 {ticker_input} - {company_name}</h1>
-                    <p>Sektor: {sector} | {status_syr_icon} {'Syariah' if is_syariah(kode_bersih) else 'Non-Syariah'}</p>
-                    <h3>Skor: {total_score}/100</h3>
-                    <div style="background-color: #333; height: 10px; border-radius: 5px;">
+                    <h1 style="color: #2ECC71; margin-bottom: 5px; font-size: 2.5em;">🏢 {ticker_input} - {company_name}</h1>
+                    <p style="color: #A0A0A0; font-size: 1.2em; margin-bottom: 15px;">
+                        Sektor: {sector} | <span style="color: white;">{status_syr_icon} {'Syariah' if is_syariah(kode_bersih) else 'Non-Syariah'}</span>
+                    </p>
+                    <h3 style="color: white; margin-bottom: 5px;">🏆 SKOR KELAYAKAN DIVIDEN</h3>
+                    <div style="background-color: #333; border-radius: 5px; height: 10px; margin-bottom: 10px;">
                         <div style="background-color: #2ECC71; width: {total_score}%; height: 10px; border-radius: 5px;"></div>
                     </div>
+                    <div style="background-color: #2E3317; padding: 10px; border-radius: 5px; border-left: 5px solid #2ECC71; margin-bottom: 10px;">
+                        <p style="color: #D4E157; margin: 0; font-weight: bold; font-size: 1.1em;">
+                            Skor: {total_score}/100 — {score_status}
+                        </p>
+                    </div>
+                    <p style="color: #A0A0A0; font-size: 0.9em; margin: 0;">
+                        Tingkat Kepercayaan Data: {conf_color} {conf_label} ({konfidensi_persen:.0f}% metrik tersedia)
+                    </p>
                 </div>
             """, unsafe_allow_html=True)
+            st.markdown("<br>", unsafe_allow_html=True)
 
-            # --- SECTIONS ---
+            # --- SEKSI 1: HISTORY & PERTUMBUHAN DIVIDEN ---
             st.header("1. History & Pertumbuhan Dividen")
             st.bar_chart(df_div_annual['Dividends'])
             
-            # --- REKOMENDASI ---
-            st.header("5. Rekomendasi")
+            m1, m2, m3, m4 = st.columns(4)
+            m1.metric("Dividend Yield", f"{yield_val:.2f}%")
+            m2.metric("Payout Ratio", f"{payout:.1f}%")
+            m3.metric("Konsistensi", f"{konsistensi}/5 Thn")
+            m4.metric("Growth (CAGR)", f"{cagr*100:.1f}%")
+
+            # --- SEKSI 2: KINERJA BISNIS ---
+            st.header("2. Kinerja Bisnis")
+            col_biz1, col_biz2 = st.columns(2)
+            with col_biz1:
+                st.write("**EPS Growth (YoY):**")
+                st.success(f"📈 {eps_growth:.1f}%") if eps_growth > 0 else st.error(f"📉 {eps_growth:.1f}%")
+            with col_biz2:
+                st.write("**Return on Equity (ROE):**")
+                st.success(f"💎 {roe:.1f}%") if roe > 15 else st.info(f"👍 {roe:.1f}%") if roe > 8 else st.warning(f"⚠️ {roe:.1f}%")
+
+            # --- SEKSI 3: KESEHATAN FINANSIAL ---
+            st.header("3. Kesehatan Finansial")
+            col_fin1, col_fin2 = st.columns(2)
+            with col_fin1:
+                st.write("**Kualitas Kas (FCF):**")
+                st.success("✅ Positif (Dana Aman)") if fcf > 0 else st.error("❌ Negatif (Risiko Kas)")
+            with col_fin2:
+                st.write("**Debt to Equity Ratio (DER):**")
+                st.success(f"✅ {der:.2f}x") if der < 1.0 else st.warning(f"⚠️ {der:.2f}x")
+
+            # --- SEKSI 4: PROYEKSI & PROTEKSI ---
+            st.header("4. Proyeksi & Proteksi")
             est_dps = trailing_eps * (payout / 100)
+            
+            # Sanitasi nilai ATR (Average True Range)
+            try:
+                atr = (history['High'] - history['Low']).tail(14).mean()
+                if np.isnan(atr): atr = 0
+            except: 
+                atr = 0
+            sl_final = max(curr_price - (1.5 * atr), curr_price * 0.92)
+            
+            p1, p2 = st.columns(2)
+            with p1:
+                st.info(f"**Estimasi DPS Mendatang:**\n\nRp {est_dps:,.0f} / Lembar")
+                st.write(f"**Potential Yield:** {(est_dps/curr_price)*100:.2f}%" if curr_price > 0 else "**Potential Yield:** 0.00%")
+            with p2:
+                st.error(f"**Stop Loss Level (Lock 8%):**\n\nRp {sl_final:,.0f}")
+            
+            # --- SEKSI 5: REKOMENDASI ---
+            st.header("5. Rekomendasi")
             entry_price = est_dps / 0.05 if est_dps > 0 else 0
             status_final = "SANGAT LAYAK" if (curr_price < entry_price and total_score >= 80) else "TUNGGU KOREKSI"
             
@@ -239,15 +301,9 @@ def run_dividen():
 
             # --- EXPORT PDF ---
             st.markdown("---")
-            try:
-                atr = (history['High'] - history['Low']).tail(14).mean()
-                if np.isnan(atr): atr = 0
-            except: atr = 0
-            sl_final = max(curr_price - (1.5 * atr), curr_price * 0.92)
-
             pdf_bytes = generate_pdf_report(
                 ticker_input, company_name, sector, "Syariah" if is_syariah(kode_bersih) else "Non-Syariah",
-                total_score, score_status, "Tinggi", 100,
+                total_score, score_status, conf_label, konfidensi_persen,
                 yield_val, payout, konsistensi, cagr, 
                 eps_growth, roe, fcf, der, 
                 est_dps, curr_price, sl_final, entry_price, status_final
