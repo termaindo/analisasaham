@@ -249,6 +249,11 @@ def run_perbandingan():
                 batas_bawah = curr * 0.985
                 entry_bawah = max(batas_bawah, vwap)
                 
+                # Kalkulasi Harga SL & TP berdasarkan Entry Bawah
+                harga_sl = entry_bawah * 0.97        # Turun 3%
+                harga_tp_bawah = entry_bawah * 1.045 # Naik 4.5%
+                harga_tp_atas = entry_bawah * 1.05   # Naik 5%
+                
                 # Menggunakan HTML/CSS untuk memaksakan background biru tua dan font putih
                 st.markdown(f"""
                 <div style="background-color: #0c2b4b; padding: 15px; border-radius: 8px; color: #ffffff; margin-bottom: 15px;">
@@ -256,8 +261,8 @@ def run_perbandingan():
                     <ul style="color: #ffffff; margin-bottom: 0;">
                         <li><b>Harga Saat Ini:</b> Rp {curr:,.0f}</li>
                         <li><b>Rentang Entry (Support Dinamis):</b> dengan Entry Bawah di kisaran <b>Rp {entry_bawah:,.0f}</b> <i>(Maksimal turun 1.5% dari harga saat ini atau di garis VWAP, ambil mana yang lebih tinggi agar tidak menawar terlalu bawah).</i></li>
-                        <li><b>SL:</b> Maksimal turun <b>3%</b> dari harga beli.</li>
-                        <li><b>Target (TP):</b> RRR 1:1.5 (Profit sekitar <b>4.5% - 5%</b>).</li>
+                        <li><b>SL:</b> <b>Rp {harga_sl:,.0f}</b> <i>(Maksimal turun 3% dari harga beli).</i></li>
+                        <li><b>Target (TP):</b> <b>Rp {harga_tp_bawah:,.0f} - Rp {harga_tp_atas:,.0f}</b> <i>(RRR 1:1.5 / Profit sekitar 4.5% - 5%).</i></li>
                     </ul>
                 </div>
                 """, unsafe_allow_html=True)
