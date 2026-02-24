@@ -278,7 +278,15 @@ def generate_pdf_report(data_dict, logo_path="logo_expert_stock_pro.png"):
     pdf.set_font("Arial", 'B', 12)
     pdf.cell(0, 8, "4. VALUASI & MARGIN OF SAFETY", ln=True)
     pdf.set_font("Arial", '', 11)
-    pdf.cell(0, 6, f"Harga Wajar (Median): Rp {data_dict['fair_price']:,.0f}", ln=True)
+    # Menampilkan 4 Harga Wajar
+    pdf.cell(0, 6, f"Harga Wajar (Hist. PBV 5Y): Rp {data_dict['fp_pbv']:,.0f}", ln=True)
+    pdf.cell(0, 6, f"Harga Wajar (Hist. PER 5Y): Rp {data_dict['fp_pe']:,.0f}", ln=True)
+    pdf.cell(0, 6, f"Harga Wajar (Graham Number): Rp {data_dict['fp_graham']:,.0f}", ln=True)
+    pdf.set_font("Arial", 'B', 11) # Median di-bold
+    pdf.cell(0, 6, f"Harga Wajar (Median Final): Rp {data_dict['fair_price']:,.0f}", ln=True)
+    pdf.set_font("Arial", '', 11) # Kembali normal
+    pdf.ln(2)
+    
     pdf.cell(0, 6, f"Harga Saat Ini: Rp {data_dict['curr_price']:,.0f}", ln=True)
     pdf.cell(0, 6, f"Margin of Safety (MOS): {data_dict['mos']:.1f}%", ln=True)
     pdf.cell(0, 6, f"Estimasi Dividen (Rupiah): Rp {data_dict['div_rate']:,.0f} per lembar", ln=True)
@@ -485,11 +493,22 @@ def run_fundamental():
             st.header("3. VALUASI & MARGIN OF SAFETY")
             curr_pe, curr_pbv = info.get('trailingPE', 0), info.get('priceToBook', 0)
             
-            v1, v2, v3, v4 = st.columns(4)
-            v1.metric("PER Terkini", f"{curr_pe:.2f}x", f"Avg 5Y: {mean_pe_5y:.1f}x")
-            v2.metric("PBV Terkini", f"{curr_pbv:.2f}x", f"Avg 5Y: {mean_pbv_5y:.1f}x")
-            v3.metric("Harga Wajar (Median)", f"Rp {fair_price:,.0f}")
-            v4.metric("Est. Dividen", f"Rp {div_rate:,.0f}", f"Yield: {div_yield:.2f}%")
+            # --- PENYESUAIAN TAMPILAN VALUASI DI WEB ---
+            v_col1, v_col2 = st.columns(2)
+            with v_col1:
+                st.markdown("**Metrik Saat Ini vs Historis (5Y)**")
+                st.write(f"• **PER Terkini**: {curr_pe:.2f}x (Avg: {mean_pe_5y:.1f}x)")
+                st.write(f"• **PBV Terkini**: {curr_pbv:.2f}x (Avg: {mean_pbv_5y:.1f}x)")
+                st.write(f"• **Est. Dividen**: Rp {div_rate:,.0f} (Yield: {div_yield:.2f}%)")
+            
+            with v_col2:
+                st.markdown("**Perhitungan Harga Wajar**")
+                st.write(f"• Historis PBV: **Rp {fp_pbv:,.0f}**")
+                st.write(f"• Historis PER: **Rp {fp_pe:,.0f}**")
+                st.write(f"• Graham Number: **Rp {fp_graham:,.0f}**")
+            
+            # Menampilkan Harga Wajar Final (Median) secara menonjol
+            st.info(f"🎯 **Harga Wajar (Median Final): Rp {fair_price:,.0f}**")
             
             warna_mos = "normal" if mos > 0 else "inverse"
             st.metric(label="Margin of Safety (MOS) 🛡️", value=f"{mos:.1f}%", delta="Diskon" if mos > 0 else "Premi (Kemahalan)", delta_color=warna_mos)
@@ -542,6 +561,9 @@ def run_fundamental():
                 'keputusan': keputusan.replace("🌟", "").replace("✅", "").replace("⏳", "").replace("⛔", "").strip(),
                 'alasan': alasan_keputusan,
                 'fair_price': fair_price,
+                'fp_pe': fp_pe,
+                'fp_pbv': fp_pbv,
+                'fp_graham': fp_graham,
                 'curr_price': curr_price,
                 'mos': mos,
                 'sentimen_kesimpulan': pdf_sentimen_kesimpulan,
