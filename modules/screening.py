@@ -5,6 +5,7 @@ import pytz
 import io 
 import os
 import base64
+import holidays # <-- Pustaka baru untuk deteksi tanggal merah
 from datetime import datetime
 from fpdf import FPDF 
 from modules.data_loader import get_full_stock_data 
@@ -120,7 +121,6 @@ def export_to_pdf(hasil_lolos, trade_mode, session, logo_path="logo_expert_stock
         pdf.cell(12, 8, str(f"{item['Skor']:g}"), 1, 0, 'C')
         rentang_pendek = str(item['Rentang_Entry']).replace("Rp ", "")
         pdf.cell(32, 8, rentang_pendek, 1, 0, 'C')
-        # Menambahkan SL dan TP dengan persentase di tabel watchlist PDF
         pdf.cell(36, 8, f"{item['SL']} (-{item['Risk_Pct']}%)", 1, 0, 'C')
         pdf.cell(36, 8, f"{item['TP']} (+{item['Reward_Pct']}%)", 1, 0, 'C')
         pdf.cell(20, 8, str(item['RRR']), 1, 1, 'C')
@@ -130,7 +130,6 @@ def export_to_pdf(hasil_lolos, trade_mode, session, logo_path="logo_expert_stock
     pdf.set_font("Arial", 'B', 8)
     pdf.cell(190, 5, "DISCLAIMER:", ln=True) 
     pdf.set_font("Arial", 'I', 7)
-    # KOREKSI: Menghapus emoji ⚠️ dan markdown (**) agar FPDF tidak error
     disclaimer_text = ("Laporan analisa ini dihasilkan secara otomatis menggunakan perhitungan algoritma indikator teknikal dan fundamental. Seluruh informasi yang disajikan bukan merupakan ajakan, rekomendasi pasti, atau paksaan untuk membeli/menjual saham. Keputusan investasi dan trading sepenuhnya menjadi tanggung jawab pribadi masing-masing investor. Selalu terapkan manajemen risiko yang baik dan Do Your Own Research (DYOR) dan pertimbangkan profil risiko sebelum mengambil keputusan di pasar modal.")
     pdf.multi_cell(190, 4, disclaimer_text)
 
@@ -170,14 +169,31 @@ def calculate_indicators(df, trade_mode):
     
     return df
 
+# --- FUNGSI UPDATE SESI PASAR DENGAN DETEKSI HARI LIBUR ---
 def get_market_session():
     tz = pytz.timezone('Asia/Jakarta')
     now = datetime.now(tz)
+    tanggal_sekarang = now.date()
+    
+    # 1. Cek Akhir Pekan (Sabtu = 5, Minggu = 6)
+    if now.weekday() >= 5: 
+        return "AKHIR PEKAN", "Pasar Tutup."
+        
+    # 2. Cek Tanggal Merah Indonesia
+    # Mengambil database libur Indonesia pada tahun berjalan
+    libur_id = holidays.ID(years=now.year)
+    if tanggal_sekarang in libur_id:
+        nama_libur = libur_id.get(tanggal_sekarang)
+        return "HARI LIBUR NASIONAL", f"Pasar Tutup ({nama_libur})."
+
+    # 3. Logika Jam Trading Normal
     curr_time = now.hour + now.minute/60
-    if now.weekday() >= 5: return "AKHIR PEKAN", "Pasar Tutup."
-    if curr_time < 9.0: return "PRA-PASAR", "Data penutupan kemarin."
-    elif 9.0 <= curr_time <= 16.0: return "LIVE MARKET", "Data Real-Time."
-    else: return "PASCA-PASAR", "Persiapan besok."
+    if curr_time < 9.0: 
+        return "PRA-PASAR", "Data penutupan kemarin."
+    elif 9.0 <= curr_time <= 16.0: 
+        return "LIVE MARKET", "Data Real-Time."
+    else: 
+        return "PASCA-PASAR", "Persiapan besok."
 
 # --- 3. MODUL UTAMA ---
 def run_screening():
@@ -209,7 +225,12 @@ def run_screening():
     trade_mode = st.radio("Pilih Strategi Trading:", ["Day Trading", "Swing Trading"], horizontal=True)
     
     session, status_desc = get_market_session()
-    st.info(f"**Mode Aktif:** {trade_mode} | **Sesi:** {session} ({status_desc})")
+    
+    # Memberi peringatan warna merah/kuning jika pasar sedang tutup/libur
+    if "Tutup" in status_desc:
+        st.warning(f"**Mode Aktif:** {trade_mode} | **Sesi:** {session} ({status_desc})")
+    else:
+        st.info(f"**Mode Aktif:** {trade_mode} | **Sesi:** {session} ({status_desc})")
 
     if 'hasil_screening' not in st.session_state:
         st.session_state.hasil_screening = []
@@ -331,9 +352,7 @@ def run_screening():
         if watchlist:
             st.subheader(f"📋 Radar Watchlist {trade_mode}")
             
-            # --- UPDATE: Menambahkan SL dan TP di Tabel Web ---
             df_watch = pd.DataFrame(watchlist)
-            # Membuat kolom format baru khusus untuk tampilan web
             df_watch['Stop Loss'] = "Rp " + df_watch['SL'].astype(str) + " (-" + df_watch['Risk_Pct'].astype(str) + "%)"
             df_watch['Take Profit'] = "Rp " + df_watch['TP'].astype(str) + " (+" + df_watch['Reward_Pct'].astype(str) + "%)"
             
@@ -342,14 +361,12 @@ def run_screening():
 
         st.markdown("---")
 
-        # Tombol Simpan PDF dipindah ke bawah, dibuat memanjang (lebar penuh)
         mode_str = trade_mode.replace(" ", "") 
         tanggal_str = datetime.now().strftime('%Y%m%d')
         nama_file_pdf = f"ExpertStockPro_Screening_{mode_str}_{tanggal_str}.pdf"
 
         pdf_data = export_to_pdf(res, trade_mode, session)
         
-        # Menggunakan kolom untuk me-layout tombol agar lebih besar/proporsional
         col1, col2, col3 = st.columns([1, 2, 1])
         with col2:
             st.download_button(
@@ -357,12 +374,11 @@ def run_screening():
                 data=pdf_data,
                 file_name=nama_file_pdf,
                 mime="application/pdf",
-                use_container_width=True # Membuat tombol selebar kolom tengah
+                use_container_width=True 
             )
         
-        st.markdown("<br>", unsafe_allow_html=True) # Jarak pandang sebelum disclaimer
+        st.markdown("<br>", unsafe_allow_html=True) 
 
-        # Teks disclaimer di web (Bebas pakai emoji dan markdown karena diproses oleh browser)
         st.caption("⚠️ **DISCLAIMER:** Laporan analisa ini dihasilkan secara otomatis menggunakan perhitungan algoritma indikator teknikal dan fundamental. Seluruh informasi yang disajikan bukan merupakan ajakan, rekomendasi pasti, atau paksaan untuk membeli/menjual saham. Keputusan investasi dan trading sepenuhnya menjadi tanggung jawab pribadi masing-masing investor. Selalu terapkan manajemen risiko yang baik dan *Do Your Own Research* (DYOR) dan pertimbangkan profil risiko sebelum mengambil keputusan di pasar modal.")
 
 if __name__ == "__main__":
