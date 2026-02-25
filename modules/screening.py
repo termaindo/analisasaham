@@ -5,7 +5,7 @@ import pytz
 import io 
 import os
 import base64
-import holidays # <-- Pustaka baru untuk deteksi tanggal merah
+import holidays
 from datetime import datetime
 from fpdf import FPDF 
 from modules.data_loader import get_full_stock_data 
@@ -92,7 +92,14 @@ def export_to_pdf(hasil_lolos, trade_mode, session, logo_path="logo_expert_stock
         pdf.cell(95, 7, f"Indikator RSI: {rsi_bersih}", ln=True)
         
         pdf.set_font("Arial", '', 9)
-        pdf.multi_cell(180, 6, f"Sinyal Teknis: {item['Signal']}")
+        pdf.multi_cell(180, 5, f"Sinyal Teknis: {item['Signal']}")
+        
+        # --- UPDATE: Menambahkan Saran Trading di PDF ---
+        pdf.set_font("Arial", 'B', 8)
+        pdf.set_text_color(0, 51, 102) # Warna biru tua untuk saran
+        pdf.multi_cell(180, 5, f"Saran Plan: {item['Saran']}")
+        pdf.set_text_color(0, 0, 0)
+        
         pdf.ln(2)
         pdf.line(15, pdf.get_y(), 195, pdf.get_y())
         pdf.ln(3)
@@ -180,7 +187,6 @@ def get_market_session():
         return "AKHIR PEKAN", "Pasar Tutup."
         
     # 2. Cek Tanggal Merah Indonesia
-    # Mengambil database libur Indonesia pada tahun berjalan
     libur_id = holidays.ID(years=now.year)
     if tanggal_sekarang in libur_id:
         nama_libur = libur_id.get(tanggal_sekarang)
@@ -267,6 +273,7 @@ def run_screening():
                 score = 0
                 alasan = []
 
+                # --- KALKULASI LOGIKA TRADING MODE ---
                 if trade_mode == "Day Trading":
                     if curr_price > last['VWAP']: score += 25; alasan.append("Above VWAP")
                     if last['Volume'] > (avg_vol_20 * 1.2): score += 20; alasan.append("Vol Spike")
@@ -282,7 +289,9 @@ def run_screening():
                     if last['RSI'] > prev['RSI']: score += 5; alasan.append("RSI Trend")
 
                     entry_bawah = max(last['VWAP'], curr_price * 0.985)
-                    sl_final = curr_price * 0.97 
+                    # Menggunakan 1.5x ATR sesuai update bapak, max turun 3%
+                    sl_atr = curr_price - (1.5 * last['ATR'])
+                    sl_final = max(sl_atr, curr_price * 0.97) 
                     tp_target = curr_price + (curr_price - sl_final) * 1.5
 
                 else: # Swing Trading Mode
@@ -300,6 +309,7 @@ def run_screening():
                     if avg_val_20 > 5e9: score += 10; alasan.append("Liquid (>5M)")
 
                     entry_bawah = max(last['EMA9'], curr_price * 0.96)
+                    # Menggunakan 2.5x ATR, max turun 8%
                     sl_atr = curr_price - (2.5 * last['ATR'])
                     sl_final = max(sl_atr, curr_price * 0.92) 
                     tp_target = curr_price + (curr_price - sl_final) * 2
@@ -307,6 +317,18 @@ def run_screening():
                 rsi_val = f"{last['RSI']:.1f} {'↗️' if last['RSI'] > prev['RSI'] else '↘️'}"
                 rrr = (tp_target - curr_price) / (curr_price - sl_final) if curr_price > sl_final else 0
 
+                # --- EVALUASI SARAN TRADING PLAN ---
+                teks_saran = ""
+                if score < 60:
+                    teks_saran = "Tidak Disarankan untuk Melakukan Trading dulu, karena belum didukung oleh indikator teknikal yang memadai."
+                elif 60 <= score <= 79:
+                    teks_saran = "Kondisi teknikal saat ini belum termasuk Super Trend (mungkin sedang konsolidasi di atas MA 200 atau baru saja menembus Resistance/VWAP). Layak dicicil bertahap (Entry awal)."
+                else: # 80 ke atas
+                    teks_saran = "Kondisi teknikal saat ini termasuk Super Trend (semua indikator selaras). Sangat layak untuk All-in sesuai position sizing dan pertimbangan risiko masing-masing."
+
+                # --- FILTER LOLOS SCREENING ---
+                # Catatan: Karena sistem membuang skor < 60, saham dengan teks_saran "Tidak disarankan"
+                # otomatis tidak akan masuk ke tabel hasil (diabaikan) sesuai standar keamanan screening.
                 if score >= 60 and rrr >= 1.4: 
                     conf = "High" if score >= 80 else "Medium"
                     if conf == "High": high_score_found = True
@@ -321,7 +343,8 @@ def run_screening():
                         "Risk_Pct": round(((curr_price-sl_final)/curr_price)*100, 1),
                         "Reward_Pct": round(((tp_target-curr_price)/curr_price)*100, 1),
                         "Signal": ", ".join(alasan), "RRR": f"{rrr:.1f}x",
-                        "RSI": rsi_val 
+                        "RSI": rsi_val,
+                        "Saran": teks_saran # Menyimpan teks saran ke dalam dictionary
                     })
             except Exception as e: 
                 continue
@@ -347,6 +370,8 @@ def run_screening():
                 st.write(f"**Target:** Rp {item['TP']} (+{item['Reward_Pct']}%)")
                 st.write(f"**Proteksi:** Rp {item['SL']} (-{item['Risk_Pct']}%)")
                 st.info(f"Entry: {item['Rentang_Entry']}")
+                # Menampilkan Saran di Web UI
+                st.caption(f"💡 **Saran:** {item['Saran']}")
         
         st.markdown("---")
         if watchlist:
