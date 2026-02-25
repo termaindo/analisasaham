@@ -9,12 +9,25 @@ import os
 import base64
 from modules.data_loader import get_full_stock_data, hitung_div_yield_normal
 
+# --- FUNGSI PEMBERSIH TEKS PDF ANTI-ERROR ---
+def clean_pdf_text(text):
+    """Menghapus karakter non-latin-1 (seperti en-dash atau emoji) agar tidak merusak FPDF"""
+    return str(text).encode('latin-1', 'ignore').decode('latin-1')
+
 # --- FUNGSI GENERATOR PDF ANALISA CEPAT ---
 def export_analisa_cepat_to_pdf(ticker, company_name, sector, f_score, roe, lbl_solv, eps_g, rev_g,
                                 t_score, avg_value_ma20, rsi, sentiment, curr_per, div_yield,
                                 rekomen, curr, entry_bawah, entry_atas, tp, reward_pct, sl_final, risk_pct, alasan_tek):
     pdf = FPDF()
     pdf.add_page()
+    
+    # Pembersihan Data Teks
+    safe_company = clean_pdf_text(company_name)
+    safe_sector = clean_pdf_text(sector).title()
+    safe_lbl_solv = clean_pdf_text(lbl_solv)
+    safe_sentiment = clean_pdf_text(sentiment)
+    safe_rekomen = clean_pdf_text(rekomen)
+    safe_alasan = clean_pdf_text(alasan_tek)
     
     # 1. HEADER BOX HITAM
     logo_path = "logo_expert_stock_pro.png"
@@ -48,11 +61,11 @@ def export_analisa_cepat_to_pdf(ticker, company_name, sector, f_score, roe, lbl_
     # 3. NAMA SAHAM & PERUSAHAAN (CENTER)
     pdf.set_text_color(0, 0, 0) 
     pdf.set_font("Arial", 'B', 20)
-    pdf.cell(0, 8, f"{ticker} - {company_name}", ln=True, align='C')
+    pdf.cell(0, 8, f"{ticker} - {safe_company}", ln=True, align='C')
     
     # 4. INFO SEKTOR & SYARIAH (CENTER)
     pdf.set_font("Arial", '', 11)
-    pdf.cell(0, 6, f"Sektor: {sector.title()} | Status: Perlu Cek ISSI/JII", ln=True, align='C')
+    pdf.cell(0, 6, f"Sektor: {safe_sector} | Status: Perlu Cek ISSI/JII", ln=True, align='C')
     pdf.ln(2)
     
     # 5. INFO TANGGAL & HARGA (RATA KANAN)
@@ -70,11 +83,8 @@ def export_analisa_cepat_to_pdf(ticker, company_name, sector, f_score, roe, lbl_
     pdf.cell(190, 8, "1. Ringkasan Skor & Sentimen", ln=True)
     pdf.set_font("Arial", '', 10)
     
-    safe_lbl_solv = str(lbl_solv).encode('ascii', 'ignore').decode('ascii')
-    safe_sentiment = str(sentiment).encode('ascii', 'ignore').decode('ascii')
-    
     pdf.multi_cell(190, 6, f"- Fundamental Score: {f_score}/100 (ROE {roe:.1f}%, {safe_lbl_solv}, EPS Grw {eps_g:.1f}%, Rev Grw {rev_g:.1f}%)")
-    pdf.multi_cell(190, 6, f"- Technical Score: {t_score:g}/100 (Trigger: {alasan_tek})")
+    pdf.multi_cell(190, 6, f"- Technical Score: {t_score:g}/100 (Trigger: {safe_alasan})")
     pdf.cell(190, 6, f"- Valuasi Dasar: PER {curr_per:.1f}x | Div. Yield {div_yield:.2f}%", ln=True)
     pdf.cell(190, 6, f"- Sentiment Pasar: {safe_sentiment}", ln=True)
     pdf.ln(4)
@@ -97,7 +107,7 @@ def export_analisa_cepat_to_pdf(ticker, company_name, sector, f_score, roe, lbl_
     else: pdf.set_text_color(200, 0, 0)
     
     pdf.set_font("Arial", 'B', 12)
-    pdf.multi_cell(190, 6, f">> {rekomen} <<")
+    pdf.multi_cell(190, 6, f">> {safe_rekomen} <<")
     pdf.set_text_color(0, 0, 0)
     pdf.set_font("Arial", '', 10)
     pdf.ln(2)
@@ -129,7 +139,7 @@ def export_analisa_cepat_to_pdf(ticker, company_name, sector, f_score, roe, lbl_
     pdf.set_font("Arial", 'B', 8)
     pdf.cell(190, 5, "DISCLAIMER:", ln=True) 
     pdf.set_font("Arial", 'I', 7)
-    disclaimer_text = ("Semua informasi, analisa teknikal, analisa fundamental, ataupun sinyal trading dan analisa-analisa lain "
+    disclaimer_text = clean_pdf_text("Semua informasi, analisa teknikal, analisa fundamental, ataupun sinyal trading dan analisa-analisa lain "
                        "yang disediakan di modul ini hanya untuk tujuan edukasi dan informasi. Ini bukan merupakan rekomendasi, "
                        "ajakan, atau nasihat keuangan untuk membeli atau menjual saham tertentu. Keputusan investasi sepenuhnya "
                        "berada di tangan Anda. Harap lakukan riset Anda sendiri (Do Your Own Research) dan pertimbangkan "
@@ -382,7 +392,7 @@ def run_analisa_cepat():
             if t_score < 60:
                 # Skenario 1: Skor Teknikal < 60 (Dilarang Trading)
                 pesan_trading = "Tidak Disarankan untuk Melakukan Trading dulu, karena belum didukung oleh indikator teknikal yang memadai."
-                trading_plan_html = f"<li><b>5. Trading Plan:</b><br><span style='color:#ff5252; font-weight:bold;'>{pesan_trading}</span></li>"
+                trading_plan_html = f"<li><b>6. Trading Plan:</b><br><span style='color:#ff5252; font-weight:bold;'>{pesan_trading}</span></li>"
             
             elif t_score < 80:
                 # Skenario 2: Skor Teknikal 60 - 79 (Konservatif, RRR 1:1.5)
@@ -400,7 +410,7 @@ def run_analisa_cepat():
                 risk_pct = ((avg_entry - sl_final) / avg_entry) * 100
                 reward_pct = ((tp - avg_entry) / avg_entry) * 100
                 
-                trading_plan_html = f"""<li><b>5. Trading Plan (Swing Target 1:1.5):</b><br>
+                trading_plan_html = f"""<li><b>6. Trading Plan (Swing Target 1:1.5):</b><br>
                     • Harga Sekarang: Rp {int(curr):,.0f}<br>
                     • Usulan Entry: Rp {int(entry_bawah):,.0f} - Rp {int(entry_atas):,.0f} (Maks -1.5% / VWAP)<br>
                     • Titik Target (TP): Rp {int(tp):,.0f} (Potensi Reward: +{reward_pct:.1f}%)<br>
@@ -423,7 +433,7 @@ def run_analisa_cepat():
                 risk_pct = ((avg_entry - sl_final) / avg_entry) * 100
                 reward_pct = ((tp - avg_entry) / avg_entry) * 100
                 
-                trading_plan_html = f"""<li><b>5. Trading Plan (Swing Target 1:2):</b><br>
+                trading_plan_html = f"""<li><b>6. Trading Plan (Swing Target 1:2):</b><br>
                     • Harga Sekarang: Rp {int(curr):,.0f}<br>
                     • Usulan Entry: Rp {int(entry_bawah):,.0f} - Rp {int(entry_atas):,.0f} (Maks -4% / EMA9)<br>
                     • Titik Target (TP): Rp {int(tp):,.0f} (Potensi Reward: +{reward_pct:.1f}%)<br>
@@ -460,8 +470,8 @@ def run_analisa_cepat():
                     <li><b>2. Technical Score ({t_score:g}/100):</b> Trigger -> {teks_alasan}</li>
                     <li><b>3. Sentiment Pasar:</b> <b>{sentiment}</b></li>
                     <li><b>4. Rekomendasi Final:</b> <br><span style="color:{color_rec}; font-weight:bold; font-size:17px;">{rekomen}</span></li>
+                    <li><b>5. Timeframe:</b> Swing Trading (Menengah)</li>
                     {trading_plan_html}
-                    <li><b>6. Timeframe:</b> Swing Trading (Menengah)</li>
                 </ul>
             </div>
             """
