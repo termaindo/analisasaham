@@ -152,11 +152,8 @@ def cek_dan_catat_trial(nama_user, wa_user):
 
 # --- 5. HALAMAN LOGIN (LANDING PAGE KONVERSI & TIMER PER-USER) ---
 def login_page():
-    # Mengambil kode trial untuk ditampilkan di banner promosi
-    try: 
-        kode_trial_tampil = st.secrets["TRIAL_CODE"]
-    except: 
-        kode_trial_tampil = "CUAN14HARI"
+    # Mengambil kode trial dari secrets, default ke CUAN14HARI jika belum diset
+    kode_trial_tampil = st.secrets.get("TRIAL_CODE", "CUAN14HARI")
 
     # Header Landing Page
     st.markdown("""
@@ -203,12 +200,9 @@ def login_page():
             
             if submit_button:
                 # Mengambil password dari st.secrets untuk keamanan validasi
-                try: 
-                    kode_permanen = st.secrets["PASSWORD_RAHASIA"]
-                    kode_trial = st.secrets["TRIAL_CODE"]
-                except: 
-                    kode_permanen = "12345" # Fallback jika secrets belum diset di Streamlit Cloud
-                    kode_trial = "CUAN14HARI"
+                # Jika rahasia tidak ditemukan, beri value absurd agar tidak bisa dijebol pakai 12345
+                kode_permanen = st.secrets.get("PASSWORD_RAHASIA", "KODE_TIDAK_VALID_KARENA_BELUM_DISET_X99")
+                kode_trial = st.secrets.get("TRIAL_CODE", "CUAN14HARI")
                 
                 if nama.strip() == "" or wa.strip() == "": 
                     st.warning("Mohon isi Nama dan Nomor WhatsApp terlebih dahulu.")
@@ -233,7 +227,9 @@ def login_page():
                     else:
                         st.error(pesan_atau_tanggal)
                 else: 
-                    st.error("Kode akses salah atau sudah kadaluwarsa.")
+                    # Gagal masuk: Tampilkan Error dan tawarkan Trial
+                    st.error("❌ Kode akses salah atau sudah kadaluwarsa.")
+                    st.info(f"💡 Belum punya kode akses permanen? Anda bisa mencoba gratis selama 14 hari dengan menggunakan password: **{kode_trial}**")
         
         # Link Pembelian di bawah form
         st.markdown("---")
@@ -332,4 +328,3 @@ if __name__ == "__main__":
         main_app()
     else:
         login_page()
-
