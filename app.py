@@ -1,6 +1,10 @@
 import streamlit as st
 import importlib.util
 import sys
+import pandas as pd
+import os
+from datetime import datetime, timedelta
+import pytz
 
 # --- 1. CONFIG HALAMAN ---
 st.set_page_config(
@@ -80,16 +84,80 @@ st.markdown("""
         border: 1px solid #2ECC71;
         margin-bottom: 30px;
     }
+    
+    /* Kotak Info Promo Trial */
+    .promo-box {
+        background-color: #2c3e50;
+        padding: 12px;
+        border-radius: 8px;
+        border-left: 5px solid #3498db;
+        margin-bottom: 15px;
+        color: white;
+    }
 </style>
 """, unsafe_allow_html=True)
 
 # --- 4. SESSION STATE ---
 if 'logged_in' not in st.session_state: st.session_state.logged_in = False
 if 'user_name' not in st.session_state: st.session_state.user_name = ""
+if 'user_wa' not in st.session_state: st.session_state.user_wa = ""
 if 'current_menu' not in st.session_state: st.session_state.current_menu = "Beranda"
+if 'is_trial' not in st.session_state: st.session_state.is_trial = False
+if 'trial_expiry_date' not in st.session_state: st.session_state.trial_expiry_date = ""
 
-# --- 5. HALAMAN LOGIN (LANDING PAGE KONVERSI) ---
+# --- FUNGSI PENCATATAN TRIAL (SISTEM DATABASE CSV LOKAL) ---
+def cek_dan_catat_trial(nama_user, wa_user):
+    FILE_TRIAL = "data_trial.csv"
+    tz_wib = pytz.timezone('Asia/Jakarta')
+    hari_ini = datetime.now(tz_wib).date()
+    
+    # Bersihkan input WA agar seragam
+    wa_user_bersih = str(wa_user).strip().replace(" ", "").replace("-", "")
+
+    # Buat file CSV jika belum ada (baru pertama kali ada yang trial)
+    if not os.path.exists(FILE_TRIAL):
+        df = pd.DataFrame(columns=["Nomor_WA", "Nama", "Tanggal_Mulai", "Tanggal_Expired"])
+        df.to_csv(FILE_TRIAL, index=False)
+    
+    # Baca data, pastikan Nomor_WA dibaca sebagai string
+    df = pd.read_csv(FILE_TRIAL, dtype={'Nomor_WA': str})
+    
+    # Cek apakah user (berdasarkan Nomor WA) ini sudah pernah login sebelumnya
+    user_exist = df[df['Nomor_WA'] == wa_user_bersih]
+    
+    if not user_exist.empty:
+        # USER LAMA: Cek apakah masih dalam masa 14 hari
+        tgl_expired_str = str(user_exist.iloc[0]['Tanggal_Expired'])
+        tgl_expired = datetime.strptime(tgl_expired_str, "%Y-%m-%d").date()
+        
+        if hari_ini <= tgl_expired:
+            return True, tgl_expired_str # Masih valid
+        else:
+            return False, "❌ Masa trial 14 hari Anda sudah habis. Silakan beli Akses Premium seumur hidup."
+    else:
+        # USER BARU: Berikan 14 hari dari hari ini, lalu simpan datanya
+        tgl_expired = hari_ini + timedelta(days=14)
+        tgl_expired_str = tgl_expired.strftime("%Y-%m-%d")
+        
+        df_baru = pd.DataFrame({
+            "Nomor_WA": [wa_user_bersih],
+            "Nama": [nama_user.strip()], 
+            "Tanggal_Mulai": [hari_ini.strftime("%Y-%m-%d")], 
+            "Tanggal_Expired": [tgl_expired_str]
+        })
+        df = pd.concat([df, df_baru], ignore_index=True)
+        df.to_csv(FILE_TRIAL, index=False)
+        
+        return True, tgl_expired_str
+
+# --- 5. HALAMAN LOGIN (LANDING PAGE KONVERSI & TIMER PER-USER) ---
 def login_page():
+    # Mengambil kode trial untuk ditampilkan di banner promosi
+    try: 
+        kode_trial_tampil = st.secrets["TRIAL_CODE"]
+    except: 
+        kode_trial_tampil = "COBA14HARI"
+
     # Header Landing Page
     st.markdown("""
         <div class="landing-header">
@@ -105,48 +173,84 @@ def login_page():
         ### 🧐 Mengapa Expert Stock Pro?
         Banyak trader rugi karena **telat entry** atau **salah pilih emiten** akibat data yang berantakan. Kami menyatukan semuanya untuk Anda:
         
-        * ✅ **6 Modul Analisa Premium:** Dari Teknikal Pro, Fundamental Pro hingga Kalkulator Dividen.
-        * ✅ **Screening Otomatis:** Temukan saham untuk trading harian atau untuk swing dalam hitungan menit.
+        * ✅ **6 Modul Analisa Premium:** Dari Teknikal Pro hingga Kalkulator Dividen.
+        * ✅ **Screening Otomatis:** Temukan saham *undervalued* dalam hitungan detik.
         * ✅ **Risk Management:** Fitur Stop Loss & Target Price otomatis di setiap analisa.
         * ✅ **Data Real-Time:** Akses langsung ke data pasar Bursa Efek Indonesia.
-        * ✅ **Laporan PDF:** Hasil analisa bisa didownload dalam bentuk PDF.        
+        * ✅ **Laporan PDF:** Hasil analisa bisa didownload dalam bentuk PDF.
         
         **Jangan biarkan peluang cuan lewat begitu saja hanya karena Anda kurang tools profesional.**
         """)
 
     with col_right:
         st.info("### 🔑 Masuk ke Sistem")
+        
+        # MENAMPILKAN KODE TRIAL UNTUK PENGUNJUNG WALK-IN
+        st.markdown(f"""
+        <div class="promo-box">
+            💡 <b>Ingin mencoba aplikasi ini secara gratis?</b><br>
+            Silakan gunakan Password Akses: <code style="color: #2ECC71; font-weight: bold; font-size: 1.2em;">{kode_trial_tampil}</code><br>
+            <span style="font-size: 0.85em; color: #bdc3c7;">Berlaku untuk Free Trial selama 14 hari penuh.</span>
+        </div>
+        """, unsafe_allow_html=True)
+
         with st.form("login_form"):
-            nama = st.text_input("👤 Nama Panggilan", placeholder="Contoh: Rudi")
-            pw = st.text_input("🔑 Password Akses", type="password", placeholder="Masukkan kode akses...")
+            nama = st.text_input("👤 Nama Panggilan", placeholder="Contoh: Sobat Musa")
+            wa = st.text_input("📱 Nomor WhatsApp", placeholder="Contoh: 08123456789")
+            pw = st.text_input("🔑 Password Akses", type="password", placeholder="Masukkan kode akses / trial...")
             
             submit_button = st.form_submit_button("BUKA AKSES DASHBOARD", use_container_width=True)
             
             if submit_button:
+                # Mengambil password dari st.secrets untuk keamanan validasi
                 try: 
-                    correct = st.secrets["PASSWORD_RAHASIA"]
+                    kode_permanen = st.secrets["PASSWORD_RAHASIA"]
+                    kode_trial = st.secrets["TRIAL_CODE"]
                 except: 
-                    correct = "12345" # Fallback jika secrets belum diset
+                    kode_permanen = "12345" # Fallback jika secrets belum diset di Streamlit Cloud
+                    kode_trial = "COBA14HARI"
                 
-                if pw.strip() == correct:
-                    if nama.strip() == "": 
-                        st.warning("Isi nama panggilan terlebih dahulu.")
-                    else:
+                if nama.strip() == "" or wa.strip() == "": 
+                    st.warning("Mohon isi Nama dan Nomor WhatsApp terlebih dahulu.")
+                elif pw.strip() == kode_permanen:
+                    # AKSES PREMIUM PERMANEN
+                    st.session_state.logged_in = True
+                    st.session_state.user_name = nama
+                    st.session_state.user_wa = wa
+                    st.session_state.is_trial = False
+                    st.rerun()
+                elif pw.strip() == kode_trial:
+                    # AKSES TRIAL (Pencatatan by Nomor WA agar unik)
+                    is_valid, pesan_atau_tanggal = cek_dan_catat_trial(nama, wa)
+                    
+                    if is_valid:
                         st.session_state.logged_in = True
                         st.session_state.user_name = nama
+                        st.session_state.user_wa = wa
+                        st.session_state.is_trial = True
+                        st.session_state.trial_expiry_date = pesan_atau_tanggal
                         st.rerun()
+                    else:
+                        st.error(pesan_atau_tanggal)
                 else: 
                     st.error("Kode akses salah atau sudah kadaluwarsa.")
         
+        # Link Pembelian di bawah form
         st.markdown("---")
         st.markdown("<p style='text-align: center; color: #A0A0A0;'>Belum punya akses premium seumur hidup?</p>", unsafe_allow_html=True)
         st.link_button("🛒 DAPATKAN KODE AKSES SEKARANG", "https://lynk.id/hahastoresby", use_container_width=True)
         st.markdown("<p style='text-align: center; font-size: 0.8em; color: #888; margin-top: 10px;'>💳 Aktivasi Instan via Lynk.id</p>", unsafe_allow_html=True)
 
-# --- 6. DASHBOARD (SESUAI ASLINYA) ---
+# --- 6. DASHBOARD ---
 def show_dashboard():
+    # Sapaan menggunakan Nama saja, tanpa memunculkan WA
     st.markdown(f"### 👋 Halo Sobat <span style='color:#ff0000'>{st.session_state.user_name}</span>!", unsafe_allow_html=True)
-    
+
+    # --- BANNER PENGINGAT TRIAL (Hanya muncul jika is_trial == True) ---
+    if st.session_state.is_trial:
+        st.warning(f"⏳ **Mode Trial Aktif!** Akses gratis Anda akan berakhir pada **{st.session_state.trial_expiry_date}**. Jangan sampai kehilangan data analisa, [Beli Akses Permanen Di Sini](https://lynk.id/hahastoresby).")
+
+    # Langsung ke menu dropdown expander (bagi yang premium, notif trial di atas otomatis tidak muncul)
     with st.expander("📖 3 Langkah Mudah Memakai Aplikasi Expert Stock Pro (Baca Ini Dulu)"):
         st.markdown("""
 #### **1. Cara Mulai Analisa**
@@ -192,9 +296,13 @@ def show_dashboard():
 
     st.markdown("---")
     if st.button("Keluar / Logout"):
-        st.session_state.logged_in = False; st.session_state.user_name = ""; st.rerun()
+        st.session_state.logged_in = False
+        st.session_state.user_name = ""
+        st.session_state.user_wa = ""
+        st.session_state.is_trial = False
+        st.rerun()
 
-# --- 7. MAIN ROUTER (SESUAI ASLINYA) ---
+# --- 7. MAIN ROUTER ---
 def main_app():
     if st.session_state.current_menu == "Beranda":
         show_dashboard()
@@ -224,8 +332,3 @@ if __name__ == "__main__":
         main_app()
     else:
         login_page()
-
-
-
-
-
