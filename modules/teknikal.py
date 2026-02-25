@@ -207,11 +207,19 @@ def generate_pdf_fpdf(data, logo_path="logo_expert_stock_pro.png"):
     # --- DIMENSI 5: TRADING PLAN ---
     pdf.set_font("Arial", 'B', 11)
     pdf.cell(0, 8, txt="5. TRADING PLAN", ln=True)
-    pdf.set_font("Arial", '', 11)
-    pdf.cell(0, 6, txt=f"Harga Saat Ini : Rp {data['harga']:,.0f}", ln=True)
-    pdf.cell(0, 6, txt=f"Area Entry     : Rp {data['entry_bawah']:,.0f} - Rp {data['entry_atas']:,.0f}", ln=True)
-    pdf.cell(0, 6, txt=f"Stop Loss      : Rp {data['sl_final']:,.0f} (-{data['risk_pct']:.1f}%)", ln=True)
-    pdf.cell(0, 6, txt=f"Target         : Rp {data['tp_final']:,.0f} (+{data['tp_pct']:.1f}%)", ln=True)
+    
+    # Penyesuaian Tampilan Trading Plan di PDF berdasarkan Skor
+    if data['score'] < 60:
+        pdf.set_font("Arial", 'I', 11)
+        pdf.set_text_color(220, 53, 69) # Warna merah untuk peringatan
+        pdf.multi_cell(0, 6, txt="Tidak Disarankan untuk Melakukan Trading dulu, karena belum didukung oleh indikator teknikal yang memadai.")
+        pdf.set_text_color(0, 0, 0) # Kembali ke warna hitam
+    else:
+        pdf.set_font("Arial", '', 11)
+        pdf.cell(0, 6, txt=f"Harga Saat Ini : Rp {data['harga']:,.0f}", ln=True)
+        pdf.cell(0, 6, txt=f"Area Entry     : Rp {data['entry_bawah']:,.0f} - Rp {data['entry_atas']:,.0f}", ln=True)
+        pdf.cell(0, 6, txt=f"Stop Loss      : Rp {data['sl_final']:,.0f} (-{data['risk_pct']:.1f}%)", ln=True)
+        pdf.cell(0, 6, txt=f"Target         : Rp {data['tp_final']:,.0f} (+{data['tp_pct']:.1f}%)", ln=True)
     
     pdf.ln(5)
     
@@ -378,25 +386,59 @@ def run_teknikal():
             pattern_teks = "Doji" if abs(last['Open']-last['Close']) < (last['High']-last['Low'])*0.1 else "Normal"
             momentum_teks = 'Kuat' if last['RSI'] > 50 else 'Lemah'
             
-            # --- PEMBUATAN TRADING PLAN ---
+            # --- PENYESUAIAN TRADING PLAN BERDASARKAN SKOR ---
             entry_atas = curr_price
-            diskon_4_persen = curr_price * 0.96
-            ema9_sekarang = last['EMA9']
-            entry_bawah = max(ema9_sekarang, diskon_4_persen)
             
-            avg_entry = (entry_atas + entry_bawah) / 2
+            if score >= 80:
+                # Skenario Skor >= 80
+                diskon_entry = curr_price * 0.96 # Turun 4%
+                ema9_sekarang = last['EMA9']
+                entry_bawah = max(ema9_sekarang, diskon_entry) # Ambil yang lebih tinggi
+                avg_entry = (entry_atas + entry_bawah) / 2
+                
+                sl_atr = avg_entry - (2.5 * atr)
+                sl_hard = avg_entry * 0.92 # Turun 8%
+                sl_final = max(sl_atr, sl_hard) 
+                
+                # RRR 1:2
+                risk_nominal = avg_entry - sl_final
+                tp_final = avg_entry + (risk_nominal * 2) 
+                
+                caption_entry = "Maks Koreksi 4% / EMA9"
+                caption_sl = "Maks Risk 8% / 2.5x ATR"
+                caption_tp = "Risk/Reward Ratio 1 : 2.0"
+                
+            elif 60 <= score <= 79:
+                # Skenario Skor 60 - 79
+                diskon_entry = curr_price * 0.985 # Turun 1.5%
+                vwap_sekarang = last['VWAP_20'] if not pd.isna(last['VWAP_20']) else curr_price
+                entry_bawah = max(vwap_sekarang, diskon_entry) # Ambil yang lebih tinggi
+                avg_entry = (entry_atas + entry_bawah) / 2
+                
+                sl_atr = avg_entry - (1.5 * atr)
+                sl_hard = avg_entry * 0.97 # Turun 3%
+                sl_final = max(sl_atr, sl_hard)
+                
+                # RRR 1:1.5
+                risk_nominal = avg_entry - sl_final
+                tp_final = avg_entry + (risk_nominal * 1.5)
+                
+                caption_entry = "Maks Koreksi 1.5% / VWAP"
+                caption_sl = "Maks Risk 3% / 1.5x ATR"
+                caption_tp = "Risk/Reward Ratio 1 : 1.5"
+                
+            else:
+                # Skenario Skor < 60 (Dihitung default untuk mencegah error variabel undefined, walau tidak akan ditampilkan secara penuh)
+                entry_bawah = curr_price
+                avg_entry = curr_price
+                sl_final = curr_price
+                tp_final = curr_price
+                caption_entry = ""
+                caption_sl = ""
+                caption_tp = ""
 
-            sl_atr = avg_entry - (2.5 * atr)
-            sl_hard = avg_entry * 0.92 
-            sl_final = max(sl_atr, sl_hard) 
-
-            risk_nominal = avg_entry - sl_final
-            tp_nominal = avg_entry + (risk_nominal * 2)
-            tp_final = tp_nominal
-
-            risk_pct_riil = ((avg_entry - sl_final) / avg_entry) * 100
-            tp_pct_riil = ((tp_final - avg_entry) / avg_entry) * 100
-            rrr_riil = round(tp_pct_riil / risk_pct_riil, 1) if risk_pct_riil > 0 else 0
+            risk_pct_riil = ((avg_entry - sl_final) / avg_entry) * 100 if avg_entry > 0 else 0
+            tp_pct_riil = ((tp_final - avg_entry) / avg_entry) * 100 if avg_entry > 0 else 0
 
             # --- VISUALISASI CHART ---
             fig = make_subplots(rows=3, cols=1, shared_xaxes=True, vertical_spacing=0.03, row_heights=[0.6, 0.2, 0.2])
@@ -451,19 +493,21 @@ def run_teknikal():
             st.markdown("---")
             st.subheader("5. TRADING SIGNAL & PLAN")
             
-            # Tambahan Format Header Harga Saat Ini di UI
-            st.write(f"#### Harga Saat Ini: Rp {int(curr_price):,.0f}")
-            
-            s1, s2, s3 = st.columns(3)
-            with s1:
-                st.metric("AREA ENTRY", f"Rp {int(entry_bawah):,.0f} - {int(entry_atas):,.0f}")
-                st.caption("Max Koreksi 4% / EMA9")
-            with s2:
-                st.error(f"**STOP LOSS**\n\n**Rp {int(sl_final):,.0f} (-{risk_pct_riil:.1f}%)**")
-                st.caption("Max Risk 8% / 2.5x ATR")
-            with s3:
-                st.success(f"**TARGET PROFIT**\n\n**Rp {int(tp_final):,.0f} (+{tp_pct_riil:.1f}%)**")
-                st.caption(f"Risk/Reward Ratio 1 : {rrr_riil}")
+            if score < 60:
+                st.error("🚨 **Tidak Disarankan untuk Melakukan Trading dulu, karena belum didukung oleh indikator teknikal yang memadai.**")
+            else:
+                st.write(f"#### Harga Saat Ini: Rp {int(curr_price):,.0f}")
+                
+                s1, s2, s3 = st.columns(3)
+                with s1:
+                    st.metric("AREA ENTRY", f"Rp {int(entry_bawah):,.0f} - {int(entry_atas):,.0f}")
+                    st.caption(caption_entry)
+                with s2:
+                    st.error(f"**STOP LOSS**\n\n**Rp {int(sl_final):,.0f} (-{risk_pct_riil:.1f}%)**")
+                    st.caption(caption_sl)
+                with s3:
+                    st.success(f"**TARGET PROFIT**\n\n**Rp {int(tp_final):,.0f} (+{tp_pct_riil:.1f}%)**")
+                    st.caption(caption_tp)
 
             st.markdown("---")
 
