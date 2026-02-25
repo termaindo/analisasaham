@@ -156,7 +156,7 @@ def login_page():
     try: 
         kode_trial_tampil = st.secrets["TRIAL_CODE"]
     except: 
-        kode_trial_tampil = "COBA14HARI"
+        kode_trial_tampil = "CUAN14HARI"
 
     # Header Landing Page
     st.markdown("""
@@ -208,7 +208,7 @@ def login_page():
                     kode_trial = st.secrets["TRIAL_CODE"]
                 except: 
                     kode_permanen = "12345" # Fallback jika secrets belum diset di Streamlit Cloud
-                    kode_trial = "COBA14HARI"
+                    kode_trial = "CUAN14HARI"
                 
                 if nama.strip() == "" or wa.strip() == "": 
                     st.warning("Mohon isi Nama dan Nomor WhatsApp terlebih dahulu.")
@@ -332,3 +332,4 @@ if __name__ == "__main__":
         main_app()
     else:
         login_page()
+
