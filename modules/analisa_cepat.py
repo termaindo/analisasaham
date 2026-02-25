@@ -81,7 +81,15 @@ def export_analisa_cepat_to_pdf(ticker, company_name, sector, f_score, roe, lbl_
 
     # --- 2. TRADING PLAN & REKOMENDASI ---
     pdf.set_font("Arial", 'B', 11)
-    pdf.cell(190, 8, "2. Rekomendasi & Trading Plan (Swing Mode)", ln=True)
+    
+    # Header Dinamis berdasarkan t_score
+    if t_score < 60:
+        pdf.cell(190, 8, "2. Rekomendasi & Trading Plan", ln=True)
+    elif t_score < 80:
+        pdf.cell(190, 8, "2. Rekomendasi & Trading Plan (Swing Target 1:1.5)", ln=True)
+    else:
+        pdf.cell(190, 8, "2. Rekomendasi & Trading Plan (Swing Target 1:2)", ln=True)
+        
     pdf.set_font("Arial", '', 10)
     
     if "All-in" in rekomen: pdf.set_text_color(0, 150, 0)
@@ -94,16 +102,26 @@ def export_analisa_cepat_to_pdf(ticker, company_name, sector, f_score, roe, lbl_
     pdf.set_font("Arial", '', 10)
     pdf.ln(2)
     
-    pdf.cell(190, 6, f"- Harga Sekarang: Rp {int(curr):,.0f}", ln=True)
-    pdf.cell(190, 6, f"- Usulan Entry: Rp {int(entry_bawah):,.0f} - Rp {int(entry_atas):,.0f} (Maks -4% / EMA9)", ln=True)
-    
-    pdf.set_text_color(0, 128, 0) 
-    pdf.cell(190, 6, f"- Take Profit (TP): Rp {tp:,.0f} (+{reward_pct:.1f}%)", ln=True)
-    
-    pdf.set_text_color(200, 0, 0) 
-    pdf.cell(190, 6, f"- Stop Loss (SL): Rp {sl_final:,.0f} (-{risk_pct:.1f}%)", ln=True)
-    
-    pdf.set_text_color(0, 0, 0)
+    # Konten Trading Plan Dinamis
+    if t_score < 60:
+        pdf.set_text_color(200, 0, 0) 
+        pdf.multi_cell(190, 6, "Tidak Disarankan untuk Melakukan Trading dulu, karena belum didukung oleh indikator teknikal yang memadai.")
+        pdf.set_text_color(0, 0, 0)
+    else:
+        pdf.cell(190, 6, f"- Harga Sekarang: Rp {int(curr):,.0f}", ln=True)
+        
+        if t_score < 80:
+            pdf.cell(190, 6, f"- Usulan Entry: Rp {int(entry_bawah):,.0f} - Rp {int(entry_atas):,.0f} (Maks -1.5% / VWAP)", ln=True)
+        else:
+            pdf.cell(190, 6, f"- Usulan Entry: Rp {int(entry_bawah):,.0f} - Rp {int(entry_atas):,.0f} (Maks -4% / EMA9)", ln=True)
+        
+        pdf.set_text_color(0, 128, 0) 
+        pdf.cell(190, 6, f"- Take Profit (TP): Rp {tp:,.0f} (+{reward_pct:.1f}%)", ln=True)
+        
+        pdf.set_text_color(200, 0, 0) 
+        pdf.cell(190, 6, f"- Stop Loss (SL): Rp {sl_final:,.0f} (-{risk_pct:.1f}%)", ln=True)
+        
+        pdf.set_text_color(0, 0, 0)
     pdf.ln(10)
 
     # --- FOOTER & DISCLAIMER ---
@@ -111,7 +129,11 @@ def export_analisa_cepat_to_pdf(ticker, company_name, sector, f_score, roe, lbl_
     pdf.set_font("Arial", 'B', 8)
     pdf.cell(190, 5, "DISCLAIMER:", ln=True) 
     pdf.set_font("Arial", 'I', 7)
-    disclaimer_text = ("⚠️ **DISCLAIMER:** Laporan analisa ini dihasilkan secara otomatis menggunakan perhitungan algoritma indikator teknikal dan fundamental. Seluruh informasi yang disajikan bukan merupakan ajakan, rekomendasi pasti, atau paksaan untuk membeli/menjual saham. Keputusan investasi dan trading sepenuhnya menjadi tanggung jawab pribadi masing-masing investor. Selalu terapkan manajemen risiko yang baik dan *Do Your Own Research* (DYOR) dan pertimbangkan profil risiko sebelum mengambil keputusan di pasar modal.")
+    disclaimer_text = ("Semua informasi, analisa teknikal, analisa fundamental, ataupun sinyal trading dan analisa-analisa lain "
+                       "yang disediakan di modul ini hanya untuk tujuan edukasi dan informasi. Ini bukan merupakan rekomendasi, "
+                       "ajakan, atau nasihat keuangan untuk membeli atau menjual saham tertentu. Keputusan investasi sepenuhnya "
+                       "berada di tangan Anda. Harap lakukan riset Anda sendiri (Do Your Own Research) dan pertimbangkan "
+                       "profil risiko sebelum mengambil keputusan di pasar modal.")
     pdf.multi_cell(190, 4, disclaimer_text)
 
     return pdf.output(dest='S').encode('latin-1', 'ignore')
@@ -137,9 +159,9 @@ def run_analisa_cepat():
             """,
             unsafe_allow_html=True
         )
-        st.markdown("<h1 style='text-align: center;'>⚡Analisa Cepat Pro</h1>", unsafe_allow_html=True)
+        st.markdown("<h1 style='text-align: center;'>Analisa Cepat Pro</h1>", unsafe_allow_html=True)
     else:
-        st.markdown("<h1 style='text-align: center;'>⚡Analisa Cepat Pro</h1>", unsafe_allow_html=True)
+        st.markdown("<h1 style='text-align: center;'>Analisa Cepat Pro</h1>", unsafe_allow_html=True)
         st.warning("⚠️ File logo belum ditemukan.")
         
     st.markdown("---")
@@ -156,7 +178,7 @@ def run_analisa_cepat():
             info = data['info']
             df = data['history']
             financials = data.get('financials', pd.DataFrame()) 
-            cashflow = data.get('cashflow', pd.DataFrame())  # DITAMBAHKAN UNTUK KESELARASAN OCF
+            cashflow = data.get('cashflow', pd.DataFrame()) 
             
             if df.empty or not info:
                 st.error("Data gagal dimuat. Mohon tunggu 1 menit lalu 'Clear Cache' di pojok kanan atas.")
@@ -213,7 +235,7 @@ def run_analisa_cepat():
             f_score = 0
             t_score = 0
             
-            # === A. PENILAIAN FUNDAMENTAL (IDENTIK 100% DENGAN fundamental.py) ===
+            # === A. PENILAIAN FUNDAMENTAL ===
             sector = info.get('sector', '')
             industry = info.get('industry', '')
             
@@ -222,7 +244,7 @@ def run_analisa_cepat():
             
             der_ratio = info.get('debtToEquity', 0) / 100 if info.get('debtToEquity') else 0
             lbl_solv = ""
-            car, npl = 0, 0 # Setup untuk tampilan data raw
+            car, npl = 0, 0
 
             # i) KESEHATAN KEUANGAN & SOLVABILITAS (Maks 20)
             if is_bank:
@@ -299,7 +321,7 @@ def run_analisa_cepat():
             elif rev_g >= 0: f_score += 5
 
             # v) KUALITAS ARUS KAS (Maks 10)
-            ocf = 0 # Nilai awal aman
+            ocf = 0
             try:
                 if not cashflow.empty and not financials.empty:
                     ocf = cashflow.loc['Operating Cash Flow'].iloc[0] if 'Operating Cash Flow' in cashflow.index else 0
@@ -342,7 +364,7 @@ def run_analisa_cepat():
 
             teks_alasan = ", ".join(alasan_tek) if alasan_tek else "Tidak ada sinyal kuat"
 
-            # --- 4. RENTANG ENTRY & TRADING PLAN ---
+            # --- 4. RENTANG ENTRY & TRADING PLAN (DINAMIS BERDASARKAN T_SCORE) ---
             high_low = df['High'] - df['Low']
             high_close = np.abs(df['High'] - df['Close'].shift())
             low_close = np.abs(df['Low'] - df['Close'].shift())
@@ -350,23 +372,65 @@ def run_analisa_cepat():
             atr = ranges.max(axis=1).rolling(14).mean().iloc[-1]
             
             entry_atas = curr
-            batas_diskon_4pct = curr * 0.96
+            entry_bawah = curr
+            tp = curr
+            sl_final = curr
+            risk_pct = 0
+            reward_pct = 0
+            trading_plan_html = ""
+
+            if t_score < 60:
+                # Skenario 1: Skor Teknikal < 60 (Dilarang Trading)
+                pesan_trading = "Tidak Disarankan untuk Melakukan Trading dulu, karena belum didukung oleh indikator teknikal yang memadai."
+                trading_plan_html = f"<li><b>5. Trading Plan:</b><br><span style='color:#ff5252; font-weight:bold;'>{pesan_trading}</span></li>"
             
-            if ema9_val < curr:
-                entry_bawah = max(ema9_val, batas_diskon_4pct)
-            else:
-                entry_bawah = batas_diskon_4pct
+            elif t_score < 80:
+                # Skenario 2: Skor Teknikal 60 - 79 (Konservatif, RRR 1:1.5)
+                batas_diskon_1_5pct = curr * 0.985
+                entry_bawah = max(vwap_val, batas_diskon_1_5pct)
+                entry_bawah = min(entry_bawah, curr) # Mencegah entry lebih tinggi dari harga sekarang
+                avg_entry = (entry_atas + entry_bawah) / 2
                 
-            avg_entry = (entry_atas + entry_bawah) / 2
-            
-            sl_atr = curr - (2.5 * atr)
-            sl_final = max(sl_atr, curr * 0.92) 
-            
-            tp = int(avg_entry + (avg_entry - sl_final) * 2)
-            
-            risk_pct = ((avg_entry - sl_final) / avg_entry) * 100
-            reward_pct = ((tp - avg_entry) / avg_entry) * 100
-            
+                sl_atr = avg_entry - (1.5 * atr)
+                sl_max_drop = avg_entry * 0.97 # Max turun 3%
+                sl_final = max(sl_atr, sl_max_drop)
+                
+                tp = avg_entry + ((avg_entry - sl_final) * 1.5) # RRR 1:1.5
+                
+                risk_pct = ((avg_entry - sl_final) / avg_entry) * 100
+                reward_pct = ((tp - avg_entry) / avg_entry) * 100
+                
+                trading_plan_html = f"""<li><b>5. Trading Plan (Swing Target 1:1.5):</b><br>
+                    • Harga Sekarang: Rp {int(curr):,.0f}<br>
+                    • Usulan Entry: Rp {int(entry_bawah):,.0f} - Rp {int(entry_atas):,.0f} (Maks -1.5% / VWAP)<br>
+                    • Titik Target (TP): Rp {int(tp):,.0f} (Potensi Reward: +{reward_pct:.1f}%)<br>
+                    • Batas Risiko (SL): Rp {int(sl_final):,.0f} (Risiko Maks: -{risk_pct:.1f}%)
+                </li>"""
+                
+            else:
+                # Skenario 3: Skor Teknikal >= 80 (Agresif, RRR 1:2)
+                batas_diskon_4pct = curr * 0.96
+                entry_bawah = max(ema9_val, batas_diskon_4pct)
+                entry_bawah = min(entry_bawah, curr)
+                avg_entry = (entry_atas + entry_bawah) / 2
+                
+                sl_atr = avg_entry - (2.5 * atr)
+                sl_max_drop = avg_entry * 0.92 # Max turun 8%
+                sl_final = max(sl_atr, sl_max_drop)
+                
+                tp = avg_entry + ((avg_entry - sl_final) * 2) # RRR 1:2
+                
+                risk_pct = ((avg_entry - sl_final) / avg_entry) * 100
+                reward_pct = ((tp - avg_entry) / avg_entry) * 100
+                
+                trading_plan_html = f"""<li><b>5. Trading Plan (Swing Target 1:2):</b><br>
+                    • Harga Sekarang: Rp {int(curr):,.0f}<br>
+                    • Usulan Entry: Rp {int(entry_bawah):,.0f} - Rp {int(entry_atas):,.0f} (Maks -4% / EMA9)<br>
+                    • Titik Target (TP): Rp {int(tp):,.0f} (Potensi Reward: +{reward_pct:.1f}%)<br>
+                    • Batas Risiko (SL): Rp {int(sl_final):,.0f} (Risiko Maks: -{risk_pct:.1f}%)
+                </li>"""
+
+            # Tentukan Sentimen
             if curr > ma50_val and curr > ma200_val: sentiment = "BULLISH (Sangat Kuat) 🐂"
             elif curr > ema21_val: sentiment = "MILD BULLISH (Jangka Pendek) 🐃"
             elif curr < ma200_val: sentiment = "BEARISH (Hati-hati) 🐻"
@@ -396,12 +460,7 @@ def run_analisa_cepat():
                     <li><b>2. Technical Score ({t_score:g}/100):</b> Trigger -> {teks_alasan}</li>
                     <li><b>3. Sentiment Pasar:</b> <b>{sentiment}</b></li>
                     <li><b>4. Rekomendasi Final:</b> <br><span style="color:{color_rec}; font-weight:bold; font-size:17px;">{rekomen}</span></li>
-                    <li><b>5. Trading Plan (Swing Target 1:2):</b><br>
-                        • Harga Sekarang: Rp {int(curr):,.0f}<br>
-                        • Usulan Entry: Rp {int(entry_bawah):,.0f} - Rp {int(entry_atas):,.0f} (Maks -4% / EMA9)<br>
-                        • Titik Target (TP): Rp {tp:,.0f} (Potensi Reward: +{reward_pct:.1f}%)<br>
-                        • Batas Risiko (SL): Rp {sl_final:,.0f} (Risiko Maks: -{risk_pct:.1f}%)
-                    </li>
+                    {trading_plan_html}
                     <li><b>6. Timeframe:</b> Swing Trading (Menengah)</li>
                 </ul>
             </div>
@@ -441,4 +500,4 @@ def run_analisa_cepat():
 
             # --- 6. DISCLAIMER ---
             st.markdown("---")
-            st.markdown("⚠️ **DISCLAIMER:** Laporan analisa ini dihasilkan secara otomatis menggunakan perhitungan algoritma indikator teknikal dan fundamental. Seluruh informasi yang disajikan bukan merupakan ajakan, rekomendasi pasti, atau paksaan untuk membeli/menjual saham. Keputusan investasi dan trading sepenuhnya menjadi tanggung jawab pribadi masing-masing investor. Selalu terapkan manajemen risiko yang baik dan *Do Your Own Research* (DYOR) dan pertimbangkan profil risiko sebelum mengambil keputusan di pasar modal.")
+            st.markdown("**DISCLAIMER:** Semua informasi, analisa teknikal, analisa fundamental, ataupun sinyal trading dan analisa-analisa lain yang disediakan di modul ini hanya untuk tujuan edukasi dan informasi. Ini bukan merupakan rekomendasi, ajakan, atau nasihat keuangan untuk membeli atau menjual saham tertentu. Keputusan investasi sepenuhnya berada di tangan Anda. Harap lakukan riset Anda sendiri (*Do Your Own Research*) dan pertimbangkan profil risiko sebelum mengambil keputusan di pasar modal.")
