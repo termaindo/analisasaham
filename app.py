@@ -2,9 +2,10 @@ import streamlit as st
 import importlib.util
 import sys
 import pandas as pd
-import os
 from datetime import datetime, timedelta
 import pytz
+import gspread
+from google.oauth2.service_account import Credentials
 
 # --- 1. CONFIG HALAMAN ---
 st.set_page_config(
@@ -105,26 +106,50 @@ if 'current_menu' not in st.session_state: st.session_state.current_menu = "Bera
 if 'is_trial' not in st.session_state: st.session_state.is_trial = False
 if 'trial_expiry_date' not in st.session_state: st.session_state.trial_expiry_date = ""
 
-# --- FUNGSI PENCATATAN TRIAL (SISTEM DATABASE CSV LOKAL) ---
+# --- FUNGSI PENCATATAN TRIAL KE GOOGLE SHEETS ---
 def cek_dan_catat_trial(nama_user, wa_user):
-    FILE_TRIAL = "data_trial.csv"
     tz_wib = pytz.timezone('Asia/Jakarta')
     hari_ini = datetime.now(tz_wib).date()
-    
-    # Bersihkan input WA agar seragam
     wa_user_bersih = str(wa_user).strip().replace(" ", "").replace("-", "")
 
-    # Buat file CSV jika belum ada (baru pertama kali ada yang trial)
-    if not os.path.exists(FILE_TRIAL):
-        df = pd.DataFrame(columns=["Nomor_WA", "Nama", "Tanggal_Mulai", "Tanggal_Expired"])
-        df.to_csv(FILE_TRIAL, index=False)
-    
-    # Baca data, pastikan Nomor_WA dibaca sebagai string
-    df = pd.read_csv(FILE_TRIAL, dtype={'Nomor_WA': str})
-    
-    # Cek apakah user (berdasarkan Nomor WA) ini sudah pernah login sebelumnya
-    user_exist = df[df['Nomor_WA'] == wa_user_bersih]
-    
+    # 1. KONEKSI KE GOOGLE SHEETS
+    try:
+        # Scope otorisasi API Google
+        scopes = [
+            'https://www.googleapis.com/auth/spreadsheets',
+            'https://www.googleapis.com/auth/drive'
+        ]
+        # Mengambil kredensial dari Streamlit Secrets
+        s_creds = st.secrets["gcp_service_account"]
+        creds = Credentials.from_service_account_info(s_creds, scopes=scopes)
+        client = gspread.authorize(creds)
+        
+        # Buka Google Sheet berdasarkan namanya (Pastikan nama ini sama persis di Google Drive Bapak)
+        sheet = client.open("Data_Trial_ExpertStockPro").sheet1
+        
+        # Ambil semua data
+        records = sheet.get_all_records()
+        
+        # Jika sheet kosong, buat DataFrame kosong dan langsung siapkan header di Google Sheets
+        if not records:
+            sheet.append_row(["Nomor_WA", "Nama", "Tanggal_Mulai", "Tanggal_Expired"])
+            df = pd.DataFrame(columns=["Nomor_WA", "Nama", "Tanggal_Mulai", "Tanggal_Expired"])
+        else:
+            df = pd.DataFrame(records)
+
+    except Exception as e:
+        # Jika terjadi masalah koneksi (misal secrets belum diisi)
+        st.error("⚠️ Sistem Database sedang maintenance. Silakan hubungi Admin.")
+        return False, "Koneksi Google Sheets Gagal."
+
+    # 2. LOGIKA PENGECEKAN USER
+    if 'Nomor_WA' in df.columns:
+        # Pastikan format WA yang dibaca dari excel berupa text/string
+        df['Nomor_WA'] = df['Nomor_WA'].astype(str)
+        user_exist = df[df['Nomor_WA'] == wa_user_bersih]
+    else:
+        user_exist = pd.DataFrame()
+
     if not user_exist.empty:
         # USER LAMA: Cek apakah masih dalam masa 14 hari
         tgl_expired_str = str(user_exist.iloc[0]['Tanggal_Expired'])
@@ -135,20 +160,16 @@ def cek_dan_catat_trial(nama_user, wa_user):
         else:
             return False, "❌ Masa trial 14 hari Anda sudah habis. Silakan beli Akses Premium seumur hidup."
     else:
-        # USER BARU: Berikan 14 hari dari hari ini, lalu simpan datanya
+        # USER BARU: Berikan 14 hari dari hari ini, catat langsung ke Google Sheets
         tgl_expired = hari_ini + timedelta(days=14)
         tgl_expired_str = tgl_expired.strftime("%Y-%m-%d")
         
-        df_baru = pd.DataFrame({
-            "Nomor_WA": [wa_user_bersih],
-            "Nama": [nama_user.strip()], 
-            "Tanggal_Mulai": [hari_ini.strftime("%Y-%m-%d")], 
-            "Tanggal_Expired": [tgl_expired_str]
-        })
-        df = pd.concat([df, df_baru], ignore_index=True)
-        df.to_csv(FILE_TRIAL, index=False)
-        
-        return True, tgl_expired_str
+        try:
+            # Insert baris baru ke Google Sheets
+            sheet.append_row([wa_user_bersih, nama_user.strip(), hari_ini.strftime("%Y-%m-%d"), tgl_expired_str])
+            return True, tgl_expired_str
+        except Exception as e:
+            return False, "❌ Gagal menyimpan data trial. Coba beberapa saat lagi."
 
 # --- 5. HALAMAN LOGIN (LANDING PAGE KONVERSI & TIMER PER-USER) ---
 def login_page():
@@ -200,7 +221,6 @@ def login_page():
             
             if submit_button:
                 # Mengambil password dari st.secrets untuk keamanan validasi
-                # Jika rahasia tidak ditemukan, beri value absurd agar tidak bisa dijebol pakai 12345
                 kode_permanen = st.secrets.get("PASSWORD_RAHASIA", "KODE_TIDAK_VALID_KARENA_BELUM_DISET_X99")
                 kode_trial = st.secrets.get("TRIAL_CODE", "CUAN14HARI")
                 
@@ -214,7 +234,7 @@ def login_page():
                     st.session_state.is_trial = False
                     st.rerun()
                 elif pw.strip() == kode_trial:
-                    # AKSES TRIAL (Pencatatan by Nomor WA agar unik)
+                    # AKSES TRIAL (Pencatatan Google Sheets)
                     is_valid, pesan_atau_tanggal = cek_dan_catat_trial(nama, wa)
                     
                     if is_valid:
@@ -242,11 +262,10 @@ def show_dashboard():
     # Sapaan menggunakan Nama saja, tanpa memunculkan WA
     st.markdown(f"### 👋 Halo Sobat <span style='color:#ff0000'>{st.session_state.user_name}</span>!", unsafe_allow_html=True)
 
-    # --- BANNER PENGINGAT TRIAL (Hanya muncul jika is_trial == True) ---
+    # --- BANNER PENGINGAT TRIAL ---
     if st.session_state.is_trial:
         st.warning(f"⏳ **Mode Trial Aktif!** Akses gratis Anda akan berakhir pada **{st.session_state.trial_expiry_date}**. Jangan sampai kehilangan data analisa, [Beli Akses Permanen Di Sini](https://lynk.id/hahastoresby).")
 
-    # Langsung ke menu dropdown expander (bagi yang premium, notif trial di atas otomatis tidak muncul)
     with st.expander("📖 3 Langkah Mudah Memakai Aplikasi Expert Stock Pro (Baca Ini Dulu)"):
         st.markdown("""
 #### **1. Cara Mulai Analisa**
@@ -257,7 +276,6 @@ def show_dashboard():
 * Bila sudah selesai analisa, klik tombol menu "Menu Utama" untuk kembali ke Beranda.
         """)
     
-    # JUDUL MENCOLOK (EXPERT STOCK PRO)
     st.markdown("<h1 style='text-align: center; color: #ff0000; letter-spacing: 2px;'>📈 EXPERT STOCK PRO</h1>", unsafe_allow_html=True)
     st.write("Silakan pilih menu analisa:")
     st.markdown("---")
