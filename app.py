@@ -138,8 +138,8 @@ def cek_dan_catat_trial(nama_user, wa_user):
             df = pd.DataFrame(records)
 
     except Exception as e:
-        # Jika terjadi masalah koneksi (misal secrets belum diisi)
-        st.error("⚠️ Sistem Database sedang maintenance. Silakan hubungi Admin.")
+        # Menampilkan pesan error asli untuk perbaikan
+        st.error(f"⚠️ Error Asli: {e}")
         return False, "Koneksi Google Sheets Gagal."
 
     # 2. LOGIKA PENGECEKAN USER
@@ -346,3 +346,4 @@ if __name__ == "__main__":
         main_app()
     else:
         login_page()
+
