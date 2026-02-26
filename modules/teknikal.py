@@ -6,7 +6,6 @@ from plotly.subplots import make_subplots
 import base64
 from datetime import datetime
 import os
-import yfinance as yf
 from fpdf import FPDF
 
 # --- MENGGUNAKAN RELATIVE IMPORT SEBAGAI PENGAMAN ---
