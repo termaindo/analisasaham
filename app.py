@@ -119,8 +119,14 @@ def cek_dan_catat_trial(nama_user, wa_user):
             'https://www.googleapis.com/auth/spreadsheets',
             'https://www.googleapis.com/auth/drive'
         ]
-        # Mengambil kredensial dari Streamlit Secrets
-        s_creds = st.secrets["gcp_service_account"]
+        
+        # Mengambil kredensial dari Streamlit Secrets dan jadikan Dictionary
+        s_creds = dict(st.secrets["gcp_service_account"])
+        
+        # --- PENYEMBUH ERROR PEM (MALFORMED FRAMING) ---
+        # Memaksa teks "\n" menjadi baris baru (Enter) sungguhan agar bisa dibaca Google
+        s_creds["private_key"] = s_creds["private_key"].replace('\\n', '\n')
+        
         creds = Credentials.from_service_account_info(s_creds, scopes=scopes)
         client = gspread.authorize(creds)
         
@@ -346,4 +352,3 @@ if __name__ == "__main__":
         main_app()
     else:
         login_page()
-
