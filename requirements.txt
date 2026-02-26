@@ -8,3 +8,4 @@ yfinance
 fpdf
 holidays
 pytz
+gspread
