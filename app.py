@@ -123,9 +123,21 @@ def cek_dan_catat_trial(nama_user, wa_user):
         # Mengambil kredensial dari Streamlit Secrets dan jadikan Dictionary
         s_creds = dict(st.secrets["gcp_service_account"])
         
-        # --- PENYEMBUH ERROR PEM (MALFORMED FRAMING) ---
-        # Memaksa teks "\n" menjadi baris baru (Enter) sungguhan agar bisa dibaca Google
-        s_creds["private_key"] = s_creds["private_key"].replace('\\n', '\n')
+        # --- PENYEMBUH ERROR PEM (PERTAHANAN BERLAPIS) ---
+        pk = str(s_creds.get("private_key", ""))
+        # 1. Paksa semua jenis literal \n menjadi Enter (newline) yang sesungguhnya
+        pk = pk.replace("\\n", "\n").replace("\\r", "")
+        # 2. Bersihkan tanda kutip nyasar yang kadang ditambahkan otomatis oleh sistem
+        pk = pk.strip('"').strip("'").strip()
+        
+        # 3. Validasi Darurat: Jika tanpa sengaja header/footer terhapus saat copy paste
+        if "-----BEGIN PRIVATE KEY-----" not in pk:
+            pk = "-----BEGIN PRIVATE KEY-----\n" + pk
+        if "-----END PRIVATE KEY-----" not in pk:
+            pk = pk + "\n-----END PRIVATE KEY-----\n"
+            
+        # Simpan kembali kunci yang sudah dicuci bersih
+        s_creds["private_key"] = pk
         
         creds = Credentials.from_service_account_info(s_creds, scopes=scopes)
         client = gspread.authorize(creds)
