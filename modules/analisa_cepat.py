@@ -55,7 +55,7 @@ def export_analisa_cepat_to_pdf(ticker, company_name, sector, f_score, roe, lbl_
     # 2. HYPERLINK SUMBER
     pdf.set_font("Arial", 'I', 10)
     pdf.set_text_color(0, 0, 255)  
-    pdf.cell(0, 5, "Sumber: https://lynk.id/hahastoresby", ln=True, align='C', link="https://lynk.id/hahastoresby")
+    pdf.cell(0, 5, "Sumber: https://pintarsaham.streamlit.app", ln=True, align='C', link="https://lynk.id/hahastoresby")
     pdf.ln(2)
     
     # 3. NAMA SAHAM & PERUSAHAAN (CENTER)
