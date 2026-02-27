@@ -7,13 +7,24 @@ import pytz
 import gspread
 from google.oauth2.service_account import Credentials
 
-# --- 1. CONFIG HALAMAN ---
+# --- 1. CONFIG HALAMAN & SEO ---
 st.set_page_config(
-    page_title="Expert Stock Pro",
+    page_title="Expert Stock Pro: Level Up Analisa Saham BEI",
     page_icon="📈",
     layout="wide",
     initial_sidebar_state="collapsed"
 )
+
+# Menambahkan Meta Tags SEO ke dalam halaman HTML Streamlit
+st.markdown("""
+    <meta name="description" content="Berhenti menebak arah pasar! Aplikasi analisa saham BEI dengan 6 modul premium: teknikal, fundamental & screening otomatis. Klaim trial 14 hari Anda sekarang.">
+    <meta name="keywords" content="analisa saham, screening saham, saham BEI, aplikasi saham, trading saham, expert stock pro, teknikal saham, fundamental saham, drs. Musa Tanaja, M.Si.">
+    <meta name="author" content="drs. Musa Tanaja, M.Si.">
+    
+    <meta property="og:title" content="Expert Stock Pro: Level Up Analisa Saham BEI">
+    <meta property="og:description" content="Berhenti menebak arah pasar! Aplikasi analisa saham BEI dengan 6 modul premium: teknikal, fundamental & screening otomatis. Klaim trial 14 hari Anda sekarang.">
+    <meta property="og:type" content="website">
+""", unsafe_allow_html=True)
 
 # --- 2. IMPORT MODUL (MODE AMAN) ---
 def load_module(module_name):
@@ -106,49 +117,41 @@ if 'current_menu' not in st.session_state: st.session_state.current_menu = "Bera
 if 'is_trial' not in st.session_state: st.session_state.is_trial = False
 if 'trial_expiry_date' not in st.session_state: st.session_state.trial_expiry_date = ""
 
+# --- FUNGSI PEMBERSIH NOMOR WA ANTI-ERROR ---
+def bersihkan_nomor_wa(wa_str):
+    """Membuang 0, +62, spasi, strip, dan format float .0 agar akurat dicocokkan"""
+    w = str(wa_str).strip().replace(" ", "").replace("-", "")
+    if w.endswith(".0"): w = w[:-2] # Jika pandas membacanya sebagai desimal
+    if w.startswith("+62"): w = w[3:]
+    if w.startswith("62"): w = w[2:]
+    if w.startswith("0"): w = w[1:]
+    return w
+
 # --- FUNGSI PENCATATAN TRIAL KE GOOGLE SHEETS ---
 def cek_dan_catat_trial(nama_user, wa_user):
     tz_wib = pytz.timezone('Asia/Jakarta')
     hari_ini = datetime.now(tz_wib).date()
-    wa_user_bersih = str(wa_user).strip().replace(" ", "").replace("-", "")
+    
+    # Bersihkan WA dari user input untuk dicocokkan
+    wa_user_bersih = bersihkan_nomor_wa(wa_user)
 
     # 1. KONEKSI KE GOOGLE SHEETS
     try:
-        # Scope otorisasi API Google
-        scopes = [
-            'https://www.googleapis.com/auth/spreadsheets',
-            'https://www.googleapis.com/auth/drive'
-        ]
-        
-        # Mengambil kredensial dari Streamlit Secrets dan jadikan Dictionary
+        scopes = ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive']
         s_creds = dict(st.secrets["gcp_service_account"])
         
-        # --- PENYEMBUH ERROR PEM (PERTAHANAN BERLAPIS) ---
+        # Penyembuh PEM Error
         pk = str(s_creds.get("private_key", ""))
-        # 1. Paksa semua jenis literal \n menjadi Enter (newline) yang sesungguhnya
-        pk = pk.replace("\\n", "\n").replace("\\r", "")
-        # 2. Bersihkan tanda kutip nyasar yang kadang ditambahkan otomatis oleh sistem
-        pk = pk.strip('"').strip("'").strip()
-        
-        # 3. Validasi Darurat: Jika tanpa sengaja header/footer terhapus saat copy paste
-        if "-----BEGIN PRIVATE KEY-----" not in pk:
-            pk = "-----BEGIN PRIVATE KEY-----\n" + pk
-        if "-----END PRIVATE KEY-----" not in pk:
-            pk = pk + "\n-----END PRIVATE KEY-----\n"
-            
-        # Simpan kembali kunci yang sudah dicuci bersih
+        pk = pk.replace("\\n", "\n").replace("\\r", "").strip('"').strip("'").strip()
+        if "-----BEGIN PRIVATE KEY-----" not in pk: pk = "-----BEGIN PRIVATE KEY-----\n" + pk
+        if "-----END PRIVATE KEY-----" not in pk: pk = pk + "\n-----END PRIVATE KEY-----\n"
         s_creds["private_key"] = pk
         
         creds = Credentials.from_service_account_info(s_creds, scopes=scopes)
         client = gspread.authorize(creds)
-        
-        # Buka Google Sheet berdasarkan namanya (Pastikan nama ini sama persis di Google Drive Bapak)
         sheet = client.open("Data_Trial_ExpertStockPro").sheet1
-        
-        # Ambil semua data
         records = sheet.get_all_records()
         
-        # Jika sheet kosong, buat DataFrame kosong dan langsung siapkan header di Google Sheets
         if not records:
             sheet.append_row(["Nomor_WA", "Nama", "Tanggal_Mulai", "Tanggal_Expired"])
             df = pd.DataFrame(columns=["Nomor_WA", "Nama", "Tanggal_Mulai", "Tanggal_Expired"])
@@ -156,20 +159,19 @@ def cek_dan_catat_trial(nama_user, wa_user):
             df = pd.DataFrame(records)
 
     except Exception as e:
-        # Menampilkan pesan error asli untuk perbaikan
         st.error(f"⚠️ Error Asli: {e}")
         return False, "Koneksi Google Sheets Gagal."
 
-    # 2. LOGIKA PENGECEKAN USER
+    # 2. LOGIKA PENGECEKAN USER (MENCEGAH EXPIRED MUNDUR)
     if 'Nomor_WA' in df.columns:
-        # Pastikan format WA yang dibaca dari excel berupa text/string
-        df['Nomor_WA'] = df['Nomor_WA'].astype(str)
-        user_exist = df[df['Nomor_WA'] == wa_user_bersih]
+        # Bersihkan juga nomor WA yang ada di database agar 'apple to apple'
+        df['Nomor_WA_Clean'] = df['Nomor_WA'].apply(bersihkan_nomor_wa)
+        user_exist = df[df['Nomor_WA_Clean'] == wa_user_bersih]
     else:
         user_exist = pd.DataFrame()
 
     if not user_exist.empty:
-        # USER LAMA: Cek apakah masih dalam masa 14 hari
+        # USER LAMA: Mengunci tanggal dari login pertama kalinya
         tgl_expired_str = str(user_exist.iloc[0]['Tanggal_Expired'])
         tgl_expired = datetime.strptime(tgl_expired_str, "%Y-%m-%d").date()
         
@@ -178,23 +180,22 @@ def cek_dan_catat_trial(nama_user, wa_user):
         else:
             return False, "❌ Masa trial 14 hari Anda sudah habis. Silakan beli Akses Premium seumur hidup."
     else:
-        # USER BARU: Berikan 14 hari dari hari ini, catat langsung ke Google Sheets
+        # USER BARU: Berikan 14 hari, catat ke Google Sheets
         tgl_expired = hari_ini + timedelta(days=14)
         tgl_expired_str = tgl_expired.strftime("%Y-%m-%d")
         
         try:
-            # Insert baris baru ke Google Sheets
-            sheet.append_row([wa_user_bersih, nama_user.strip(), hari_ini.strftime("%Y-%m-%d"), tgl_expired_str])
+            # Menggunakan kutip satu (') di depan WA agar Google Sheets tidak membuang angka nol
+            wa_simpan = f"'{wa_user.strip()}"
+            sheet.append_row([wa_simpan, nama_user.strip(), hari_ini.strftime("%Y-%m-%d"), tgl_expired_str])
             return True, tgl_expired_str
         except Exception as e:
             return False, "❌ Gagal menyimpan data trial. Coba beberapa saat lagi."
 
 # --- 5. HALAMAN LOGIN (LANDING PAGE KONVERSI & TIMER PER-USER) ---
 def login_page():
-    # Mengambil kode trial dari secrets, default ke CUAN14HARI jika belum diset
     kode_trial_tampil = st.secrets.get("TRIAL_CODE", "CUAN14HARI")
 
-    # Header Landing Page
     st.markdown("""
         <div class="landing-header">
             <h1 style="color: #2ECC71; margin-bottom: 10px;">🚀 Level Up Analisa Saham Anda ke Standar Institusi!</h1>
@@ -221,7 +222,6 @@ def login_page():
     with col_right:
         st.info("### 🔑 Masuk ke Sistem")
         
-        # MENAMPILKAN KODE TRIAL UNTUK PENGUNJUNG WALK-IN
         st.markdown(f"""
         <div class="promo-box">
             💡 <b>Ingin mencoba aplikasi ini secara gratis?</b><br>
@@ -238,21 +238,18 @@ def login_page():
             submit_button = st.form_submit_button("BUKA AKSES DASHBOARD", use_container_width=True)
             
             if submit_button:
-                # Mengambil password dari st.secrets untuk keamanan validasi
                 kode_permanen = st.secrets.get("PASSWORD_RAHASIA", "KODE_TIDAK_VALID_KARENA_BELUM_DISET_X99")
                 kode_trial = st.secrets.get("TRIAL_CODE", "CUAN14HARI")
                 
                 if nama.strip() == "" or wa.strip() == "": 
                     st.warning("Mohon isi Nama dan Nomor WhatsApp terlebih dahulu.")
                 elif pw.strip() == kode_permanen:
-                    # AKSES PREMIUM PERMANEN
                     st.session_state.logged_in = True
                     st.session_state.user_name = nama
                     st.session_state.user_wa = wa
                     st.session_state.is_trial = False
                     st.rerun()
                 elif pw.strip() == kode_trial:
-                    # AKSES TRIAL (Pencatatan Google Sheets)
                     is_valid, pesan_atau_tanggal = cek_dan_catat_trial(nama, wa)
                     
                     if is_valid:
@@ -265,11 +262,9 @@ def login_page():
                     else:
                         st.error(pesan_atau_tanggal)
                 else: 
-                    # Gagal masuk: Tampilkan Error dan tawarkan Trial
                     st.error("❌ Kode akses salah atau sudah kadaluwarsa.")
                     st.info(f"💡 Belum punya kode akses permanen? Anda bisa mencoba gratis selama 14 hari dengan menggunakan password: **{kode_trial}**")
         
-        # Link Pembelian di bawah form
         st.markdown("---")
         st.markdown("<p style='text-align: center; color: #A0A0A0;'>Belum punya akses premium seumur hidup?</p>", unsafe_allow_html=True)
         st.link_button("🛒 DAPATKAN KODE AKSES SEKARANG", "https://lynk.id/hahastoresby", use_container_width=True)
@@ -277,10 +272,8 @@ def login_page():
 
 # --- 6. DASHBOARD ---
 def show_dashboard():
-    # Sapaan menggunakan Nama saja, tanpa memunculkan WA
     st.markdown(f"### 👋 Halo Sobat <span style='color:#ff0000'>{st.session_state.user_name}</span>!", unsafe_allow_html=True)
 
-    # --- BANNER PENGINGAT TRIAL ---
     if st.session_state.is_trial:
         st.warning(f"⏳ **Mode Trial Aktif!** Akses gratis Anda akan berakhir pada **{st.session_state.trial_expiry_date}**. Jangan sampai kehilangan data analisa, [Beli Akses Permanen Di Sini](https://lynk.id/hahastoresby).")
 
