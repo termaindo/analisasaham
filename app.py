@@ -26,24 +26,30 @@ st.markdown("""
     <meta property="og:type" content="website">
 """, unsafe_allow_html=True)
 
-# --- 2. IMPORT MODUL (MODE AMAN) ---
-def load_module(module_name):
-    """Mencoba load modul, jika gagal akan return None"""
+# --- 2. IMPORT MODUL (LAZY LOADING) ---
+# Modul tidak lagi di-load di awal secara paksa, melainkan hanya saat dipanggil
+def load_and_run_module(module_name, run_function_name):
+    """Mencoba load modul dan langsung menjalankannya, lebih cepat dan hemat memori"""
     try:
-        return importlib.import_module(f"modules.{module_name}")
+        mod = importlib.import_module(f"modules.{module_name}")
+        func = getattr(mod, run_function_name)
+        func()
     except ImportError:
-        return None
+        st.error(f"⚠️ Gagal memuat file {module_name}.py. Pastikan file ada di folder 'modules'.")
+    except AttributeError:
+        st.error(f"⚠️ Fungsi '{run_function_name}' tidak ditemukan di dalam {module_name}.py.")
     except SyntaxError as e:
         st.error(f"⚠️ Error Pengetikan di {module_name}.py: {e}")
-        return None
+    except Exception as e:
+        st.error(f"⚠️ Terjadi kesalahan saat menjalankan modul {module_name}: {e}")
 
-# Load semua modul
-mod_screening = load_module("screening")
-mod_cepat = load_module("analisa_cepat")
-mod_teknikal = load_module("teknikal")
-mod_fundamental = load_module("fundamental")
-mod_dividen = load_module("dividen")
-mod_perbandingan = load_module("perbandingan")
+# Mengecek keberadaan modul untuk tombol di Dashboard
+def check_module_exists(module_name):
+    try:
+        importlib.util.find_spec(f"modules.{module_name}")
+        return True
+    except ModuleNotFoundError:
+        return False
 
 # --- 3. CSS CUSTOM (GABUNGAN DASHBOARD & LANDING PAGE) ---
 st.markdown("""
@@ -296,12 +302,12 @@ def show_dashboard():
         if st.button("🔍 Screening Saham Harian Pro", use_container_width=True):
             st.session_state.current_menu = "screening"; st.rerun()
     with c2:
-        label = "⚡ Analisa Cepat Pro" if mod_cepat else "⚡ Analisa Cepat (Rusak)"
-        if st.button(label, use_container_width=True):
-            if mod_cepat:
+        # Mengecek cepat file modul tanpa memuat isinya
+        if check_module_exists("analisa_cepat"):
+            if st.button("⚡ Analisa Cepat Pro", use_container_width=True):
                 st.session_state.current_menu = "analisa_cepat"; st.rerun()
-            else:
-                st.error("Modul analisa_cepat.py bermasalah.")
+        else:
+            st.button("⚡ Analisa Cepat (Rusak)", use_container_width=True, disabled=True)
 
     c3, c4 = st.columns(2)
     with c3:
@@ -340,21 +346,17 @@ def main_app():
             st.markdown('</div>', unsafe_allow_html=True)
             st.markdown("---")
 
-        try:
-            m = st.session_state.current_menu
-            if m == "screening" and mod_screening: mod_screening.run_screening()
-            elif m == "analisa_cepat" and mod_cepat: mod_cepat.run_analisa_cepat()
-            elif m == "teknikal" and mod_teknikal: mod_teknikal.run_teknikal()
-            elif m == "fundamental" and mod_fundamental: mod_fundamental.run_fundamental()
-            elif m == "dividen" and mod_dividen: mod_dividen.run_dividen()
-            elif m == "perbandingan" and mod_perbandingan: mod_perbandingan.run_perbandingan()
-            else: st.error("Modul tidak ditemukan di folder 'modules'.")
-        except Exception as e:
-            st.error(f"Terjadi kesalahan sistem: {e}")
+        # Menjalankan modul secara Lazy Load
+        m = st.session_state.current_menu
+        if m == "screening": load_and_run_module("screening", "run_screening")
+        elif m == "analisa_cepat": load_and_run_module("analisa_cepat", "run_analisa_cepat")
+        elif m == "teknikal": load_and_run_module("teknikal", "run_teknikal")
+        elif m == "fundamental": load_and_run_module("fundamental", "run_fundamental")
+        elif m == "dividen": load_and_run_module("dividen", "run_dividen")
+        elif m == "perbandingan": load_and_run_module("perbandingan", "run_perbandingan")
 
 if __name__ == "__main__":
     if st.session_state.logged_in:
         main_app()
     else:
         login_page()
-
