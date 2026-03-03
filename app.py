@@ -231,7 +231,7 @@ def login_page():
         """, unsafe_allow_html=True)
 
         with st.form("login_form"):
-            nama = st.text_input("👤 Nama Panggilan", placeholder="Contoh: Sobat Musa")
+            nama = st.text_input("👤 Nama Panggilan", placeholder="Contoh: Sobat Cuan")
             wa = st.text_input("📱 Nomor WhatsApp", placeholder="Contoh: 08123456789")
             pw = st.text_input("🔑 Password Akses", type="password", placeholder="Masukkan kode akses / trial...")
             
@@ -357,3 +357,4 @@ if __name__ == "__main__":
         main_app()
     else:
         login_page()
+
