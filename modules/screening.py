@@ -6,6 +6,7 @@ import io
 import os
 import base64
 import holidays
+import concurrent.futures  # <-- Pustaka bawaan Python untuk Multithreading
 from datetime import datetime
 from fpdf import FPDF 
 from modules.data_loader import get_full_stock_data 
@@ -42,7 +43,7 @@ def export_to_pdf(hasil_lolos, trade_mode, session, logo_path="logo_expert_stock
     # 2. HYPERLINK SUMBER
     pdf.set_font("Arial", 'I', 10)
     pdf.set_text_color(0, 0, 255)  
-    pdf.cell(0, 5, "Sumber: https://pintarsaham.streamlit.app", ln=True, align='C', link="https://pintarsaham.streamlit.app")
+    pdf.cell(0, 5, "Sumber: https://lynk.id/hahastoresby", ln=True, align='C', link="https://lynk.id/hahastoresby")
     pdf.ln(2)
     
     # 3. INFO STRATEGI & SESI (CENTER)
@@ -94,9 +95,8 @@ def export_to_pdf(hasil_lolos, trade_mode, session, logo_path="logo_expert_stock
         pdf.set_font("Arial", '', 9)
         pdf.multi_cell(180, 5, f"Sinyal Teknis: {item['Signal']}")
         
-        # --- UPDATE: Menambahkan Saran Trading di PDF ---
         pdf.set_font("Arial", 'B', 8)
-        pdf.set_text_color(0, 51, 102) # Warna biru tua untuk saran
+        pdf.set_text_color(0, 51, 102) 
         pdf.multi_cell(180, 5, f"Saran Plan: {item['Saran']}")
         pdf.set_text_color(0, 0, 0)
         
@@ -110,7 +110,6 @@ def export_to_pdf(hasil_lolos, trade_mode, session, logo_path="logo_expert_stock
     pdf.cell(190, 10, "B. RADAR WATCHLIST (RANK 4-10)", 0, ln=True, fill=True)
     pdf.ln(3)
 
-    # Penyesuaian lebar kolom PDF agar total tetap 190mm
     pdf.set_font("Arial", 'B', 8)
     pdf.cell(16, 8, "Ticker", 1, 0, 'C')
     pdf.cell(38, 8, "Sektor", 1, 0, 'C')
@@ -182,17 +181,14 @@ def get_market_session():
     now = datetime.now(tz)
     tanggal_sekarang = now.date()
     
-    # 1. Cek Akhir Pekan (Sabtu = 5, Minggu = 6)
     if now.weekday() >= 5: 
         return "AKHIR PEKAN", "Pasar Tutup."
         
-    # 2. Cek Tanggal Merah Indonesia
     libur_id = holidays.ID(years=now.year)
     if tanggal_sekarang in libur_id:
         nama_libur = libur_id.get(tanggal_sekarang)
         return "HARI LIBUR NASIONAL", f"Pasar Tutup ({nama_libur})."
 
-    # 3. Logika Jam Trading Normal
     curr_time = now.hour + now.minute/60
     if curr_time < 9.0: 
         return "PRA-PASAR", "Data penutupan kemarin."
@@ -201,9 +197,98 @@ def get_market_session():
     else: 
         return "PASCA-PASAR", "Persiapan besok."
 
+# --- FUNGSI PEKERJA MULTITHREADING (Memproses 1 Saham) ---
+def process_single_stock(ticker, trade_mode):
+    """Fungsi ini akan dijalankan secara paralel oleh beberapa 'pekerja' sekaligus"""
+    ticker_bersih = ticker.replace(".JK", "")
+    try:
+        data = get_full_stock_data(ticker)
+        df = data['history']
+        if df.empty or len(df) < 200: return None
+
+        df = calculate_indicators(df, trade_mode)
+        last = df.iloc[-1]
+        prev = df.iloc[-2]
+        curr_price = last['Close']
+        avg_vol_20 = df['Volume'].rolling(20).mean().iloc[-1]
+        avg_val_20 = (df['Close'] * df['Volume']).rolling(20).mean().iloc[-1]
+
+        if avg_val_20 < 1e9: return None
+
+        score = 0
+        alasan = []
+
+        if trade_mode == "Day Trading":
+            if curr_price > last['VWAP']: score += 25; alasan.append("Above VWAP")
+            if last['Volume'] > (avg_vol_20 * 1.2): score += 20; alasan.append("Vol Spike")
+            if curr_price >= last['MA200']: score += 15; alasan.append("Above MA200")
+            if avg_val_20 > 5e9: score += 10; alasan.append("Liquid (>5M)")
+            
+            change_pct = ((curr_price - prev['Close']) / prev['Close']) * 100
+            if change_pct > 2.0: score += 10; alasan.append("Strong Move")
+            
+            if last['EMA9'] > last['EMA21']: score += 10; alasan.append("EMA Cross Trigger Momentum")
+            
+            if 50 <= last['RSI'] <= 70: score += 5; alasan.append("RSI Ideal")
+            if last['RSI'] > prev['RSI']: score += 5; alasan.append("RSI Trend")
+
+            entry_bawah = max(last['VWAP'], curr_price * 0.985)
+            sl_atr = curr_price - (1.5 * last['ATR'])
+            sl_final = max(sl_atr, curr_price * 0.97) 
+            tp_target = curr_price + (curr_price - sl_final) * 1.5
+
+        else: # Swing Trading Mode
+            if curr_price >= last['MA200']: score += 20; alasan.append("Major Uptrend")
+            if curr_price >= last['MA50']: score += 20; alasan.append("Medium  Uptrend Batas Psikologi Institusi")
+            
+            change_pct = ((curr_price - prev['Close']) / prev['Close']) * 100
+            if change_pct > 2.0 or curr_price > prev['High']: score += 20; alasan.append("Breakout Action")
+            
+            if last['EMA9'] > last['EMA21']: score += 15; alasan.append("EMA Cross Trigger Momentum")
+            
+            if 50 <= last['RSI'] <= 70: score += 7.5; alasan.append("RSI Ideal")
+            if last['RSI'] > prev['RSI']: score += 7.5; alasan.append("RSI Trend")
+            
+            if avg_val_20 > 5e9: score += 10; alasan.append("Liquid (>5M)")
+
+            entry_bawah = max(last['EMA9'], curr_price * 0.96)
+            sl_atr = curr_price - (2.5 * last['ATR'])
+            sl_final = max(sl_atr, curr_price * 0.92) 
+            tp_target = curr_price + (curr_price - sl_final) * 2
+
+        rsi_val = f"{last['RSI']:.1f} {'↗️' if last['RSI'] > prev['RSI'] else '↘️'}"
+        rrr = (tp_target - curr_price) / (curr_price - sl_final) if curr_price > sl_final else 0
+
+        teks_saran = ""
+        if score < 60:
+            teks_saran = "Tidak Disarankan untuk Melakukan Trading dulu, karena belum didukung oleh indikator teknikal yang memadai."
+        elif 60 <= score <= 79:
+            teks_saran = "Kondisi teknikal saat ini belum termasuk Super Trend (mungkin sedang konsolidasi di atas MA 200 atau baru saja menembus Resistance/VWAP). Layak dicicil bertahap (Entry awal)."
+        else: # 80 ke atas
+            teks_saran = "Kondisi teknikal saat ini termasuk Super Trend (semua indikator selaras). Sangat layak untuk All-in sesuai position sizing dan pertimbangan risiko masing-masing."
+
+        if score >= 60 and rrr >= 1.4: 
+            conf = "High" if score >= 80 else "Medium"
+            sektor_nama, _ = get_sector_data(ticker_bersih)
+            
+            return {
+                "Ticker": ticker_bersih, "Sektor": sektor_nama,
+                "Syariah": "✅ Ya" if is_syariah(ticker_bersih) else "❌ Tidak",
+                "Conf": conf, "Skor": score, "Harga": int(curr_price),
+                "Rentang_Entry": f"Rp {int(entry_bawah)} - {int(curr_price)}",
+                "SL": int(sl_final), "TP": int(tp_target),
+                "Risk_Pct": round(((curr_price-sl_final)/curr_price)*100, 1),
+                "Reward_Pct": round(((tp_target-curr_price)/curr_price)*100, 1),
+                "Signal": ", ".join(alasan), "RRR": f"{rrr:.1f}x",
+                "RSI": rsi_val,
+                "Saran": teks_saran 
+            }
+    except Exception as e: 
+        return None
+    return None
+
 # --- 3. MODUL UTAMA ---
 def run_screening():
-    # --- TAMPILAN WEB (LOGO & JUDUL) ---
     logo_file = "logo_expert_stock_pro.png"
     if not os.path.exists(logo_file):
         logo_file = "../logo_expert_stock_pro.png"
@@ -232,7 +317,6 @@ def run_screening():
     
     session, status_desc = get_market_session()
     
-    # Memberi peringatan warna merah/kuning jika pasar sedang tutup/libur
     if "Tutup" in status_desc:
         st.warning(f"**Mode Aktif:** {trade_mode} | **Sesi:** {session} ({status_desc})")
     else:
@@ -250,106 +334,38 @@ def run_screening():
 
         hasil_lolos = []
         high_score_found = False
+        
+        # UI Elements untuk loading
         progress_bar = st.progress(0)
+        status_text = st.empty()
 
-        for i, ticker in enumerate(saham_list):
-            progress_bar.progress((i + 1) / len(saham_list))
-            ticker_bersih = ticker.replace(".JK", "")
+        # --- IMPLEMENTASI MULTITHREADING DI SINI ---
+        # Kita menggunakan 10 "Pekerja" (max_workers) sekaligus
+        with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+            # Mengirim semua saham ke daftar tugas (Task Queue)
+            future_to_ticker = {executor.submit(process_single_stock, ticker, trade_mode): ticker for ticker in saham_list}
             
-            try:
-                data = get_full_stock_data(ticker)
-                df = data['history']
-                if df.empty or len(df) < 200: continue
+            # Menangkap hasil setiap kali ada pekerja yang selesai
+            for i, future in enumerate(concurrent.futures.as_completed(future_to_ticker)):
+                ticker = future_to_ticker[future]
+                
+                # Update visual loading bar
+                progress_bar.progress((i + 1) / len(saham_list))
+                status_text.text(f"Menganalisa data {ticker.replace('.JK','')} ({i+1}/{len(saham_list)} saham)...")
+                
+                try:
+                    result = future.result()
+                    if result is not None:
+                        hasil_lolos.append(result)
+                        if result['Conf'] == "High":
+                            high_score_found = True
+                except Exception as exc:
+                    pass # Abaikan saham yang error (misal IPO baru yang datanya kosong)
 
-                df = calculate_indicators(df, trade_mode)
-                last = df.iloc[-1]
-                prev = df.iloc[-2]
-                curr_price = last['Close']
-                avg_vol_20 = df['Volume'].rolling(20).mean().iloc[-1]
-                avg_val_20 = (df['Close'] * df['Volume']).rolling(20).mean().iloc[-1]
-
-                if avg_val_20 < 1e9: continue
-
-                score = 0
-                alasan = []
-
-                # --- KALKULASI LOGIKA TRADING MODE ---
-                if trade_mode == "Day Trading":
-                    if curr_price > last['VWAP']: score += 25; alasan.append("Above VWAP")
-                    if last['Volume'] > (avg_vol_20 * 1.2): score += 20; alasan.append("Vol Spike")
-                    if curr_price >= last['MA200']: score += 15; alasan.append("Above MA200")
-                    if avg_val_20 > 5e9: score += 10; alasan.append("Liquid (>5M)")
-                    
-                    change_pct = ((curr_price - prev['Close']) / prev['Close']) * 100
-                    if change_pct > 2.0: score += 10; alasan.append("Strong Move")
-                    
-                    if last['EMA9'] > last['EMA21']: score += 10; alasan.append("EMA Cross Trigger Momentum")
-                    
-                    if 50 <= last['RSI'] <= 70: score += 5; alasan.append("RSI Ideal")
-                    if last['RSI'] > prev['RSI']: score += 5; alasan.append("RSI Trend")
-
-                    entry_bawah = max(last['VWAP'], curr_price * 0.985)
-                    # Menggunakan 1.5x ATR sesuai update bapak, max turun 3%
-                    sl_atr = curr_price - (1.5 * last['ATR'])
-                    sl_final = max(sl_atr, curr_price * 0.97) 
-                    tp_target = curr_price + (curr_price - sl_final) * 1.5
-
-                else: # Swing Trading Mode
-                    if curr_price >= last['MA200']: score += 20; alasan.append("Major Uptrend")
-                    if curr_price >= last['MA50']: score += 20; alasan.append("Medium  Uptrend Batas Psikologi Institusi")
-                    
-                    change_pct = ((curr_price - prev['Close']) / prev['Close']) * 100
-                    if change_pct > 2.0 or curr_price > prev['High']: score += 20; alasan.append("Breakout Action")
-                    
-                    if last['EMA9'] > last['EMA21']: score += 15; alasan.append("EMA Cross Trigger Momentum")
-                    
-                    if 50 <= last['RSI'] <= 70: score += 7.5; alasan.append("RSI Ideal")
-                    if last['RSI'] > prev['RSI']: score += 7.5; alasan.append("RSI Trend")
-                    
-                    if avg_val_20 > 5e9: score += 10; alasan.append("Liquid (>5M)")
-
-                    entry_bawah = max(last['EMA9'], curr_price * 0.96)
-                    # Menggunakan 2.5x ATR, max turun 8%
-                    sl_atr = curr_price - (2.5 * last['ATR'])
-                    sl_final = max(sl_atr, curr_price * 0.92) 
-                    tp_target = curr_price + (curr_price - sl_final) * 2
-
-                rsi_val = f"{last['RSI']:.1f} {'↗️' if last['RSI'] > prev['RSI'] else '↘️'}"
-                rrr = (tp_target - curr_price) / (curr_price - sl_final) if curr_price > sl_final else 0
-
-                # --- EVALUASI SARAN TRADING PLAN ---
-                teks_saran = ""
-                if score < 60:
-                    teks_saran = "Tidak Disarankan untuk Melakukan Trading dulu, karena belum didukung oleh indikator teknikal yang memadai."
-                elif 60 <= score <= 79:
-                    teks_saran = "Kondisi teknikal saat ini belum termasuk Super Trend (mungkin sedang konsolidasi di atas MA 200 atau baru saja menembus Resistance/VWAP). Layak dicicil bertahap (Entry awal)."
-                else: # 80 ke atas
-                    teks_saran = "Kondisi teknikal saat ini termasuk Super Trend (semua indikator selaras). Sangat layak untuk All-in sesuai position sizing dan pertimbangan risiko masing-masing."
-
-                # --- FILTER LOLOS SCREENING ---
-                # Catatan: Karena sistem membuang skor < 60, saham dengan teks_saran "Tidak disarankan"
-                # otomatis tidak akan masuk ke tabel hasil (diabaikan) sesuai standar keamanan screening.
-                if score >= 60 and rrr >= 1.4: 
-                    conf = "High" if score >= 80 else "Medium"
-                    if conf == "High": high_score_found = True
-                    sektor_nama, _ = get_sector_data(ticker_bersih)
-                    
-                    hasil_lolos.append({
-                        "Ticker": ticker_bersih, "Sektor": sektor_nama,
-                        "Syariah": "✅ Ya" if is_syariah(ticker_bersih) else "❌ Tidak",
-                        "Conf": conf, "Skor": score, "Harga": int(curr_price),
-                        "Rentang_Entry": f"Rp {int(entry_bawah)} - {int(curr_price)}",
-                        "SL": int(sl_final), "TP": int(tp_target),
-                        "Risk_Pct": round(((curr_price-sl_final)/curr_price)*100, 1),
-                        "Reward_Pct": round(((tp_target-curr_price)/curr_price)*100, 1),
-                        "Signal": ", ".join(alasan), "RRR": f"{rrr:.1f}x",
-                        "RSI": rsi_val,
-                        "Saran": teks_saran # Menyimpan teks saran ke dalam dictionary
-                    })
-            except Exception as e: 
-                continue
-
+        # Bersihkan teks loading setelah selesai
         progress_bar.empty()
+        status_text.empty()
+        
         if high_score_found: play_alert_sound()
         st.session_state.hasil_screening = hasil_lolos
 
@@ -370,7 +386,6 @@ def run_screening():
                 st.write(f"**Target:** Rp {item['TP']} (+{item['Reward_Pct']}%)")
                 st.write(f"**Proteksi:** Rp {item['SL']} (-{item['Risk_Pct']}%)")
                 st.info(f"Entry: {item['Rentang_Entry']}")
-                # Menampilkan Saran di Web UI
                 st.caption(f"💡 **Saran:** {item['Saran']}")
         
         st.markdown("---")
