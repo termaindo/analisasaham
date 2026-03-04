@@ -315,7 +315,7 @@ def run_dividen():
                 est_dps, curr_price, sl_final, entry_price, status_final
             )
             
-            file_name_pdf = f"Expert_Stock_Pro_Dividen_{kode_bersih}_{datetime.now().strftime('%Y%m%d')}.pdf"
+            file_name_pdf = f"ExpertStockPro_Dividen_{kode_bersih}_{datetime.now().strftime('%Y%m%d')}.pdf"
             
             st.download_button(
                 label="📄 Simpan sebagai PDF",
