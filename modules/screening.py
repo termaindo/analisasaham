@@ -177,7 +177,7 @@ def run_screening():
             st.success("🌟 **GOLDEN HOURS AKTIF (09.30 - 11.00 WIB):** Waktu paling optimal untuk mencari saham potensial dan eksekusi Day Trading. Volatilitas dan volume sedang berada di puncaknya.")
         else: 
             if not is_weekend:
-                st.warning("⚠️ **NOTIFIKASI WIN RATE:** Day Trading disarankan dijalankan pada pukul 09.30-11.00 WIB. Saat ini bukan jam optimal, sinyal mungkin rentan terjebak *sideways*.")
+                st.warning("⚠️ **NOTIFIKASI WIN RATE:** Screening & Eksekusi Day Trading disarankan dijalankan pada pukul 09.30-11.00 WIB. Saat ini bukan jam optimal, sinyal mungkin rentan terjebak *sideways*.")
             else:
                 st.warning("🚫 **PASAR TUTUP:** Data Day Trading yang dihasilkan adalah hasil penutupan terakhir. Gunakan hanya untuk evaluasi.")
     
