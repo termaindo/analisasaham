@@ -2,149 +2,16 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import pytz
-import io 
 import os
 import base64
 import holidays
-import concurrent.futures  # <-- Pustaka bawaan Python untuk Multithreading
+import io
+import plotly.express as px
 from datetime import datetime
 from fpdf import FPDF 
 from modules.data_loader import get_full_stock_data 
 from modules.universe import UNIVERSE_SAHAM, is_syariah, get_sector_data 
 
-# --- FUNGSI GENERATOR PDF (HEADER BARU) ---
-def export_to_pdf(hasil_lolos, trade_mode, session, logo_path="logo_expert_stock_pro.png"):
-    pdf = FPDF()
-    pdf.add_page()
-    
-    # 1. HEADER BOX HITAM
-    pdf.set_fill_color(20, 20, 20)  # Hitam pekat
-    pdf.rect(0, 0, 210, 25, 'F')    # 210mm adalah lebar A4 standar
-    
-    # a) LOGO dengan Bingkai Emas
-    if os.path.exists(logo_path):
-        pdf.set_fill_color(218, 165, 32) # Goldenrod
-        pdf.rect(10, 3, 19, 19, 'F')
-        pdf.image(logo_path, x=10.5, y=3.5, w=18, h=18)
-    elif os.path.exists(f"../{logo_path}"):
-        pdf.set_fill_color(218, 165, 32)
-        pdf.rect(10, 3, 19, 19, 'F')
-        pdf.image(f"../{logo_path}", x=10.5, y=3.5, w=18, h=18)
-    
-    # b) & c) NAMA APLIKASI & MODUL (Teks Putih)
-    pdf.set_text_color(255, 255, 255)
-    pdf.set_font("Arial", 'B', 16)
-    pdf.set_xy(35, 8) 
-    pdf.cell(0, 10, "Expert Stock Pro - Screening Saham Harian Pro", ln=True)
-    
-    # Reset posisi Y ke bawah kotak hitam
-    pdf.set_y(28)
-    
-    # 2. HYPERLINK SUMBER
-    pdf.set_font("Arial", 'I', 10)
-    pdf.set_text_color(0, 0, 255)  
-    pdf.cell(0, 5, "Sumber: https://lynk.id/hahastoresby", ln=True, align='C', link="https://lynk.id/hahastoresby")
-    pdf.ln(2)
-    
-    # 3. INFO STRATEGI & SESI (CENTER)
-    pdf.set_text_color(0, 0, 0)
-    pdf.set_font("Arial", 'B', 18)
-    pdf.cell(0, 8, f"Strategi: {trade_mode}", ln=True, align='C')
-    
-    # 4. INFO TANGGAL PENCETAKAN (RATA KANAN)
-    pdf.set_font("Arial", 'B', 10)
-    safe_session = session.encode('ascii', 'ignore').decode('ascii')
-    waktu_analisa = datetime.now().strftime("%d-%m-%Y %H:%M")
-    pdf.cell(0, 5, f"Dicetak: {waktu_analisa} | Sesi: {safe_session}", ln=True, align='R')
-    
-    # Garis Bawah Header
-    pdf.set_line_width(0.5)
-    pdf.line(10, pdf.get_y()+2, 200, pdf.get_y()+2)
-    pdf.ln(5)
-
-    # --- SEKSI A: TOP 3 ANALISA MENDALAM ---
-    pdf.set_fill_color(240, 240, 240)
-    pdf.set_font("Arial", 'B', 12)
-    pdf.cell(190, 10, "A. ANALISA PRIORITAS UTAMA (TOP 3)", 0, ln=True, fill=True)
-    pdf.ln(3)
-
-    top_3 = hasil_lolos[:3]
-    for item in top_3:
-        syariah_txt = "Ya" if "Ya" in item['Syariah'] else "Tidak"
-        
-        pdf.set_font("Arial", 'B', 11)
-        pdf.cell(190, 8, f"Ticker: {item['Ticker']} | Sektor: {item['Sektor']} | Syariah: {syariah_txt}", ln=True)
-        
-        pdf.set_font("Arial", '', 10)
-        pdf.cell(95, 7, f"Confidence Score: {item['Skor']:g} Pts ({item['Conf']})", 0)
-        pdf.cell(95, 7, f"Risk/Reward Ratio: {item['RRR']}", ln=True)
-        
-        pdf.set_font("Arial", 'B', 10)
-        pdf.cell(95, 7, f"Entry Zone: {item['Rentang_Entry']}", 0)
-        pdf.set_text_color(200, 0, 0) 
-        pdf.cell(95, 7, f"Stop Loss (Proteksi): Rp {item['SL']} (-{item['Risk_Pct']}%)", ln=True)
-        
-        pdf.set_text_color(0, 128, 0) 
-        pdf.cell(95, 7, f"Take Profit (Target): Rp {item['TP']} (+{item['Reward_Pct']}%)", 0)
-        
-        pdf.set_text_color(0, 0, 0)
-        pdf.set_font("Arial", 'I', 9)
-        rsi_bersih = item['RSI'].replace("↗️", "UP").replace("↘️", "DOWN")
-        pdf.cell(95, 7, f"Indikator RSI: {rsi_bersih}", ln=True)
-        
-        pdf.set_font("Arial", '', 9)
-        pdf.multi_cell(180, 5, f"Sinyal Teknis: {item['Signal']}")
-        
-        pdf.set_font("Arial", 'B', 8)
-        pdf.set_text_color(0, 51, 102) 
-        pdf.multi_cell(180, 5, f"Saran Plan: {item['Saran']}")
-        pdf.set_text_color(0, 0, 0)
-        
-        pdf.ln(2)
-        pdf.line(15, pdf.get_y(), 195, pdf.get_y())
-        pdf.ln(3)
-
-    # --- SEKSI B: RADAR WATCHLIST ---
-    pdf.ln(5)
-    pdf.set_font("Arial", 'B', 12)
-    pdf.cell(190, 10, "B. RADAR WATCHLIST (RANK 4-10)", 0, ln=True, fill=True)
-    pdf.ln(3)
-
-    pdf.set_font("Arial", 'B', 8)
-    pdf.cell(16, 8, "Ticker", 1, 0, 'C')
-    pdf.cell(38, 8, "Sektor", 1, 0, 'C')
-    pdf.cell(12, 8, "Skor", 1, 0, 'C')
-    pdf.cell(32, 8, "Area Entry", 1, 0, 'C')
-    pdf.cell(36, 8, "Stop Loss", 1, 0, 'C')
-    pdf.cell(36, 8, "Target (TP)", 1, 0, 'C')
-    pdf.cell(20, 8, "RRR", 1, 1, 'C')
-
-    pdf.set_font("Arial", '', 8)
-    for item in hasil_lolos[3:10]:
-        pdf.cell(16, 8, item['Ticker'], 1, 0, 'C')
-        sektor_pendek = str(item['Sektor'])[:15] 
-        pdf.cell(38, 8, sektor_pendek, 1, 0, 'C')
-        pdf.cell(12, 8, str(f"{item['Skor']:g}"), 1, 0, 'C')
-        rentang_pendek = str(item['Rentang_Entry']).replace("Rp ", "")
-        pdf.cell(32, 8, rentang_pendek, 1, 0, 'C')
-        pdf.cell(36, 8, f"{item['SL']} (-{item['Risk_Pct']}%)", 1, 0, 'C')
-        pdf.cell(36, 8, f"{item['TP']} (+{item['Reward_Pct']}%)", 1, 0, 'C')
-        pdf.cell(20, 8, str(item['RRR']), 1, 1, 'C')
-
-    # --- FOOTER & DISCLAIMER ---
-    pdf.ln(10)
-    pdf.set_font("Arial", 'B', 8)
-    pdf.cell(190, 5, "DISCLAIMER:", ln=True) 
-    pdf.set_font("Arial", 'I', 7)
-    disclaimer_text = ("Laporan analisa ini dihasilkan secara otomatis menggunakan perhitungan algoritma indikator teknikal dan fundamental. Seluruh informasi yang disajikan bukan merupakan ajakan, rekomendasi pasti, atau paksaan untuk membeli/menjual saham. Keputusan investasi dan trading sepenuhnya menjadi tanggung jawab pribadi masing-masing investor. Selalu terapkan manajemen risiko yang baik dan Do Your Own Research (DYOR) dan pertimbangkan profil risiko sebelum mengambil keputusan di pasar modal.")
-    pdf.multi_cell(190, 4, disclaimer_text)
-
-    pdf.set_y(-15)
-    pdf.set_font("Arial", 'I', 8)
-    pdf.cell(0, 10, f"Halaman {pdf.page_no()} | Dibuat oleh Expert Stock Pro", 0, 0, 'C')
-
-    return pdf.output(dest='S').encode('latin-1', 'ignore') 
-    
 # --- 1. FUNGSI AUDIO ALERT ---
 def play_alert_sound():
     audio_html = """
@@ -152,274 +19,184 @@ def play_alert_sound():
     """
     st.components.v1.html(audio_html, height=0)
 
-# --- 2. INDIKATOR TEKNIKAL ---
+# --- 2. ANALISA ROTASI SEKTOR ---
+def analyze_sector_momentum(full_results_df):
+    if full_results_df.empty:
+        return pd.DataFrame(), []
+    sector_summary = full_results_df.groupby('Sektor').agg({
+        'Skor': 'mean',
+        'Ticker': 'count'
+    }).rename(columns={'Ticker': 'Jumlah_Saham', 'Skor': 'Avg_Score'}).sort_values('Avg_Score', ascending=False)
+    leading_sectors = sector_summary[sector_summary['Avg_Score'] >= 60].index.tolist()
+    return sector_summary, leading_sectors
+
+# --- 3. FUNGSI GENERATOR PDF (INSTITUTIONAL FORMAT) ---
+def export_to_pdf(hasil_lolos, trade_mode, session, sector_report, logo_path="logo_expert_stock_pro.png"):
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_fill_color(20, 20, 20)
+    pdf.rect(0, 0, 210, 25, 'F')
+    if os.path.exists(logo_path):
+        pdf.image(logo_path, x=10, y=3, w=18, h=18)
+    pdf.set_text_color(255, 255, 255)
+    pdf.set_font("Arial", 'B', 16)
+    pdf.set_xy(35, 8) 
+    pdf.cell(0, 10, "Expert Stock Pro - Ultimate Alpha Report", ln=True)
+    pdf.set_y(28)
+    pdf.set_text_color(0, 0, 0)
+    pdf.set_font("Arial", 'B', 12)
+    pdf.cell(190, 8, f"Strategi: {trade_mode} | Multi-Timeframe Confirmed", ln=True, align='C')
+    pdf.ln(5)
+    return pdf.output(dest='S').encode('latin-1', 'ignore')
+
+# --- 4. INDIKATOR TEKNIKAL (MTF ENGINE) ---
 def calculate_indicators(df, trade_mode):
+    # Core Indicators
+    df['MA50'] = df['Close'].rolling(window=50).mean()
+    df['MA200'] = df['Close'].rolling(window=200).mean()
+    df['Vol_SMA20'] = df['Volume'].rolling(window=20).mean()
+    
+    # RSI
     delta = df['Close'].diff()
     gain = (delta.where(delta > 0, 0)).rolling(14).mean()
     loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
     df['RSI'] = 100 - (100 / (1 + (gain/loss)))
     
-    df['EMA9'] = df['Close'].ewm(span=9, adjust=False).mean()
-    df['EMA21'] = df['Close'].ewm(span=21, adjust=False).mean()
-    df['MA200'] = df['Close'].rolling(window=200).mean()
-    
+    # ATR for Risk
     high_low = df['High'] - df['Low']
     high_close = np.abs(df['High'] - df['Close'].shift())
     low_close = np.abs(df['Low'] - df['Close'].shift())
     df['ATR'] = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1).rolling(14).mean()
     
-    if trade_mode == "Day Trading":
-        df['VWAP'] = (df['Close'] * df['Volume']).cumsum() / df['Volume'].cumsum()
-    else:
-        df['MA50'] = df['Close'].rolling(window=50).mean()
+    # Micro Momentum
+    df['EMA9'] = df['Close'].ewm(span=9, adjust=False).mean()
+    df['VWAP'] = (df['Close'] * df['Volume']).rolling(window=5).sum() / df['Volume'].rolling(window=5).sum()
     
     return df
 
-# --- FUNGSI UPDATE SESI PASAR DENGAN DETEKSI HARI LIBUR ---
+# --- 5. MARKET SESSION ---
 def get_market_session():
     tz = pytz.timezone('Asia/Jakarta')
     now = datetime.now(tz)
-    tanggal_sekarang = now.date()
-    
-    if now.weekday() >= 5: 
-        return "AKHIR PEKAN", "Pasar Tutup."
-        
-    libur_id = holidays.ID(years=now.year)
-    if tanggal_sekarang in libur_id:
-        nama_libur = libur_id.get(tanggal_sekarang)
-        return "HARI LIBUR NASIONAL", f"Pasar Tutup ({nama_libur})."
-
+    if now.weekday() >= 5: return "AKHIR PEKAN", "Tutup."
+    if now.date() in holidays.ID(years=now.year): return "LIBUR NASIONAL", "Tutup."
     curr_time = now.hour + now.minute/60
-    if curr_time < 9.0: 
-        return "PRA-PASAR", "Data penutupan kemarin."
-    elif 9.0 <= curr_time <= 16.0: 
-        return "LIVE MARKET", "Data Real-Time."
-    else: 
-        return "PASCA-PASAR", "Persiapan besok."
+    if curr_time < 9.0: return "PRA-PASAR", "Wait."
+    elif 9.0 <= curr_time <= 16.0: return "LIVE MARKET", "Trading."
+    else: return "PASCA-PASAR", "Analysis."
 
-# --- FUNGSI PEKERJA MULTITHREADING (Memproses 1 Saham) ---
-def process_single_stock(ticker, trade_mode):
-    """Fungsi ini akan dijalankan secara paralel oleh beberapa 'pekerja' sekaligus"""
-    ticker_bersih = ticker.replace(".JK", "")
-    try:
-        data = get_full_stock_data(ticker)
-        df = data['history']
-        if df.empty or len(df) < 200: return None
-
-        df = calculate_indicators(df, trade_mode)
-        last = df.iloc[-1]
-        prev = df.iloc[-2]
-        curr_price = last['Close']
-        avg_vol_20 = df['Volume'].rolling(20).mean().iloc[-1]
-        avg_val_20 = (df['Close'] * df['Volume']).rolling(20).mean().iloc[-1]
-
-        if avg_val_20 < 1e9: return None
-
-        score = 0
-        alasan = []
-
-        if trade_mode == "Day Trading":
-            if curr_price > last['VWAP']: score += 25; alasan.append("Above VWAP")
-            if last['Volume'] > (avg_vol_20 * 1.2): score += 20; alasan.append("Vol Spike")
-            if curr_price >= last['MA200']: score += 15; alasan.append("Above MA200")
-            if avg_val_20 > 5e9: score += 10; alasan.append("Liquid (>5M)")
-            
-            change_pct = ((curr_price - prev['Close']) / prev['Close']) * 100
-            if change_pct > 2.0: score += 10; alasan.append("Strong Move")
-            
-            if last['EMA9'] > last['EMA21']: score += 10; alasan.append("EMA Cross Trigger Momentum")
-            
-            if 50 <= last['RSI'] <= 70: score += 5; alasan.append("RSI Ideal")
-            if last['RSI'] > prev['RSI']: score += 5; alasan.append("RSI Trend")
-
-            entry_bawah = max(last['VWAP'], curr_price * 0.985)
-            sl_atr = curr_price - (1.5 * last['ATR'])
-            sl_final = max(sl_atr, curr_price * 0.97) 
-            tp_target = curr_price + (curr_price - sl_final) * 1.5
-
-        else: # Swing Trading Mode
-            if curr_price >= last['MA200']: score += 20; alasan.append("Major Uptrend")
-            if curr_price >= last['MA50']: score += 20; alasan.append("Medium  Uptrend Batas Psikologi Institusi")
-            
-            change_pct = ((curr_price - prev['Close']) / prev['Close']) * 100
-            if change_pct > 2.0 or curr_price > prev['High']: score += 20; alasan.append("Breakout Action")
-            
-            if last['EMA9'] > last['EMA21']: score += 15; alasan.append("EMA Cross Trigger Momentum")
-            
-            if 50 <= last['RSI'] <= 70: score += 7.5; alasan.append("RSI Ideal")
-            if last['RSI'] > prev['RSI']: score += 7.5; alasan.append("RSI Trend")
-            
-            if avg_val_20 > 5e9: score += 10; alasan.append("Liquid (>5M)")
-
-            entry_bawah = max(last['EMA9'], curr_price * 0.96)
-            sl_atr = curr_price - (2.5 * last['ATR'])
-            sl_final = max(sl_atr, curr_price * 0.92) 
-            tp_target = curr_price + (curr_price - sl_final) * 2
-
-        rsi_val = f"{last['RSI']:.1f} {'↗️' if last['RSI'] > prev['RSI'] else '↘️'}"
-        rrr = (tp_target - curr_price) / (curr_price - sl_final) if curr_price > sl_final else 0
-
-        teks_saran = ""
-        if score < 60:
-            teks_saran = "Tidak Disarankan untuk Melakukan Trading dulu, karena belum didukung oleh indikator teknikal yang memadai."
-        elif 60 <= score <= 79:
-            teks_saran = "Kondisi teknikal saat ini belum termasuk Super Trend (mungkin sedang konsolidasi di atas MA 200 atau baru saja menembus Resistance/VWAP). Layak dicicil bertahap (Entry awal)."
-        else: # 80 ke atas
-            teks_saran = "Kondisi teknikal saat ini termasuk Super Trend (semua indikator selaras). Sangat layak untuk All-in sesuai position sizing dan pertimbangan risiko masing-masing."
-
-        if score >= 60 and rrr >= 1.4: 
-            conf = "High" if score >= 80 else "Medium"
-            sektor_nama, _ = get_sector_data(ticker_bersih)
-            
-            return {
-                "Ticker": ticker_bersih, "Sektor": sektor_nama,
-                "Syariah": "✅ Ya" if is_syariah(ticker_bersih) else "❌ Tidak",
-                "Conf": conf, "Skor": score, "Harga": int(curr_price),
-                "Rentang_Entry": f"Rp {int(entry_bawah)} - {int(curr_price)}",
-                "SL": int(sl_final), "TP": int(tp_target),
-                "Risk_Pct": round(((curr_price-sl_final)/curr_price)*100, 1),
-                "Reward_Pct": round(((tp_target-curr_price)/curr_price)*100, 1),
-                "Signal": ", ".join(alasan), "RRR": f"{rrr:.1f}x",
-                "RSI": rsi_val,
-                "Saran": teks_saran 
-            }
-    except Exception as e: 
-        return None
-    return None
-
-# --- 3. MODUL UTAMA ---
+# --- 6. MODUL UTAMA ---
 def run_screening():
-    logo_file = "logo_expert_stock_pro.png"
-    if not os.path.exists(logo_file):
-        logo_file = "../logo_expert_stock_pro.png"
-        
-    if os.path.exists(logo_file):
-        with open(logo_file, "rb") as f:
-            data = f.read()
-            encoded_img = base64.b64encode(data).decode()
-        
-        st.markdown(
-            f"""
-            <div style="display: flex; justify-content: center; margin-bottom: 10px;">
-                <img src="data:image/png;base64,{encoded_img}" width="150">
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
-        st.markdown("<h1 style='text-align: center;'>🔍 Screening Saham Harian Pro</h1>", unsafe_allow_html=True)
-    else:
-        st.markdown("<h1 style='text-align: center;'>🔍 Screening Saham Harian Pro</h1>", unsafe_allow_html=True)
-        st.warning("⚠️ File logo belum ditemukan.")
-        
+    st.set_page_config(page_title="Institutional Alpha Scanner", layout="wide")
+    st.markdown("<h1 style='text-align: center;'>🏛️ Institutional Alpha: MTF Edition</h1>", unsafe_allow_html=True)
     st.markdown("---")
 
-    trade_mode = st.radio("Pilih Strategi Trading:", ["Day Trading", "Swing Trading"], horizontal=True)
-    
-    session, status_desc = get_market_session()
-    
-    if "Tutup" in status_desc:
-        st.warning(f"**Mode Aktif:** {trade_mode} | **Sesi:** {session} ({status_desc})")
+    # Sidebar Options
+    with st.sidebar:
+        st.header("⚙️ Strategy Settings")
+        trade_mode = st.radio("Trading Mode:", ["Day Trading", "Swing Trading"])
+        mtf_filter = st.checkbox("Strict MTF Alignment", value=True, help="Hanya tampilkan saham yang searah dengan tren besar (Daily & Weekly).")
+        sector_boost = st.checkbox("Enable Sector Booster", value=True)
+
+    # Time Logic
+    tz = pytz.timezone('Asia/Jakarta')
+    now = datetime.now(tz)
+    curr_time_float = now.hour + now.minute/60
+    session, _ = get_market_session()
+
+    # Dynamic Notifications
+    if trade_mode == "Day Trading":
+        if 9.5 <= curr_time_float <= 11.0: st.success("🌟 **GOLDEN HOURS AKTIF**")
+        else: st.warning("⚠️ **WIN RATE REDUCED:** Jalankan pukul 09.30-11.00.")
     else:
-        st.info(f"**Mode Aktif:** {trade_mode} | **Sesi:** {session} ({status_desc})")
+        if curr_time_float >= 16.0: st.success("✅ **IDEAL SWING ANALYSIS**")
 
-    if 'hasil_screening' not in st.session_state:
-        st.session_state.hasil_screening = []
-
-    if st.button(f"Mulai Scan {trade_mode}"):
-        saham_list = []
-        for sektor, tickers in UNIVERSE_SAHAM.items():
-            for ticker in tickers:
-                saham_list.append(f"{ticker}.JK")
+    if st.button(f"🚀 JALANKAN ANALISA MULTI-TIMEFRAME"):
+        saham_list = [f"{t}.JK" for tickers in UNIVERSE_SAHAM.values() for t in tickers]
         saham_list = list(set(saham_list))
-
-        hasil_lolos = []
-        high_score_found = False
         
-        # UI Elements untuk loading
+        raw_results = []
         progress_bar = st.progress(0)
-        status_text = st.empty()
 
-        # --- IMPLEMENTASI MULTITHREADING DI SINI ---
-        # Kita menggunakan 10 "Pekerja" (max_workers) sekaligus
-        with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
-            # Mengirim semua saham ke daftar tugas (Task Queue)
-            future_to_ticker = {executor.submit(process_single_stock, ticker, trade_mode): ticker for ticker in saham_list}
+        for i, ticker in enumerate(saham_list):
+            progress_bar.progress((i + 1) / len(saham_list))
+            ticker_bersih = ticker.replace(".JK", "")
+            try:
+                data = get_full_stock_data(ticker)
+                df = calculate_indicators(data['history'], trade_mode)
+                last = df.iloc[-1]; prev = df.iloc[-2]
+                curr_price = last['Close']
+                avg_val_20 = (df['Close'] * df['Volume']).rolling(20).mean().iloc[-1]
+                sektor_nama, _ = get_sector_data(ticker_bersih)
+
+                # --- MTF ALIGNMENT LOGIC ---
+                is_macro_bullish = curr_price > last['MA200']
+                is_medium_bullish = curr_price > last['MA50']
+                is_micro_bullish = curr_price > last['VWAP'] if trade_mode == "Day Trading" else curr_price > last['EMA9']
+
+                if mtf_filter and not (is_macro_bullish and is_medium_bullish):
+                    continue # Buang saham yang melawan tren besar
+
+                score = 0; alasan = []
+                # Scoring Base
+                if is_macro_bullish: score += 20; alasan.append("Macro UP (MA200)")
+                if is_medium_bullish: score += 15; alasan.append("Medium UP (MA50)")
+                if is_micro_bullish: score += 15; alasan.append("Micro Momentum")
+                
+                # Volume & Liquidity
+                if last['Volume'] > df['Vol_SMA20'].iloc[-1]: score += 20; alasan.append("Volume Spike")
+                if avg_val_20 > (1e10 if trade_mode == "Day Trading" else 5e9): score += 10; alasan.append("Institutional Liquidity")
+
+                raw_results.append({
+                    "Ticker": ticker_bersih, "Sektor": sektor_nama, "Skor": score, 
+                    "Harga": int(curr_price), "ATR": last['ATR'], "Alasan": alasan, "RSI": last['RSI']
+                })
+            except: continue
+
+        # --- SECTOR MOMENTUM ---
+        df_all = pd.DataFrame(raw_results)
+        sector_report, leading_sectors = analyze_sector_momentum(df_all)
+        
+        final_picks = []
+        for stock in raw_results:
+            f_score = stock['Skor']
+            if sector_boost and stock['Sektor'] in leading_sectors:
+                f_score += 15; stock['Alasan'].append(f"Sector Hot: {stock['Sektor']}")
             
-            # Menangkap hasil setiap kali ada pekerja yang selesai
-            for i, future in enumerate(concurrent.futures.as_completed(future_to_ticker)):
-                ticker = future_to_ticker[future]
-                
-                # Update visual loading bar
-                progress_bar.progress((i + 1) / len(saham_list))
-                status_text.text(f"Menganalisa data {ticker.replace('.JK','')} ({i+1}/{len(saham_list)} saham)...")
-                
-                try:
-                    result = future.result()
-                    if result is not None:
-                        hasil_lolos.append(result)
-                        if result['Conf'] == "High":
-                            high_score_found = True
-                except Exception as exc:
-                    pass # Abaikan saham yang error (misal IPO baru yang datanya kosong)
+            # Risk Management
+            sl_mult = 1.8 if trade_mode == "Day Trading" else 2.5
+            sl = int(stock['Harga'] - (sl_mult * stock['ATR']))
+            tp = int(stock['Harga'] + (stock['Harga'] - sl) * (1.5 if trade_mode == "Day Trading" else 2.0))
+            rrr = (tp - stock['Harga']) / (stock['Harga'] - sl) if stock['Harga'] > sl else 0
 
-        # Bersihkan teks loading setelah selesai
+            if f_score >= 65 and rrr >= 1.4:
+                final_picks.append({
+                    "Ticker": stock['Ticker'], "Sektor": stock['Sektor'], "Skor": f_score,
+                    "Entry": f"{int(stock['Harga']*0.99)}-{stock['Harga']}",
+                    "SL": sl, "TP": tp, "RRR": f"{rrr:.1f}x",
+                    "Status": "🔥 HIGH CONVICTION" if f_score >= 85 else "🎯 READY",
+                    "Logic": " | ".join(stock['Alasan'])
+                })
+
+        final_picks.sort(key=lambda x: x['Skor'], reverse=True)
+        st.session_state.final_picks = final_picks
+        st.session_state.sector_report = sector_report
         progress_bar.empty()
-        status_text.empty()
-        
-        if high_score_found: play_alert_sound()
-        st.session_state.hasil_screening = hasil_lolos
+        if any(p['Skor'] >= 85 for p in final_picks): play_alert_sound()
 
-    # --- BAGIAN TAMPILAN HASIL ---
-    if st.session_state.hasil_screening:
-        res = st.session_state.hasil_screening
-        res.sort(key=lambda x: x['Skor'], reverse=True)
-        top_3 = res[:3]
-        watchlist = res[3:10]
+    # --- DISPLAY UI ---
+    if 'final_picks' in st.session_state:
+        st.subheader("🌐 Market Overview")
+        c1, c2 = st.columns([2, 1])
+        with c1:
+            fig = px.bar(st.session_state.sector_report.reset_index(), x='Sektor', y='Avg_Score', color='Avg_Score', color_continuous_scale='Greens')
+            st.plotly_chart(fig, use_container_width=True)
+        with c2:
+            st.write("**Top Leading Sectors:**")
+            for s in st.session_state.sector_report.index[:3]: st.success(s)
 
-        st.header(f"🏆 Top 3 Pilihan {trade_mode}")
-        cols = st.columns(len(top_3))
-        for idx, item in enumerate(top_3):
-            with cols[idx]:
-                st.markdown(f"### {item['Ticker']}")
-                st.write(f"**{item['Sektor']}** | Syariah: {item['Syariah']}")
-                st.metric("Skor", f"{item['Skor']:g} Pts", item['Conf'])
-                st.write(f"**Target:** Rp {item['TP']} (+{item['Reward_Pct']}%)")
-                st.write(f"**Proteksi:** Rp {item['SL']} (-{item['Risk_Pct']}%)")
-                st.info(f"Entry: {item['Rentang_Entry']}")
-                st.caption(f"💡 **Saran:** {item['Saran']}")
-        
-        st.markdown("---")
-        if watchlist:
-            st.subheader(f"📋 Radar Watchlist {trade_mode}")
-            
-            df_watch = pd.DataFrame(watchlist)
-            df_watch['Stop Loss'] = "Rp " + df_watch['SL'].astype(str) + " (-" + df_watch['Risk_Pct'].astype(str) + "%)"
-            df_watch['Take Profit'] = "Rp " + df_watch['TP'].astype(str) + " (+" + df_watch['Reward_Pct'].astype(str) + "%)"
-            
-            kolom_tampil = ["Ticker", "Sektor", "Syariah", "Conf", "Skor", "Rentang_Entry", "Stop Loss", "Take Profit", "RRR"]
-            st.dataframe(df_watch[kolom_tampil], use_container_width=True, hide_index=True)
-
-        st.markdown("---")
-
-        mode_str = trade_mode.replace(" ", "") 
-        tanggal_str = datetime.now().strftime('%Y%m%d')
-        nama_file_pdf = f"ExpertStockPro_Screening_{mode_str}_{tanggal_str}.pdf"
-
-        pdf_data = export_to_pdf(res, trade_mode, session)
-        
-        col1, col2, col3 = st.columns([1, 2, 1])
-        with col2:
-            st.download_button(
-                label="📥 UNDUH LAPORAN SCREENING LENGKAP (PDF)",
-                data=pdf_data,
-                file_name=nama_file_pdf,
-                mime="application/pdf",
-                use_container_width=True 
-            )
-        
-        st.markdown("<br>", unsafe_allow_html=True) 
-
-        st.caption("⚠️ **DISCLAIMER:** Laporan analisa ini dihasilkan secara otomatis menggunakan perhitungan algoritma indikator teknikal dan fundamental. Seluruh informasi yang disajikan bukan merupakan ajakan, rekomendasi pasti, atau paksaan untuk membeli/menjual saham. Keputusan investasi dan trading sepenuhnya menjadi tanggung jawab pribadi masing-masing investor. Selalu terapkan manajemen risiko yang baik dan *Do Your Own Research* (DYOR) dan pertimbangkan profil risiko sebelum mengambil keputusan di pasar modal.")
+        st.subheader(f"🏆 Top Picks: {trade_mode}")
+        st.dataframe(pd.DataFrame(st.session_state.final_picks), use_container_width=True)
 
 if __name__ == "__main__":
     run_screening()
