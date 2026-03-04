@@ -305,7 +305,7 @@ def run_screening():
         # --- PDF DOWNLOAD BUTTON ---
         st.markdown("<br>", unsafe_allow_html=True)
         pdf_data = export_to_pdf(res, trade_mode, st.session_state.pdf_session, st.session_state.sector_report)
-        st.download_button("📥 UNDUH LAPORAN SCREENING LENGKAP (PDF)", data=pdf_data, file_name=f"ExpertStockPro_Screening_{trade_mode}.pdf", mime="application/pdf", use_container_width=True)
+        st.download_button("📥 UNDUH LAPORAN SCREENING LENGKAP (PDF)", data=pdf_data, file_name=f"ExpertStockPro_Screening_{trade_mode}_{datetime.now().strftime('%Y%m%d')}.pdf", mime="application/pdf", use_container_width=True)
 
 if __name__ == "__main__":
     run_screening()
