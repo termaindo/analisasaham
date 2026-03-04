@@ -87,8 +87,8 @@ def get_market_session():
 
 # --- 6. MODUL UTAMA ---
 def run_screening():
-    st.set_page_config(page_title="Institutional Alpha Scanner", layout="wide")
-    st.markdown("<h1 style='text-align: center;'>🏛️ Institutional Alpha: MTF Edition</h1>", unsafe_allow_html=True)
+    st.set_page_config(page_title="🔍 Screening Saham Harian Pro", layout="wide")
+    st.markdown("<h1 style='text-align: center;'>🔍 Screening Saham Harian Pro</h1>", unsafe_allow_html=True)
     st.markdown("---")
 
     # Sidebar Options
