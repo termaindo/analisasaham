@@ -50,7 +50,7 @@ def export_to_pdf(hasil_lolos, trade_mode, session, sector_report, logo_path="lo
     pdf.set_y(28)
     pdf.set_font("Arial", 'I', 10)
     pdf.set_text_color(0, 0, 255) # Warna biru untuk link
-    pdf.cell(0, 5, "Sumber: https://lynk.id/hahastoresby", ln=True, align='C', link="https://lynk.id/hahastoresby")
+    pdf.cell(0, 5, "Sumber: https://bit.ly/sahampintar", ln=True, align='C', link="https://bit.ly/sahampintar")
     
     # Info Strategi dan Waktu (WIB)
     pdf.ln(3)
