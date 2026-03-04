@@ -87,31 +87,55 @@ def get_market_session():
 
 # --- 6. MODUL UTAMA ---
 def run_screening():
-    st.set_page_config(page_title="🔍 Screening Saham Harian Pro", layout="wide")
-    st.markdown("<h1 style='text-align: center;'>🔍 Screening Saham Harian Pro</h1>", unsafe_allow_html=True)
+    st.set_page_config(page_title="Institutional Alpha Scanner", layout="wide")
+    st.markdown("<h1 style='text-align: center;'>🏛️ Institutional Alpha: MTF Edition</h1>", unsafe_allow_html=True)
     st.markdown("---")
 
-    # Sidebar Options
-    with st.sidebar:
-        st.header("⚙️ Strategy Settings")
-        trade_mode = st.radio("Trading Mode:", ["Day Trading", "Swing Trading"])
-        mtf_filter = st.checkbox("Strict MTF Alignment", value=True, help="Hanya tampilkan saham yang searah dengan tren besar (Daily & Weekly).")
-        sector_boost = st.checkbox("Enable Sector Booster", value=True)
+    # --- PILIHAN MODE DI LAYAR UTAMA ---
+    st.write("### ⚙️ Pemilihan Strategi & Waktu Analisa")
+    trade_mode = st.radio("Pilih Strategi Trading (Mode Analisa):", ["Day Trading", "Swing Trading"], horizontal=True)
 
-    # Time Logic
+    # Sidebar Options (Hanya untuk filter tambahan)
+    with st.sidebar:
+        st.header("⚙️ Filter Institusi Tambahan")
+        mtf_filter = st.checkbox("Strict MTF Alignment", value=True, help="Hanya tampilkan saham yang searah dengan tren besar (Daily & Weekly).")
+        sector_boost = st.checkbox("Enable Sector Booster", value=True, help="Berikan poin tambahan pada saham di sektor yang memimpin pasar.")
+
+    # Time Logic & Market Session
     tz = pytz.timezone('Asia/Jakarta')
     now = datetime.now(tz)
     curr_time_float = now.hour + now.minute/60
-    session, _ = get_market_session()
+    is_weekend = now.weekday() >= 5
+    session, status_desc = get_market_session()
 
-    # Dynamic Notifications
-    if trade_mode == "Day Trading":
-        if 9.5 <= curr_time_float <= 11.0: st.success("🌟 **GOLDEN HOURS AKTIF**")
-        else: st.warning("⚠️ **WIN RATE REDUCED:** Jalankan pukul 09.30-11.00.")
+    # Tampilkan Status Pasar Saat Ini
+    if "Tutup" in status_desc:
+        st.error(f"**Status Market:** {session} ({status_desc})")
     else:
-        if curr_time_float >= 16.0: st.success("✅ **IDEAL SWING ANALYSIS**")
+        st.info(f"**Status Market:** {session} ({status_desc})")
 
-    if st.button(f"🚀 JALANKAN ANALISA MULTI-TIMEFRAME"):
+    # --- DYNAMIC NOTIFICATIONS BERDASARKAN MODE ---
+    if trade_mode == "Day Trading":
+        is_golden = 9.5 <= curr_time_float <= 11.0 and not is_weekend
+        if is_golden: 
+            st.success("🌟 **GOLDEN HOURS AKTIF (09.30 - 11.00 WIB):** Waktu paling optimal untuk eksekusi Day Trading. Volatilitas dan volume sedang berada di puncaknya.")
+        else: 
+            if not is_weekend:
+                st.warning("⚠️ **NOTIFIKASI WIN RATE:** Day Trading disarankan dijalankan pada pukul 09.30-11.00 WIB. Saat ini bukan jam optimal, sinyal mungkin rentan terjebak *sideways*.")
+            else:
+                st.warning("🚫 **PASAR TUTUP:** Data Day Trading yang dihasilkan adalah hasil penutupan terakhir. Gunakan hanya untuk evaluasi.")
+    
+    elif trade_mode == "Swing Trading":
+        is_swing = curr_time_float >= 16.0 or is_weekend
+        if is_swing: 
+            st.success("✅ **WAKTU ANALISA SWING IDEAL:** Data penutupan telah final. Ini adalah waktu terbaik untuk menyusun *Watchlist* dan *Trading Plan* untuk esok hari.")
+        else: 
+            st.info("ℹ️ **INFO:** Screening Swing Trading paling akurat dilakukan setelah jam 16.00 WIB untuk memastikan struktur harga penutupan harian tidak berubah.")
+
+    st.markdown("---")
+
+    # --- TOMBOL EKSEKUSI ---
+    if st.button(f"🚀 JALANKAN ANALISA {trade_mode.upper()}"):
         saham_list = [f"{t}.JK" for tickers in UNIVERSE_SAHAM.values() for t in tickers]
         saham_list = list(set(saham_list))
         
