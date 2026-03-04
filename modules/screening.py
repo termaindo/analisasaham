@@ -46,11 +46,13 @@ def export_to_pdf(hasil_lolos, trade_mode, session, sector_report, logo_path="lo
     pdf.set_xy(35, 8) 
     pdf.cell(0, 10, "Expert Stock Pro - Ultimate Alpha Report", ln=True)
     
+    # Hyperlink Sumber 
     pdf.set_y(28)
     pdf.set_font("Arial", 'I', 10)
     pdf.set_text_color(0, 0, 255) 
     pdf.cell(0, 5, "Sumber: https://lynk.id/hahastoresby", ln=True, align='C', link="https://lynk.id/hahastoresby")
     
+    # Info Strategi dan Waktu (WIB)
     pdf.ln(3)
     pdf.set_text_color(0, 0, 0) 
     pdf.set_font("Arial", 'B', 12)
@@ -62,7 +64,7 @@ def export_to_pdf(hasil_lolos, trade_mode, session, sector_report, logo_path="lo
     pdf.cell(0, 5, f"Dicetak: {waktu_cetak}", ln=True, align='R')
     pdf.ln(2)
 
-    # --- SEKSI A: TOP 3 ---
+    # --- SEKSI A: TOP 3 PRIORITAS ---
     pdf.set_fill_color(240, 240, 240)
     pdf.set_font("Arial", 'B', 11)
     pdf.cell(190, 8, "A. TOP 3 PRIORITAS TRANSAKSI (HIGH CONVICTION)", 0, ln=True, fill=True)
@@ -87,7 +89,7 @@ def export_to_pdf(hasil_lolos, trade_mode, session, sector_report, logo_path="lo
         pdf.line(10, pdf.get_y(), 200, pdf.get_y())
         pdf.ln(2)
 
-    # --- SEKSI B: WATCHLIST ---
+    # --- SEKSI B: WATCHLIST 4-10 ---
     watchlist = hasil_lolos[3:10]
     if watchlist:
         pdf.ln(3)
@@ -114,7 +116,7 @@ def export_to_pdf(hasil_lolos, trade_mode, session, sector_report, logo_path="lo
             pdf.cell(25, 6, str(w['TP']), 1, 0, 'C')
             pdf.cell(20, 6, w['RRR'], 1, 1, 'C')
 
-    # --- DISCLAIMER FOOTER ---
+    # --- DISCLAIMER FOOTER PDF ---
     pdf.ln(10)
     pdf.set_font("Arial", 'B', 8)
     pdf.cell(190, 5, "DISCLAIMER:", ln=True) 
@@ -163,32 +165,44 @@ def run_screening():
     st.markdown("<h1 style='text-align: center;'>🔍 Screening Saham Harian Pro</h1>", unsafe_allow_html=True)
     st.markdown("---")
 
-    # --- INFORMASI JAM OPTIMAL & PEMILIHAN MODE ---
-    st.write("### ⚙️ Pemilihan Strategi & Waktu Analisa")
-    
-    # Menampilkan informasi jam ideal di atas radio button
-    st.info("⏰ **Panduan Waktu Analisa Optimal:** \n"
-            "- **Day Trading:** 09.30 - 11.00 WIB (Untuk momentum harian tertinggi).\n"
-            "- **Swing Trading:** > 16.00 WIB (Untuk konfirmasi harga penutupan yang solid).")
-    
-    trade_mode = st.radio("Pilih Strategi Trading (Mode Analisa):", ["Day Trading", "Swing Trading"], horizontal=True)
-
+    # --- SIDEBAR: FILTER TAMBAHAN ---
     with st.sidebar:
         st.header("⚙️ Filter Institusi Tambahan")
         mtf_filter = st.checkbox("Strict MTF Alignment", value=True, help="Hanya tampilkan saham yang searah dengan tren besar (Daily & Weekly).")
         sector_boost = st.checkbox("Enable Sector Booster", value=True, help="Berikan poin tambahan pada saham di sektor yang memimpin pasar.")
-        
-        st.markdown("---")
-        # --- KALKULATOR POSISI DI SIDEBAR ---
-        st.header("💼 Position Sizing Calculator")
-        st.caption("Hitung berapa lot maksimal yang aman untuk dibeli.")
-        modal_risiko = st.number_input("Maksimal Rupiah yang Rela Dirisikokan (Contoh: 1.000.000):", min_value=10000, value=1000000, step=10000)
 
+    # --- MAIN UI: PENGATURAN STRATEGI & RISIKO ---
+    st.write("### ⚙️ Pemilihan Strategi & Pengaturan Risiko")
+    
+    st.info("⏰ **Panduan Waktu Analisa Optimal:** \n"
+            "- **Day Trading:** 09.30 - 11.00 WIB (Untuk momentum harian tertinggi).\n"
+            "- **Swing Trading:** > 16.00 WIB (Untuk konfirmasi harga penutupan yang solid).")
+    
+    # Membagi layout menjadi dua kolom agar rapi di layar lebar, namun tetap responsif di HP
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.markdown("**1. Pilih Mode Analisa**")
+        trade_mode = st.radio("Mode:", ["Day Trading", "Swing Trading"], horizontal=True, label_visibility="collapsed")
+        
+    with col2:
+        st.markdown("**2. Position Sizing Calculator**")
+        modal_risiko = st.number_input(
+            "Maksimal Risiko per Transaksi (Rp):", 
+            min_value=10000, 
+            value=1000000, 
+            step=100000,
+            help="Batas maksimal nominal kerugian yang rela Anda tanggung jika harga menyentuh Stop Loss."
+        )
+
+    # --- TIME LOGIC & MARKET SESSION ---
     tz = pytz.timezone('Asia/Jakarta')
     now = datetime.now(tz)
     curr_time_float = now.hour + now.minute/60
     is_weekend = now.weekday() >= 5
     session, status_desc = get_market_session()
+
+    st.markdown("---")
 
     if "Tutup" in status_desc:
         st.error(f"**Status Market:** {session} ({status_desc})")
@@ -212,9 +226,10 @@ def run_screening():
         else: 
             st.info("ℹ️ **INFO:** Screening Swing Trading paling akurat dilakukan setelah jam 16.00 WIB untuk memastikan struktur harga penutupan harian tidak berubah.")
 
-    st.markdown("---")
+    st.markdown("<br>", unsafe_allow_html=True)
 
-    if st.button(f"🚀 JALANKAN ANALISA {trade_mode.upper()}"):
+    # --- TOMBOL EKSEKUSI ---
+    if st.button(f"🚀 JALANKAN ANALISA {trade_mode.upper()}", use_container_width=True):
         saham_list = [f"{t}.JK" for tickers in UNIVERSE_SAHAM.values() for t in tickers]
         saham_list = list(set(saham_list))
         
@@ -332,7 +347,7 @@ def run_screening():
                     st.write(f"**Target (TP):** Rp {item['TP']}")
                     st.write(f"**Proteksi (SL):** Rp {item['SL']}")
                     st.info(f"Area Entry: {item['Entry']}")
-                    st.warning(f"🛡️ **Maks. Aman:** {item['Lot_Maks']}") # Menampilkan kalkulator lot
+                    st.warning(f"🛡️ **Maks. Aman:** {item['Lot_Maks']}") 
                     st.caption(f"💡 {item['Logic']}")
         else:
             st.warning("Belum ada saham yang memenuhi kriteria ketat institusi saat ini.")
@@ -341,7 +356,6 @@ def run_screening():
             st.markdown("---")
             st.subheader(f"📋 Radar Watchlist (Rank 4-10)")
             df_watch = pd.DataFrame(watchlist)
-            # Menambahkan kolom Lot Maks ke tampilan tabel watchlist
             kolom_tampil = ["Ticker", "Sektor", "Skor", "Status", "Entry", "SL", "TP", "RRR", "Lot_Maks"]
             st.dataframe(df_watch[kolom_tampil], use_container_width=True, hide_index=True)
         
