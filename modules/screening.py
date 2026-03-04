@@ -46,12 +46,22 @@ def export_to_pdf(hasil_lolos, trade_mode, session, sector_report, logo_path="lo
     pdf.set_xy(35, 8) 
     pdf.cell(0, 10, "Expert Stock Pro - Ultimate Alpha Report", ln=True)
     
+    # Hyperlink Sumber (Di bawah kotak hitam)
     pdf.set_y(28)
-    pdf.set_text_color(0, 0, 0)
+    pdf.set_font("Arial", 'I', 10)
+    pdf.set_text_color(0, 0, 255) # Warna biru untuk link
+    pdf.cell(0, 5, "Sumber: https://lynk.id/hahastoresby", ln=True, align='C', link="https://lynk.id/hahastoresby")
+    
+    # Info Strategi dan Waktu (WIB)
+    pdf.ln(3)
+    pdf.set_text_color(0, 0, 0) # Reset warna teks ke hitam
     pdf.set_font("Arial", 'B', 12)
     pdf.cell(190, 8, f"Strategi: {trade_mode} | Sesi: {session}", ln=True, align='C')
+    
+    tz = pytz.timezone('Asia/Jakarta')
+    waktu_cetak = datetime.now(tz).strftime('%d-%m-%Y %H:%M WIB')
     pdf.set_font("Arial", 'I', 8)
-    pdf.cell(0, 5, f"Dicetak: {datetime.now().strftime('%d-%m-%Y %H:%M')}", ln=True, align='R')
+    pdf.cell(0, 5, f"Dicetak: {waktu_cetak}", ln=True, align='R')
     pdf.ln(2)
 
     # --- SEKSI A: TOP 3 PRIORITAS ---
@@ -107,6 +117,14 @@ def export_to_pdf(hasil_lolos, trade_mode, session, sector_report, logo_path="lo
             pdf.cell(25, 6, str(w['SL']), 1, 0, 'C')
             pdf.cell(25, 6, str(w['TP']), 1, 0, 'C')
             pdf.cell(20, 6, w['RRR'], 1, 1, 'C')
+
+    # --- DISCLAIMER FOOTER PDF ---
+    pdf.ln(10)
+    pdf.set_font("Arial", 'B', 8)
+    pdf.cell(190, 5, "DISCLAIMER:", ln=True) 
+    pdf.set_font("Arial", 'I', 7)
+    disclaimer_text = ("Laporan analisa ini dihasilkan secara otomatis menggunakan perhitungan algoritma indikator teknikal dan fundamental. Seluruh informasi yang disajikan bukan merupakan ajakan, rekomendasi pasti, atau paksaan untuk membeli/menjual saham. Keputusan investasi dan trading sepenuhnya menjadi tanggung jawab pribadi masing-masing investor. Selalu terapkan manajemen risiko yang baik dan Do Your Own Research (DYOR) dan pertimbangkan profil risiko sebelum mengambil keputusan di pasar modal.")
+    pdf.multi_cell(190, 4, disclaimer_text)
 
     return pdf.output(dest='S').encode('latin-1', 'ignore')
 
@@ -302,10 +320,23 @@ def run_screening():
             kolom_tampil = ["Ticker", "Sektor", "Skor", "Status", "Entry", "SL", "TP", "RRR"]
             st.dataframe(df_watch[kolom_tampil], use_container_width=True, hide_index=True)
         
-        # --- PDF DOWNLOAD BUTTON ---
+        # --- WEB UI DISCLAIMER & PDF DOWNLOAD BUTTON ---
+        st.markdown("<br><hr>", unsafe_allow_html=True)
+        
+        # Teks Disclaimer di Web UI
+        st.caption("⚠️ **DISCLAIMER:** Laporan analisa ini dihasilkan secara otomatis menggunakan perhitungan algoritma indikator teknikal dan fundamental. Seluruh informasi yang disajikan bukan merupakan ajakan, rekomendasi pasti, atau paksaan untuk membeli/menjual saham. Keputusan investasi dan trading sepenuhnya menjadi tanggung jawab pribadi masing-masing investor. Selalu terapkan manajemen risiko yang baik dan *Do Your Own Research* (DYOR) dan pertimbangkan profil risiko sebelum mengambil keputusan di pasar modal.")
+        
         st.markdown("<br>", unsafe_allow_html=True)
+        
+        waktu_cetak_pdf = datetime.now(tz).strftime('%Y%m%d_%H%M')
         pdf_data = export_to_pdf(res, trade_mode, st.session_state.pdf_session, st.session_state.sector_report)
-        st.download_button("📥 UNDUH LAPORAN SCREENING LENGKAP (PDF)", data=pdf_data, file_name=f"ExpertStockPro_Screening_{trade_mode}_{datetime.now().strftime('%Y%m%d')}.pdf", mime="application/pdf", use_container_width=True)
+        st.download_button(
+            label="📥 UNDUH LAPORAN SCREENING LENGKAP (PDF)", 
+            data=pdf_data, 
+            file_name=f"ExpertStockPro_{trade_mode}_{waktu_cetak_pdf}.pdf", 
+            mime="application/pdf", 
+            use_container_width=True
+        )
 
 if __name__ == "__main__":
     run_screening()
