@@ -222,7 +222,7 @@ def generate_pdf_report(data_dict, logo_path="logo_expert_stock_pro.png"):
     
     pdf.set_font("Arial", 'I', 10)
     pdf.set_text_color(0, 0, 255)
-    pdf.cell(0, 5, "Sumber: https://pintarsaham.streamlit.app", ln=True, align='C', link="https://pintarsaham.streamlit.app")
+    pdf.cell(0, 5, "Sumber: https://bit.ly/sahampintar", ln=True, align='C', link="https://bit.ly/sahampintar")
     pdf.ln(2)
     
     pdf.set_text_color(0, 0, 0)
