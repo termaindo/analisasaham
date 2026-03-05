@@ -187,12 +187,14 @@ def run_screening():
         st.markdown("---")
         # --- KALKULATOR POSISI INSTITUSIONAL DI SIDEBAR ---
         st.header("💼 Institutional Position Sizing")
-        st.caption("Manajemen risiko profesional berdasarkan 1%-2% Rule.")
+        st.caption("Manajemen risiko profesional berdasarkan Modal & Batas Kerugian.")
         
+        # Mengembalikan Input Nominal Rupiah
         total_modal = st.number_input("Total Modal Portofolio Anda (Rp):", min_value=1000000, value=100000000, step=5000000)
-        risiko_persen = st.slider("Batas Toleransi Risiko per Transaksi (%):", min_value=0.5, max_value=3.0, value=1.0, step=0.1, help="Standar Institusi: 1% untuk Day Trade, maksimal 2% untuk Swing Trade.")
+        modal_risiko = st.number_input("Nominal Maksimal Siap Rugi (Rp):", min_value=10000, value=1000000, step=50000, help="Ketik angka murni tanpa titik.")
         
-        modal_risiko = total_modal * (risiko_persen / 100)
+        # Kalkulasi Persentase untuk Visibilitas
+        risiko_persen = (modal_risiko / total_modal) * 100 if total_modal > 0 else 0
         batas_alokasi_persen = 15.0
         batas_alokasi_rp = total_modal * (batas_alokasi_persen / 100)
         
@@ -200,9 +202,9 @@ def run_screening():
             f"""
             <div style="background-color:#d4edda; border-left: 5px solid #28a745; padding: 10px; border-radius: 5px;">
                 <p style="margin:0; font-size:12px; color:#155724;">Total Modal: <b>Rp {format_rp(total_modal)}</b></p>
-                <p style="margin:0; font-size:12px; color:#155724;">Siap Rugi per Transaksi ({risiko_persen}%):</p>
+                <p style="margin:0; font-size:12px; color:#155724;">Nominal Siap Rugi (<b>{risiko_persen:.1f}%</b> dari modal):</p>
                 <h4 style="margin:0; color:#155724;">Rp {format_rp(modal_risiko)}</h4>
-                <p style="margin:0; margin-top:5px; font-size:10px; color:#155724;"><i>*Sistem juga membatasi maks beli 15% modal (Rp {format_rp(batas_alokasi_rp)}) per saham agar tidak over-konsentrasi.</i></p>
+                <p style="margin:0; margin-top:5px; font-size:10px; color:#155724;"><i>*Sistem membatasi maks beli 15% modal (Rp {format_rp(batas_alokasi_rp)}) per saham agar tidak over-konsentrasi.</i></p>
             </div>
             """, unsafe_allow_html=True
         )
