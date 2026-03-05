@@ -7,7 +7,7 @@ import base64
 import holidays
 import io
 import plotly.express as px
-import concurrent.futures # <-- INJEKSI MULTITHREADING
+import concurrent.futures 
 from datetime import datetime
 from fpdf import FPDF 
 from modules.data_loader import get_full_stock_data 
@@ -32,10 +32,11 @@ def analyze_sector_momentum(full_results_df):
     return sector_summary, leading_sectors
 
 # --- 3. FUNGSI GENERATOR PDF (INSTITUTIONAL FORMAT) ---
-def export_to_pdf(hasil_lolos, trade_mode, session, sector_report, logo_path="logo_expert_stock_pro.png"):
+def export_to_pdf(hasil_lolos, trade_mode, session, sector_report, modal_risiko, logo_path="logo_expert_stock_pro.png"):
     pdf = FPDF()
     pdf.add_page()
     
+    # Header Box
     pdf.set_fill_color(20, 20, 20)
     pdf.rect(0, 0, 210, 25, 'F')
     if os.path.exists(logo_path):
@@ -46,18 +47,25 @@ def export_to_pdf(hasil_lolos, trade_mode, session, sector_report, logo_path="lo
     pdf.set_xy(35, 8) 
     pdf.cell(0, 10, "Expert Stock Pro - Ultimate Alpha Report", ln=True)
     
+    # Hyperlink Sumber 
     pdf.set_y(28)
     pdf.set_font("Arial", 'I', 10)
     pdf.set_text_color(0, 0, 255) 
     pdf.cell(0, 5, "Sumber: https://bit.ly/sahampintar", ln=True, align='C', link="https://bit.ly/sahampintar")
     
+    # Info Strategi, Waktu, dan Modal Risiko
     pdf.ln(3)
     pdf.set_text_color(0, 0, 0) 
     pdf.set_font("Arial", 'B', 12)
     pdf.cell(190, 8, f"Strategi: {trade_mode} | Sesi: {session}", ln=True, align='C')
     
+    pdf.set_font("Arial", 'B', 9)
+    pdf.set_text_color(150, 0, 0) # Warna merah gelap untuk peringatan risiko
+    pdf.cell(190, 5, f"Batas Toleransi Risiko per Transaksi (Stop Loss): Rp {modal_risiko:,.0f}".replace(',', '.'), ln=True, align='C')
+    
     tz = pytz.timezone('Asia/Jakarta')
     waktu_cetak = datetime.now(tz).strftime('%d-%m-%Y %H:%M WIB')
+    pdf.set_text_color(0, 0, 0)
     pdf.set_font("Arial", 'I', 8)
     pdf.cell(0, 5, f"Dicetak: {waktu_cetak}", ln=True, align='R')
     pdf.ln(2)
@@ -73,14 +81,20 @@ def export_to_pdf(hasil_lolos, trade_mode, session, sector_report, logo_path="lo
         pdf.set_font("Arial", 'B', 10)
         pdf.cell(190, 6, f"{item['Ticker']} - {item['Sektor']} | Score: {item['Skor']}/100", ln=True) 
         
+        # Baris Info Harga
         pdf.set_font("Arial", '', 9)
-        pdf.cell(60, 5, f"Entry: {item['Entry']}", 0)
+        pdf.cell(50, 5, f"Entry: {item['Entry']}", 0)
         pdf.set_text_color(0, 128, 0)
-        pdf.cell(60, 5, f"TP Target: Rp {item['TP']}", 0)
+        pdf.cell(45, 5, f"Target: Rp {item['TP']}", 0)
         pdf.set_text_color(200, 0, 0)
-        pdf.cell(60, 5, f"Stop Loss: Rp {item['SL']}", ln=True)
-        pdf.set_text_color(0, 0, 0)
+        pdf.cell(45, 5, f"Stop Loss: Rp {item['SL']}", 0)
         
+        # Baris Lot Rekomendasi
+        pdf.set_text_color(0, 0, 0)
+        pdf.set_font("Arial", 'B', 9)
+        pdf.cell(50, 5, f"Max Beli: {item['Lot_Maks']}", ln=True)
+        
+        # Baris Logic
         pdf.set_font("Arial", 'I', 8)
         pdf.multi_cell(190, 4, f"Logic: {item['Logic']}")
         pdf.ln(2)
@@ -95,24 +109,29 @@ def export_to_pdf(hasil_lolos, trade_mode, session, sector_report, logo_path="lo
         pdf.cell(190, 8, "B. RADAR WATCHLIST (RANK 4-10)", 0, ln=True, fill=True)
         pdf.ln(2)
         
+        # Penyesuaian Lebar Kolom untuk Menyisipkan "Lot Maks"
         pdf.set_font("Arial", 'B', 8)
-        pdf.cell(20, 6, "Ticker", 1, 0, 'C')
-        pdf.cell(50, 6, "Sektor", 1, 0, 'C')
-        pdf.cell(15, 6, "Skor", 1, 0, 'C')
-        pdf.cell(35, 6, "Entry", 1, 0, 'C')
-        pdf.cell(25, 6, "SL", 1, 0, 'C')
-        pdf.cell(25, 6, "TP", 1, 0, 'C')
-        pdf.cell(20, 6, "RRR", 1, 1, 'C')
+        pdf.cell(15, 6, "Ticker", 1, 0, 'C')
+        pdf.cell(45, 6, "Sektor", 1, 0, 'C')
+        pdf.cell(10, 6, "Skor", 1, 0, 'C')
+        pdf.cell(32, 6, "Entry", 1, 0, 'C')
+        pdf.cell(22, 6, "SL", 1, 0, 'C')
+        pdf.cell(22, 6, "TP", 1, 0, 'C')
+        pdf.cell(20, 6, "RRR", 1, 0, 'C')
+        pdf.cell(24, 6, "Max Lot", 1, 1, 'C') # Kolom Baru
         
         pdf.set_font("Arial", '', 8)
         for w in watchlist:
-            pdf.cell(20, 6, w['Ticker'], 1, 0, 'C')
-            pdf.cell(50, 6, w['Sektor'][:22], 1, 0, 'C')
-            pdf.cell(15, 6, str(w['Skor']), 1, 0, 'C')
-            pdf.cell(35, 6, w['Entry'], 1, 0, 'C')
-            pdf.cell(25, 6, str(w['SL']), 1, 0, 'C')
-            pdf.cell(25, 6, str(w['TP']), 1, 0, 'C')
-            pdf.cell(20, 6, w['RRR'], 1, 1, 'C')
+            pdf.cell(15, 6, w['Ticker'], 1, 0, 'C')
+            pdf.cell(45, 6, w['Sektor'][:20], 1, 0, 'C') # Potong text sektor sedikit
+            pdf.cell(10, 6, str(w['Skor']), 1, 0, 'C')
+            pdf.cell(32, 6, w['Entry'].replace("Rp ", ""), 1, 0, 'C') # Hapus "Rp " agar muat
+            pdf.cell(22, 6, str(w['SL']), 1, 0, 'C')
+            pdf.cell(22, 6, str(w['TP']), 1, 0, 'C')
+            pdf.cell(20, 6, w['RRR'], 1, 0, 'C')
+            pdf.set_font("Arial", 'B', 8)
+            pdf.cell(24, 6, w['Lot_Maks'], 1, 1, 'C') # Isi Kolom Baru
+            pdf.set_font("Arial", '', 8)
 
     # --- DISCLAIMER FOOTER PDF ---
     pdf.ln(10)
@@ -159,7 +178,6 @@ def get_market_session():
 
 # --- FUNGSI WORKER UNTUK MULTITHREADING ---
 def process_single_ticker(ticker, trade_mode, mtf_filter):
-    """Fungsi ini akan dijalankan secara paralel (bersamaan) untuk tiap saham"""
     ticker_bersih = ticker.replace(".JK", "")
     try:
         data = get_full_stock_data(ticker)
@@ -174,7 +192,7 @@ def process_single_ticker(ticker, trade_mode, mtf_filter):
         is_micro_bullish = curr_price > last['VWAP'] if trade_mode == "Day Trading" else curr_price > last['EMA9']
 
         if mtf_filter and not (is_macro_bullish and is_medium_bullish): 
-            return None # Langsung diskip jika tidak lolos filter tren
+            return None
 
         score = 0; alasan = []
         
@@ -208,13 +226,11 @@ def run_screening():
     st.markdown("<h1 style='text-align: center;'>🔍 Screening Saham Harian Pro</h1>", unsafe_allow_html=True)
     st.markdown("---")
 
-    # --- SIDEBAR ---
     with st.sidebar:
         st.header("⚙️ Filter Institusi Tambahan")
         mtf_filter = st.checkbox("Strict MTF Alignment", value=True, help="Hanya tampilkan saham yang searah dengan tren besar (Daily & Weekly).")
         sector_boost = st.checkbox("Enable Sector Booster", value=True, help="Berikan poin tambahan pada saham di sektor yang memimpin pasar.")
 
-    # --- MAIN UI: PERBAIKAN TATA LETAK AGAR PASTI MUNCUL ---
     st.write("### ⚙️ Pemilihan Strategi & Pengaturan Risiko")
     st.info("⏰ **Panduan Waktu Analisa Optimal:** \n"
             "- **Day Trading:** 09.30 - 11.00 WIB (Untuk momentum harian tertinggi).\n"
@@ -259,7 +275,6 @@ def run_screening():
 
     st.markdown("<br>", unsafe_allow_html=True)
 
-    # --- TOMBOL EKSEKUSI & MULTITHREADING ---
     if st.button(f"🚀 JALANKAN ANALISA {trade_mode.upper()} (TURBO MODE)", use_container_width=True):
         saham_list = [f"{t}.JK" for tickers in UNIVERSE_SAHAM.values() for t in tickers]
         saham_list = list(set(saham_list))
@@ -268,9 +283,7 @@ def run_screening():
         progress_bar = st.progress(0)
         status_text = st.empty()
 
-        # Eksekusi dengan ThreadPoolExecutor (Pemrosesan Paralel)
         with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
-            # Map setiap ticker ke fungsi process_single_ticker
             futures = {executor.submit(process_single_ticker, t, trade_mode, mtf_filter): t for t in saham_list}
             
             for i, future in enumerate(concurrent.futures.as_completed(futures)):
@@ -286,7 +299,6 @@ def run_screening():
         progress_bar.empty()
         status_text.empty()
 
-        # Pemrosesan Lanjutan: Rotasi Sektor & Perhitungan Risiko
         df_all = pd.DataFrame(raw_results)
         sector_report, leading_sectors = analyze_sector_momentum(df_all)
         
@@ -302,7 +314,6 @@ def run_screening():
             tp = int(stock['Harga'] + (stock['Harga'] - sl) * (1.5 if trade_mode == "Day Trading" else 2.0))
             rrr = (tp - stock['Harga']) / (stock['Harga'] - sl) if stock['Harga'] > sl else 0
 
-            # Kalkulator Lot Berdasarkan Input Pengguna
             risiko_per_lembar = stock['Harga'] - sl
             if risiko_per_lembar > 0:
                 lembar_maksimal = modal_risiko / risiko_per_lembar
@@ -310,76 +321,4 @@ def run_screening():
             else:
                 lot_maksimal = 0
 
-            if f_score >= 65 and rrr >= 1.4:
-                final_picks.append({
-                    "Ticker": stock['Ticker'], "Sektor": stock['Sektor'], "Skor": f_score,
-                    "Harga_Saat_Ini": int(stock['Harga']),
-                    "Entry": f"Rp {int(stock['Harga']*0.99)} - {int(stock['Harga'])}",
-                    "SL": sl, "TP": tp, "RRR": f"{rrr:.1f}x",
-                    "Status": "🔥 HIGH CONVICTION" if f_score >= 85 else "🎯 READY",
-                    "Logic": " | ".join(stock['Alasan']),
-                    "Lot_Maks": f"{lot_maksimal} Lot"
-                })
-
-        final_picks.sort(key=lambda x: x['Skor'], reverse=True)
-        st.session_state.final_picks = final_picks[:10] 
-        st.session_state.sector_report = sector_report
-        st.session_state.pdf_session = session 
-        if any(p['Skor'] >= 85 for p in st.session_state.final_picks): play_alert_sound()
-
-    # --- DISPLAY UI ---
-    if 'final_picks' in st.session_state and st.session_state.final_picks:
-        res = st.session_state.final_picks
-        top_3 = res[:3]
-        watchlist = res[3:10]
-
-        st.subheader("🌐 Market Overview")
-        c1, c2 = st.columns([2, 1])
-        with c1:
-            fig = px.bar(st.session_state.sector_report.reset_index(), x='Sektor', y='Avg_Score', color='Avg_Score', color_continuous_scale='Greens', title="Kekuatan Sektor Saat Ini")
-            st.plotly_chart(fig, use_container_width=True)
-        with c2:
-            st.write("**Top Leading Sectors:**")
-            for s in st.session_state.sector_report.index[:3]: st.success(s)
-
-        st.markdown("---")
-        
-        st.header(f"🏆 Top 3 Prioritas {trade_mode}")
-        if top_3:
-            cols = st.columns(len(top_3))
-            for idx, item in enumerate(top_3):
-                with cols[idx]:
-                    st.markdown(f"### {item['Ticker']}")
-                    st.write(f"**Sektor:** {item['Sektor']}")
-                    st.metric("Skor Institusi", f"{item['Skor']}/100 Pts", item['Status'])
-                    st.write(f"**Target (TP):** Rp {item['TP']}")
-                    st.write(f"**Proteksi (SL):** Rp {item['SL']}")
-                    st.info(f"Area Entry: {item['Entry']}")
-                    st.warning(f"🛡️ **Maks. Aman:** {item['Lot_Maks']}") 
-                    st.caption(f"💡 {item['Logic']}")
-        else:
-            st.warning("Belum ada saham yang memenuhi kriteria ketat institusi saat ini.")
-
-        if watchlist:
-            st.markdown("---")
-            st.subheader(f"📋 Radar Watchlist (Rank 4-10)")
-            df_watch = pd.DataFrame(watchlist)
-            kolom_tampil = ["Ticker", "Sektor", "Skor", "Status", "Entry", "SL", "TP", "RRR", "Lot_Maks"]
-            st.dataframe(df_watch[kolom_tampil], use_container_width=True, hide_index=True)
-        
-        st.markdown("<br><hr>", unsafe_allow_html=True)
-        st.caption("⚠️ **DISCLAIMER:** Laporan analisa ini dihasilkan secara otomatis menggunakan perhitungan algoritma indikator teknikal dan fundamental. Seluruh informasi yang disajikan bukan merupakan ajakan, rekomendasi pasti, atau paksaan untuk membeli/menjual saham. Keputusan investasi dan trading sepenuhnya menjadi tanggung jawab pribadi masing-masing investor. Selalu terapkan manajemen risiko yang baik dan *Do Your Own Research* (DYOR) dan pertimbangkan profil risiko sebelum mengambil keputusan di pasar modal.")
-        st.markdown("<br>", unsafe_allow_html=True)
-        
-        waktu_cetak_pdf = datetime.now(tz).strftime('%Y%m%d_%H%M')
-        pdf_data = export_to_pdf(res, trade_mode, st.session_state.pdf_session, st.session_state.sector_report)
-        st.download_button(
-            label="📥 UNDUH LAPORAN SCREENING LENGKAP (PDF)", 
-            data=pdf_data, 
-            file_name=f"ExpertStockPro_{trade_mode}_{waktu_cetak_pdf}.pdf", 
-            mime="application/pdf", 
-            use_container_width=True
-        )
-
-if __name__ == "__main__":
-    run_screening()
+            if f_score >= 65 and r
