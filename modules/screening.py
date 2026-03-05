@@ -54,11 +54,11 @@ def export_to_pdf(hasil_lolos, trade_mode, session, sector_report, logo_path="lo
     pdf.set_xy(35, 8) 
     pdf.cell(0, 10, "Expert Stock Pro - Ultimate Alpha Report", ln=True)
     
-    # Hyperlink Sumber 
+    # Hyperlink Sumber (Telah Diperbarui)
     pdf.set_y(28)
     pdf.set_font("Arial", 'I', 10)
     pdf.set_text_color(0, 0, 255) 
-    pdf.cell(0, 5, "Sumber: https://lynk.id/hahastoresby", ln=True, align='C', link="https://lynk.id/hahastoresby")
+    pdf.cell(0, 5, "Sumber: https://bit.ly/sahampintar", ln=True, align='C', link="https://bit.ly/sahampintar")
     
     # Info Strategi dan Waktu (WIB)
     pdf.ln(3)
@@ -89,26 +89,33 @@ def export_to_pdf(hasil_lolos, trade_mode, session, sector_report, logo_path="lo
     pdf.ln(2)
 
     top_3 = hasil_lolos[:3]
-    for item in top_3:
-        pdf.set_font("Arial", 'B', 10)
-        pdf.cell(190, 6, f"{item['Ticker']} - {item['Sektor']} | Score: {item['Skor']}/100", ln=True) 
-        
-        pdf.set_font("Arial", '', 9)
-        pdf.cell(60, 5, f"Entry: {item['Entry']}", 0)
-        pdf.set_text_color(0, 128, 0)
-        pdf.cell(60, 5, f"TP Target: Rp {format_rp(item['TP'])}", 0)
-        pdf.set_text_color(200, 0, 0)
-        pdf.cell(60, 5, f"Stop Loss: Rp {format_rp(item['SL'])}", ln=True)
-        pdf.set_text_color(0, 0, 0)
-        
-        pdf.set_font("Arial", 'B', 8)
-        pdf.cell(190, 5, f"Batas Alokasi Maksimal: {item['Lot_Maks']}", ln=True)
-        
-        pdf.set_font("Arial", 'I', 8)
-        pdf.multi_cell(190, 4, f"Logic: {item['Logic']}")
-        pdf.ln(2)
-        pdf.line(10, pdf.get_y(), 200, pdf.get_y())
-        pdf.ln(2)
+    if top_3:
+        for item in top_3:
+            pdf.set_font("Arial", 'B', 10)
+            pdf.cell(190, 6, f"{item['Ticker']} - {item['Sektor']} | Score: {item['Skor']}/100", ln=True) 
+            
+            pdf.set_font("Arial", '', 9)
+            pdf.cell(60, 5, f"Entry: {item['Entry']}", 0)
+            pdf.set_text_color(0, 128, 0)
+            pdf.cell(60, 5, f"TP Target: Rp {format_rp(item['TP'])}", 0)
+            pdf.set_text_color(200, 0, 0)
+            pdf.cell(60, 5, f"Stop Loss: Rp {format_rp(item['SL'])}", ln=True)
+            pdf.set_text_color(0, 0, 0)
+            
+            pdf.set_font("Arial", 'B', 8)
+            pdf.cell(190, 5, f"Batas Alokasi Maksimal: {item['Lot_Maks']}", ln=True)
+            
+            pdf.set_font("Arial", 'I', 8)
+            pdf.multi_cell(190, 4, f"Logic: {item['Logic']}")
+            pdf.ln(2)
+            pdf.line(10, pdf.get_y(), 200, pdf.get_y())
+            pdf.ln(2)
+    else:
+        # Menampilkan pesan elegan jika tidak ada saham yang lolos
+        pdf.ln(3)
+        pdf.set_font("Arial", 'I', 10)
+        pdf.cell(190, 6, "Belum ada saham yang memenuhi kriteria ketat institusi saat ini.", ln=True, align='C')
+        pdf.ln(3)
 
     # --- SEKSI B: WATCHLIST 4-10 ---
     watchlist = hasil_lolos[3:10]
@@ -309,7 +316,6 @@ def run_screening():
         
         raw_results = []
         
-        # PERUBAHAN TEKS: Sesuai dengan instruksi Anda
         st.write("### 🔄 Menjalankan mesin pencari saham potensial.")
         
         status_text = st.empty()
@@ -331,7 +337,6 @@ def run_screening():
                 if result is not None:
                     raw_results.append(result)
 
-        # MENGHAPUS NOTIFIKASI SUKSES: Agar tampilan langsung bersih menuju hasil
         status_text.empty()
         progress_bar.empty()
 
@@ -386,13 +391,11 @@ def run_screening():
         st.session_state.sector_report = sector_report
         st.session_state.pdf_session = session 
         
-        # Penanda bahwa analisa sudah selesai dijalankan agar UI selalu muncul
         st.session_state.analysis_done = True 
         
         if any(p['Skor'] >= 85 for p in st.session_state.final_picks): play_alert_sound()
 
     # --- DISPLAY UI ---
-    # Logika diperbarui: UI akan selalu muncul jika analisa sudah dijalankan
     if st.session_state.get('analysis_done', False):
         res = st.session_state.get('final_picks', [])
         top_3 = res[:3]
@@ -428,7 +431,6 @@ def run_screening():
                     st.warning(f"🛡️ **Maks. Aman:** {item['Lot_Maks']}")
                     st.caption(f"💡 {item['Logic']}")
         else:
-            # Pesan akan muncul jika tidak ada saham yang lolos filter final
             st.warning("Belum ada saham yang memenuhi kriteria ketat institusi saat ini.")
 
         if watchlist:
