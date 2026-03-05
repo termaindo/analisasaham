@@ -355,4 +355,49 @@ def run_screening():
             st.plotly_chart(fig, use_container_width=True)
         with c2:
             st.write("**Top Leading Sectors:**")
-            for s in st.session_state.sector_report.index[:3]: st.success
+            for s in st.session_state.sector_report.index[:3]: st.success(s)
+
+        st.markdown("---")
+        
+        st.header(f"🏆 Top 3 Prioritas {trade_mode}")
+        if top_3:
+            cols = st.columns(len(top_3))
+            for idx, item in enumerate(top_3):
+                with cols[idx]:
+                    st.markdown(f"### {item['Ticker']}")
+                    st.write(f"**Sektor:** {item['Sektor']}")
+                    st.metric("Skor Institusi", f"{item['Skor']}/100 Pts", item['Status'])
+                    st.write(f"**Target (TP):** Rp {format_rp(item['TP'])}")
+                    st.write(f"**Proteksi (SL):** Rp {format_rp(item['SL'])}")
+                    st.info(f"Area Entry: {item['Entry']}")
+                    st.warning(f"🛡️ **Maks. Aman:** {item['Lot_Maks']}")
+                    st.caption(f"💡 {item['Logic']}")
+        else:
+            st.warning("Belum ada saham yang memenuhi kriteria ketat institusi saat ini.")
+
+        if watchlist:
+            st.markdown("---")
+            st.subheader(f"📋 Radar Watchlist (Rank 4-10)")
+            df_watch_display = pd.DataFrame(watchlist).copy()
+            df_watch_display['SL'] = df_watch_display['SL'].apply(format_rp)
+            df_watch_display['TP'] = df_watch_display['TP'].apply(format_rp)
+            
+            kolom_tampil = ["Ticker", "Sektor", "Skor", "Status", "Entry", "SL", "TP", "RRR", "Lot_Maks"]
+            st.dataframe(df_watch_display[kolom_tampil], use_container_width=True, hide_index=True)
+        
+        st.markdown("<br><hr>", unsafe_allow_html=True)
+        st.caption("⚠️ **DISCLAIMER:** Laporan analisa ini dihasilkan secara otomatis menggunakan perhitungan algoritma indikator teknikal dan fundamental. Seluruh informasi yang disajikan bukan merupakan ajakan, rekomendasi pasti, atau paksaan untuk membeli/menjual saham. Keputusan investasi dan trading sepenuhnya menjadi tanggung jawab pribadi masing-masing investor. Selalu terapkan manajemen risiko yang baik dan *Do Your Own Research* (DYOR) dan pertimbangkan profil risiko sebelum mengambil keputusan di pasar modal.")
+        st.markdown("<br>", unsafe_allow_html=True)
+        
+        waktu_cetak_pdf = datetime.now(tz).strftime('%Y%m%d_%H%M')
+        pdf_data = export_to_pdf(res, trade_mode, st.session_state.pdf_session, st.session_state.sector_report)
+        st.download_button(
+            label="📥 UNDUH LAPORAN SCREENING LENGKAP (PDF)", 
+            data=pdf_data, 
+            file_name=f"ExpertStockPro_{trade_mode}_{waktu_cetak_pdf}.pdf", 
+            mime="application/pdf", 
+            use_container_width=True
+        )
+
+if __name__ == "__main__":
+    run_screening()
