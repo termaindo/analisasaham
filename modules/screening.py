@@ -321,4 +321,84 @@ def run_screening():
             else:
                 lot_maksimal = 0
 
-            if f_score >= 65 and r
+            if f_score >= 65 and rrr >= 1.4:
+                final_picks.append({
+                    "Ticker": stock['Ticker'], "Sektor": stock['Sektor'], "Skor": f_score,
+                    "Harga_Saat_Ini": int(stock['Harga']),
+                    "Entry": f"Rp {int(stock['Harga']*0.99)} - {int(stock['Harga'])}",
+                    "SL": sl, "TP": tp, "RRR": f"{rrr:.1f}x",
+                    "Status": "🔥 HIGH CONVICTION" if f_score >= 85 else "🎯 READY",
+                    "Logic": " | ".join(stock['Alasan']),
+                    "Lot_Maks": f"{lot_maksimal} Lot"
+                })
+
+        final_picks.sort(key=lambda x: x['Skor'], reverse=True)
+        st.session_state.final_picks = final_picks[:10] 
+        st.session_state.sector_report = sector_report
+        st.session_state.pdf_session = session 
+        
+        # Simpan state modal risiko agar bisa dilempar ke PDF nanti
+        st.session_state.modal_risiko_terakhir = modal_risiko 
+        
+        if any(p['Skor'] >= 85 for p in st.session_state.final_picks): play_alert_sound()
+
+    # --- DISPLAY UI ---
+    if 'final_picks' in st.session_state and st.session_state.final_picks:
+        res = st.session_state.final_picks
+        top_3 = res[:3]
+        watchlist = res[3:10]
+
+        st.subheader("🌐 Market Overview")
+        c1, c2 = st.columns([2, 1])
+        with c1:
+            fig = px.bar(st.session_state.sector_report.reset_index(), x='Sektor', y='Avg_Score', color='Avg_Score', color_continuous_scale='Greens', title="Kekuatan Sektor Saat Ini")
+            st.plotly_chart(fig, use_container_width=True)
+        with c2:
+            st.write("**Top Leading Sectors:**")
+            for s in st.session_state.sector_report.index[:3]: st.success(s)
+
+        st.markdown("---")
+        
+        st.header(f"🏆 Top 3 Prioritas {trade_mode}")
+        if top_3:
+            cols = st.columns(len(top_3))
+            for idx, item in enumerate(top_3):
+                with cols[idx]:
+                    st.markdown(f"### {item['Ticker']}")
+                    st.write(f"**Sektor:** {item['Sektor']}")
+                    st.metric("Skor Institusi", f"{item['Skor']}/100 Pts", item['Status'])
+                    st.write(f"**Target (TP):** Rp {item['TP']}")
+                    st.write(f"**Proteksi (SL):** Rp {item['SL']}")
+                    st.info(f"Area Entry: {item['Entry']}")
+                    st.warning(f"🛡️ **Maks. Aman:** {item['Lot_Maks']}") 
+                    st.caption(f"💡 {item['Logic']}")
+        else:
+            st.warning("Belum ada saham yang memenuhi kriteria ketat institusi saat ini.")
+
+        if watchlist:
+            st.markdown("---")
+            st.subheader(f"📋 Radar Watchlist (Rank 4-10)")
+            df_watch = pd.DataFrame(watchlist)
+            kolom_tampil = ["Ticker", "Sektor", "Skor", "Status", "Entry", "SL", "TP", "RRR", "Lot_Maks"]
+            st.dataframe(df_watch[kolom_tampil], use_container_width=True, hide_index=True)
+        
+        st.markdown("<br><hr>", unsafe_allow_html=True)
+        st.caption("⚠️ **DISCLAIMER:** Laporan analisa ini dihasilkan secara otomatis menggunakan perhitungan algoritma indikator teknikal dan fundamental. Seluruh informasi yang disajikan bukan merupakan ajakan, rekomendasi pasti, atau paksaan untuk membeli/menjual saham. Keputusan investasi dan trading sepenuhnya menjadi tanggung jawab pribadi masing-masing investor. Selalu terapkan manajemen risiko yang baik dan *Do Your Own Research* (DYOR) dan pertimbangkan profil risiko sebelum mengambil keputusan di pasar modal.")
+        st.markdown("<br>", unsafe_allow_html=True)
+        
+        waktu_cetak_pdf = datetime.now(tz).strftime('%Y%m%d_%H%M')
+        # Ambil nilai modal risiko dari session_state
+        modal_saat_cetak = st.session_state.get('modal_risiko_terakhir', 1000000) 
+        
+        pdf_data = export_to_pdf(res, trade_mode, st.session_state.pdf_session, st.session_state.sector_report, modal_saat_cetak)
+        
+        st.download_button(
+            label="📥 UNDUH LAPORAN SCREENING LENGKAP (PDF)", 
+            data=pdf_data, 
+            file_name=f"ExpertStockPro_{trade_mode}_{waktu_cetak_pdf}.pdf", 
+            mime="application/pdf", 
+            use_container_width=True
+        )
+
+if __name__ == "__main__":
+    run_screening()
