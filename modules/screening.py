@@ -179,19 +179,24 @@ def run_screening():
     
     trade_mode = st.radio("Pilih Strategi Trading (Mode Analisa):", ["Day Trading", "Swing Trading"], horizontal=True)
 
-    with st.sidebar:
-        st.header("⚙️ Filter Institusi Tambahan")
-        mtf_filter = st.checkbox("Strict MTF Alignment", value=True, help="Hanya tampilkan saham yang searah dengan tren besar (Daily & Weekly).")
-        sector_boost = st.checkbox("Enable Sector Booster", value=True, help="Berikan poin tambahan pada saham di sektor yang memimpin pasar.")
+    # --- PENGATURAN & KALKULATOR DIPINDAHKAN KE HALAMAN UTAMA (DALAM EXPANDER) ---
+    with st.expander("🛠️ Pengaturan Filter & Manajemen Risiko (Klik untuk Edit)", expanded=False):
+        st.write("**Filter Institusi Tambahan:**")
+        col_f1, col_f2 = st.columns(2)
+        with col_f1:
+            mtf_filter = st.checkbox("Strict MTF Alignment", value=True, help="Hanya tampilkan saham yang searah dengan tren besar (Daily & Weekly).")
+        with col_f2:
+            sector_boost = st.checkbox("Enable Sector Booster", value=True, help="Berikan poin tambahan pada saham di sektor yang memimpin pasar.")
         
         st.markdown("---")
-        # --- KALKULATOR POSISI INSTITUSIONAL DI SIDEBAR ---
-        st.header("💼 Institutional Position Sizing")
+        st.write("**💼 Institutional Position Sizing (Kalkulator Lot Maksimal):**")
         st.caption("Manajemen risiko profesional berdasarkan Modal & Batas Kerugian.")
         
-        # Mengembalikan Input Nominal Rupiah
-        total_modal = st.number_input("Total Modal Portofolio Anda (Rp):", min_value=1000000, value=100000000, step=5000000)
-        modal_risiko = st.number_input("Nominal Maksimal Siap Rugi (Rp):", min_value=10000, value=1000000, step=50000, help="Ketik angka murni tanpa titik.")
+        col_m1, col_m2 = st.columns(2)
+        with col_m1:
+            total_modal = st.number_input("Total Modal Portofolio Anda (Rp):", min_value=1000000, value=100000000, step=5000000)
+        with col_m2:
+            modal_risiko = st.number_input("Nominal Maksimal Siap Rugi (Rp):", min_value=10000, value=1000000, step=50000, help="Ketik angka murni tanpa titik.")
         
         # Kalkulasi Persentase untuk Visibilitas
         risiko_persen = (modal_risiko / total_modal) * 100 if total_modal > 0 else 0
@@ -305,7 +310,6 @@ def run_screening():
             max_loss_pct = 0.03 if trade_mode == "Day Trading" else 0.08
             hard_cap_sl = int(stock['Harga'] * (1 - max_loss_pct))
             
-            # Pilih SL yang lebih aman (lebih dekat dengan harga entry)
             if hard_cap_sl > atr_sl:
                 sl = hard_cap_sl
                 stock['Alasan'].append(f"SL Hard Cap ({int(max_loss_pct*100)}%)")
