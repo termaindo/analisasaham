@@ -189,20 +189,13 @@ def run_screening():
         st.header("💼 Institutional Position Sizing")
         st.caption("Manajemen risiko profesional berdasarkan 1%-2% Rule.")
         
-        # Input Modal
         total_modal = st.number_input("Total Modal Portofolio Anda (Rp):", min_value=1000000, value=100000000, step=5000000)
-        
-        # Input Persentase Risiko (Max dibatasi 3% agar aman)
         risiko_persen = st.slider("Batas Toleransi Risiko per Transaksi (%):", min_value=0.5, max_value=3.0, value=1.0, step=0.1, help="Standar Institusi: 1% untuk Day Trade, maksimal 2% untuk Swing Trade.")
         
-        # Kalkulasi Nominal Risiko
         modal_risiko = total_modal * (risiko_persen / 100)
-        
-        # Batas Alokasi per saham (Max 15% dari total modal)
         batas_alokasi_persen = 15.0
         batas_alokasi_rp = total_modal * (batas_alokasi_persen / 100)
         
-        # Indikator Visual Format Rupiah Real-Time
         st.markdown(
             f"""
             <div style="background-color:#d4edda; border-left: 5px solid #28a745; padding: 10px; border-radius: 5px;">
@@ -303,20 +296,29 @@ def run_screening():
             if sector_boost and stock['Sektor'] in leading_sectors:
                 f_score += 15; stock['Alasan'].append(f"Sector Hot: {stock['Sektor']}")
             
+            # --- PROTEKSI HARD CAP STOP LOSS INSTITUSIONAL ---
             sl_mult = 1.8 if trade_mode == "Day Trading" else 2.5
-            sl = int(stock['Harga'] - (sl_mult * stock['ATR']))
+            atr_sl = int(stock['Harga'] - (sl_mult * stock['ATR']))
+            
+            max_loss_pct = 0.03 if trade_mode == "Day Trading" else 0.08
+            hard_cap_sl = int(stock['Harga'] * (1 - max_loss_pct))
+            
+            # Pilih SL yang lebih aman (lebih dekat dengan harga entry)
+            if hard_cap_sl > atr_sl:
+                sl = hard_cap_sl
+                stock['Alasan'].append(f"SL Hard Cap ({int(max_loss_pct*100)}%)")
+            else:
+                sl = atr_sl
+
             tp = int(stock['Harga'] + (stock['Harga'] - sl) * (1.5 if trade_mode == "Day Trading" else 2.0))
             rrr = (tp - stock['Harga']) / (stock['Harga'] - sl) if stock['Harga'] > sl else 0
 
             # --- LOGIKA POSITION SIZING GANDA INSTITUSI ---
             risiko_per_lembar = stock['Harga'] - sl
             if risiko_per_lembar > 0:
-                # 1. Batas lembar saham berdasarkan batas nominal kerugian (Cut Loss)
                 lembar_maks_risiko = modal_risiko / risiko_per_lembar
-                # 2. Batas lembar saham berdasarkan batas maksimal 15% porsi portfolio (Concentration Risk)
                 lembar_maks_alokasi = batas_alokasi_rp / stock['Harga']
                 
-                # Ambil jumlah lembar terkecil (paling aman) di antara kedua aturan tersebut
                 lembar_final = min(lembar_maks_risiko, lembar_maks_alokasi)
                 lot_maksimal = int(lembar_final / 100)
             else:
@@ -330,7 +332,7 @@ def run_screening():
                     "SL": sl, "TP": tp, "RRR": f"{rrr:.1f}x",
                     "Status": "🔥 HIGH CONVICTION" if f_score >= 85 else "🎯 READY",
                     "Logic": " | ".join(stock['Alasan']),
-                    "Lot_Maks": f"{format_rp(lot_maksimal)} Lot" # Format rupiah untuk lot yang banyak
+                    "Lot_Maks": f"{format_rp(lot_maksimal)} Lot" 
                 })
 
         final_picks.sort(key=lambda x: x['Skor'], reverse=True)
@@ -353,49 +355,4 @@ def run_screening():
             st.plotly_chart(fig, use_container_width=True)
         with c2:
             st.write("**Top Leading Sectors:**")
-            for s in st.session_state.sector_report.index[:3]: st.success(s)
-
-        st.markdown("---")
-        
-        st.header(f"🏆 Top 3 Prioritas {trade_mode}")
-        if top_3:
-            cols = st.columns(len(top_3))
-            for idx, item in enumerate(top_3):
-                with cols[idx]:
-                    st.markdown(f"### {item['Ticker']}")
-                    st.write(f"**Sektor:** {item['Sektor']}")
-                    st.metric("Skor Institusi", f"{item['Skor']}/100 Pts", item['Status'])
-                    st.write(f"**Target (TP):** Rp {format_rp(item['TP'])}")
-                    st.write(f"**Proteksi (SL):** Rp {format_rp(item['SL'])}")
-                    st.info(f"Area Entry: {item['Entry']}")
-                    st.warning(f"🛡️ **Maks. Aman:** {item['Lot_Maks']}")
-                    st.caption(f"💡 {item['Logic']}")
-        else:
-            st.warning("Belum ada saham yang memenuhi kriteria ketat institusi saat ini.")
-
-        if watchlist:
-            st.markdown("---")
-            st.subheader(f"📋 Radar Watchlist (Rank 4-10)")
-            df_watch_display = pd.DataFrame(watchlist).copy()
-            df_watch_display['SL'] = df_watch_display['SL'].apply(format_rp)
-            df_watch_display['TP'] = df_watch_display['TP'].apply(format_rp)
-            
-            kolom_tampil = ["Ticker", "Sektor", "Skor", "Status", "Entry", "SL", "TP", "RRR", "Lot_Maks"]
-            st.dataframe(df_watch_display[kolom_tampil], use_container_width=True, hide_index=True)
-        
-        st.markdown("<br><hr>", unsafe_allow_html=True)
-        st.caption("⚠️ **DISCLAIMER:** Laporan analisa ini dihasilkan secara otomatis menggunakan perhitungan algoritma indikator teknikal dan fundamental. Seluruh informasi yang disajikan bukan merupakan ajakan, rekomendasi pasti, atau paksaan untuk membeli/menjual saham. Keputusan investasi dan trading sepenuhnya menjadi tanggung jawab pribadi masing-masing investor. Selalu terapkan manajemen risiko yang baik dan *Do Your Own Research* (DYOR) dan pertimbangkan profil risiko sebelum mengambil keputusan di pasar modal.")
-        st.markdown("<br>", unsafe_allow_html=True)
-        
-        waktu_cetak_pdf = datetime.now(tz).strftime('%Y%m%d_%H%M')
-        pdf_data = export_to_pdf(res, trade_mode, st.session_state.pdf_session, st.session_state.sector_report)
-        st.download_button(
-            label="📥 UNDUH LAPORAN SCREENING LENGKAP (PDF)", 
-            data=pdf_data, 
-            file_name=f"ExpertStockPro_{trade_mode}_{waktu_cetak_pdf}.pdf", 
-            mime="application/pdf", 
-            use_container_width=True
-        )
-
-if __name__ == "__main__":
-    run_screening()
+            for s in st.session_state.sector_report.index[:3]: st.success
