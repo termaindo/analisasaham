@@ -231,10 +231,8 @@ def run_screening():
         st.write("**Filter Institusi Tambahan:**")
         col_f1, col_f2 = st.columns(2)
         with col_f1:
-            # BUG FIX: Tanda kutip berlebih dihapus
             mtf_filter = st.checkbox("Hanya saham yang searah dengan tren besar", value=True)
         with col_f2:
-            # BUG FIX: Tanda kutip berlebih dihapus
             sector_boost = st.checkbox("Hanya saham dari Sektor yang kuat", value=True)
         
         st.markdown("---")
@@ -297,25 +295,32 @@ def run_screening():
         
         raw_results = []
         
-        # --- IMPLEMENTASI MULTITHREADING (PARALLEL PROCESSING) ---
-        st.write(f"🔄 Menjalankan pemindaian cepat pada {len(saham_list)} saham...")
+        # --- PENYEMPURNAAN PROGRESS BAR & MULTITHREADING ---
+        st.write(f"### 🔄 Menjalankan mesin pencari pada {len(saham_list)} saham...")
+        
+        # Elemen dinamis untuk menampilkan teks progres
+        status_text = st.empty()
         progress_bar = st.progress(0)
         
-        # Menggunakan ThreadPoolExecutor untuk eksekusi paralel
+        total_saham = len(saham_list)
+        
         with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
-            # Map setiap ticker ke fungsi pekerja
             futures = {executor.submit(process_single_stock, ticker, trade_mode, mtf_filter): ticker for ticker in saham_list}
             
             completed = 0
             for future in concurrent.futures.as_completed(futures):
                 completed += 1
-                # Update progress bar dengan aman di main thread Streamlit
-                progress_bar.progress(completed / len(saham_list))
+                
+                # Memperbarui teks dan bar secara real-time
+                status_text.text(f"Menganalisa data pasar: {completed} / {total_saham} saham selesai diproses...")
+                progress_bar.progress(completed / total_saham)
                 
                 result = future.result()
                 if result is not None:
                     raw_results.append(result)
 
+        # Ubah teks saat selesai, lalu hapus bar agar UI tetap bersih
+        status_text.success(f"✅ Analisa selesai! Ditemukan {len(raw_results)} saham yang lolos filter awal.")
         progress_bar.empty()
 
         df_all = pd.DataFrame(raw_results)
@@ -328,7 +333,6 @@ def run_screening():
             if sector_boost and stock['Sektor'] in leading_sectors:
                 f_score += 15; stock['Alasan'].append(f"Sector Hot: {stock['Sektor']}")
             
-            # --- PROTEKSI HARD CAP STOP LOSS INSTITUSIONAL ---
             sl_mult = 1.8 if trade_mode == "Day Trading" else 2.5
             atr_sl = int(stock['Harga'] - (sl_mult * stock['ATR']))
             
@@ -344,7 +348,6 @@ def run_screening():
             tp = int(stock['Harga'] + (stock['Harga'] - sl) * (1.5 if trade_mode == "Day Trading" else 2.0))
             rrr = (tp - stock['Harga']) / (stock['Harga'] - sl) if stock['Harga'] > sl else 0
 
-            # --- LOGIKA POSITION SIZING GANDA INSTITUSI ---
             risiko_per_lembar = stock['Harga'] - sl
             if risiko_per_lembar > 0:
                 lembar_maks_risiko = modal_risiko / risiko_per_lembar
