@@ -45,7 +45,7 @@ def export_to_pdf(hasil_lolos, trade_mode, session, sector_report, modal_risiko,
     pdf.set_text_color(255, 255, 255)
     pdf.set_font("Arial", 'B', 16)
     pdf.set_xy(35, 8) 
-    pdf.cell(0, 10, "Expert Stock Pro - Ultimate Alpha Report", ln=True)
+    pdf.cell(0, 10, "Expert Stock Pro - Screening Saham Harian Pro", ln=True)
     
     # Hyperlink Sumber 
     pdf.set_y(28)
