@@ -184,9 +184,9 @@ def run_screening():
         st.write("**Filter Institusi Tambahan:**")
         col_f1, col_f2 = st.columns(2)
         with col_f1:
-            mtf_filter = st.checkbox("Hanya saham yang searah dengan tren besar", value=True.")
+            mtf_filter = st.checkbox("Hanya saham yang searah dengan tren besar", value=True")
         with col_f2:
-            sector_boost = st.checkbox("Hanya saham dari Sektor yang kuat", value=True.")
+            sector_boost = st.checkbox("Hanya saham dari Sektor yang kuat", value=True")
         
         st.markdown("---")
         st.write("**💼 Kalkulator Lot Maksimal (Institutional Position Sizing):**")
