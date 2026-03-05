@@ -7,6 +7,7 @@ import base64
 import holidays
 import io
 import plotly.express as px
+import concurrent.futures # <-- INJEKSI MULTITHREADING
 from datetime import datetime
 from fpdf import FPDF 
 from modules.data_loader import get_full_stock_data 
@@ -35,7 +36,6 @@ def export_to_pdf(hasil_lolos, trade_mode, session, sector_report, logo_path="lo
     pdf = FPDF()
     pdf.add_page()
     
-    # Header Box
     pdf.set_fill_color(20, 20, 20)
     pdf.rect(0, 0, 210, 25, 'F')
     if os.path.exists(logo_path):
@@ -46,13 +46,11 @@ def export_to_pdf(hasil_lolos, trade_mode, session, sector_report, logo_path="lo
     pdf.set_xy(35, 8) 
     pdf.cell(0, 10, "Expert Stock Pro - Ultimate Alpha Report", ln=True)
     
-    # Hyperlink Sumber 
     pdf.set_y(28)
     pdf.set_font("Arial", 'I', 10)
     pdf.set_text_color(0, 0, 255) 
     pdf.cell(0, 5, "Sumber: https://lynk.id/hahastoresby", ln=True, align='C', link="https://lynk.id/hahastoresby")
     
-    # Info Strategi dan Waktu (WIB)
     pdf.ln(3)
     pdf.set_text_color(0, 0, 0) 
     pdf.set_font("Arial", 'B', 12)
@@ -159,43 +157,81 @@ def get_market_session():
     elif 9.0 <= curr_time <= 16.0: return "LIVE MARKET", "Trading."
     else: return "PASCA-PASAR", "Analysis."
 
+# --- FUNGSI WORKER UNTUK MULTITHREADING ---
+def process_single_ticker(ticker, trade_mode, mtf_filter):
+    """Fungsi ini akan dijalankan secara paralel (bersamaan) untuk tiap saham"""
+    ticker_bersih = ticker.replace(".JK", "")
+    try:
+        data = get_full_stock_data(ticker)
+        df = calculate_indicators(data['history'], trade_mode)
+        last = df.iloc[-1]; prev = df.iloc[-2]
+        curr_price = last['Close']
+        avg_val_20 = (df['Close'] * df['Volume']).rolling(20).mean().iloc[-1]
+        sektor_nama, _ = get_sector_data(ticker_bersih)
+
+        is_macro_bullish = curr_price > last['MA200']
+        is_medium_bullish = curr_price > last['MA50']
+        is_micro_bullish = curr_price > last['VWAP'] if trade_mode == "Day Trading" else curr_price > last['EMA9']
+
+        if mtf_filter and not (is_macro_bullish and is_medium_bullish): 
+            return None # Langsung diskip jika tidak lolos filter tren
+
+        score = 0; alasan = []
+        
+        if is_macro_bullish: score += 20; alasan.append("Macro UP (MA200)")
+        if is_medium_bullish: score += 15; alasan.append("Medium UP (MA50)")
+        if is_micro_bullish: 
+            score += 15
+            alasan.append("Micro Momentum (VWAP)" if trade_mode == "Day Trading" else "Micro Momentum (EMA9)")
+        
+        if trade_mode == "Day Trading":
+            if curr_price > prev['High']:
+                score += 5; alasan.append("Breakout Prev. High")
+        else: 
+            if last['EMA9'] > last['EMA21']:
+                score += 5; alasan.append("Momentum Cross (EMA9>21)")
+        
+        if last['Volume'] > df['Vol_SMA20'].iloc[-1]: score += 20; alasan.append("Volume Spike")
+        if avg_val_20 > (1e10 if trade_mode == "Day Trading" else 5e9): 
+            score += 10; alasan.append("Inst. Liquidity")
+
+        return {
+            "Ticker": ticker_bersih, "Sektor": sektor_nama, "Skor": score, 
+            "Harga": int(curr_price), "ATR": last['ATR'], "Alasan": alasan, "RSI": last['RSI']
+        }
+    except: 
+        return None
+
 # --- 6. MODUL UTAMA ---
 def run_screening():
     st.set_page_config(page_title="🔍 Screening Saham Harian Pro", layout="wide")
     st.markdown("<h1 style='text-align: center;'>🔍 Screening Saham Harian Pro</h1>", unsafe_allow_html=True)
     st.markdown("---")
 
-    # --- SIDEBAR: FILTER TAMBAHAN ---
+    # --- SIDEBAR ---
     with st.sidebar:
         st.header("⚙️ Filter Institusi Tambahan")
         mtf_filter = st.checkbox("Strict MTF Alignment", value=True, help="Hanya tampilkan saham yang searah dengan tren besar (Daily & Weekly).")
         sector_boost = st.checkbox("Enable Sector Booster", value=True, help="Berikan poin tambahan pada saham di sektor yang memimpin pasar.")
 
-    # --- MAIN UI: PENGATURAN STRATEGI & RISIKO ---
+    # --- MAIN UI: PERBAIKAN TATA LETAK AGAR PASTI MUNCUL ---
     st.write("### ⚙️ Pemilihan Strategi & Pengaturan Risiko")
-    
     st.info("⏰ **Panduan Waktu Analisa Optimal:** \n"
             "- **Day Trading:** 09.30 - 11.00 WIB (Untuk momentum harian tertinggi).\n"
             "- **Swing Trading:** > 16.00 WIB (Untuk konfirmasi harga penutupan yang solid).")
     
-    # Membagi layout menjadi dua kolom agar rapi di layar lebar, namun tetap responsif di HP
-    col1, col2 = st.columns(2)
+    st.markdown("**1. Pilih Mode Analisa:**")
+    trade_mode = st.radio("Mode:", ["Day Trading", "Swing Trading"], horizontal=True, label_visibility="collapsed")
     
-    with col1:
-        st.markdown("**1. Pilih Mode Analisa**")
-        trade_mode = st.radio("Mode:", ["Day Trading", "Swing Trading"], horizontal=True, label_visibility="collapsed")
-        
-    with col2:
-        st.markdown("**2. Position Sizing Calculator**")
-        modal_risiko = st.number_input(
-            "Maksimal Risiko per Transaksi (Rp):", 
-            min_value=10000, 
-            value=1000000, 
-            step=100000,
-            help="Batas maksimal nominal kerugian yang rela Anda tanggung jika harga menyentuh Stop Loss."
-        )
+    st.markdown("**2. Position Sizing Calculator (Kalkulator Risiko):**")
+    modal_risiko = st.number_input(
+        "Maksimal Rupiah yang Rela Dirisikokan per Transaksi:", 
+        min_value=10000, 
+        value=1000000, 
+        step=50000,
+        help="Contoh: Jika Anda mengisi 1.000.000, sistem akan menghitung batas aman jumlah lot agar kerugian maksimal Anda berhenti tepat di 1 Juta Rupiah jika harga menyentuh Stop Loss."
+    )
 
-    # --- TIME LOGIC & MARKET SESSION ---
     tz = pytz.timezone('Asia/Jakarta')
     now = datetime.now(tz)
     curr_time_float = now.hour + now.minute/60
@@ -209,75 +245,48 @@ def run_screening():
     else:
         st.info(f"**Status Market:** {session} ({status_desc})")
 
-    # --- DYNAMIC NOTIFICATIONS ---
     if trade_mode == "Day Trading":
         is_golden = 9.5 <= curr_time_float <= 11.0 and not is_weekend
         if is_golden: 
-            st.success("🌟 **GOLDEN HOURS AKTIF (09.30 - 11.00 WIB):** Waktu paling optimal untuk mencari saham potensial dan eksekusi Day Trading. Volatilitas dan volume sedang berada di puncaknya.")
+            st.success("🌟 **GOLDEN HOURS AKTIF (09.30 - 11.00 WIB):** Waktu paling optimal.")
         else: 
-            if not is_weekend:
-                st.warning("⚠️ **NOTIFIKASI WIN RATE:** Screening & Eksekusi Day Trading disarankan dijalankan pada pukul 09.30-11.00 WIB. Saat ini bukan jam optimal, sinyal mungkin rentan terjebak *sideways*.")
-            else:
-                st.warning("🚫 **PASAR TUTUP:** Data Day Trading yang dihasilkan adalah hasil penutupan terakhir. Gunakan hanya untuk evaluasi.")
+            if not is_weekend: st.warning("⚠️ **NOTIFIKASI WIN RATE:** Disarankan dijalankan pukul 09.30-11.00 WIB.")
+            else: st.warning("🚫 **PASAR TUTUP:** Data Day Trading ini menggunakan hasil penutupan terakhir.")
     elif trade_mode == "Swing Trading":
         is_swing = curr_time_float >= 16.0 or is_weekend
-        if is_swing: 
-            st.success("✅ **WAKTU ANALISA SWING IDEAL:** Data penutupan telah final. Ini adalah waktu terbaik untuk menyusun *Watchlist* dan *Trading Plan* untuk esok hari.")
-        else: 
-            st.info("ℹ️ **INFO:** Screening Swing Trading paling akurat dilakukan setelah jam 16.00 WIB untuk memastikan struktur harga penutupan harian tidak berubah.")
+        if is_swing: st.success("✅ **WAKTU ANALISA SWING IDEAL:** Data penutupan telah final.")
+        else: st.info("ℹ️ **INFO:** Screening Swing Trading paling akurat dilakukan setelah jam 16.00 WIB.")
 
     st.markdown("<br>", unsafe_allow_html=True)
 
-    # --- TOMBOL EKSEKUSI ---
-    if st.button(f"🚀 JALANKAN ANALISA {trade_mode.upper()}", use_container_width=True):
+    # --- TOMBOL EKSEKUSI & MULTITHREADING ---
+    if st.button(f"🚀 JALANKAN ANALISA {trade_mode.upper()} (TURBO MODE)", use_container_width=True):
         saham_list = [f"{t}.JK" for tickers in UNIVERSE_SAHAM.values() for t in tickers]
         saham_list = list(set(saham_list))
         
         raw_results = []
         progress_bar = st.progress(0)
+        status_text = st.empty()
 
-        for i, ticker in enumerate(saham_list):
-            progress_bar.progress((i + 1) / len(saham_list))
-            ticker_bersih = ticker.replace(".JK", "")
-            try:
-                data = get_full_stock_data(ticker)
-                df = calculate_indicators(data['history'], trade_mode)
-                last = df.iloc[-1]; prev = df.iloc[-2]
-                curr_price = last['Close']
-                avg_val_20 = (df['Close'] * df['Volume']).rolling(20).mean().iloc[-1]
-                sektor_nama, _ = get_sector_data(ticker_bersih)
+        # Eksekusi dengan ThreadPoolExecutor (Pemrosesan Paralel)
+        with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+            # Map setiap ticker ke fungsi process_single_ticker
+            futures = {executor.submit(process_single_ticker, t, trade_mode, mtf_filter): t for t in saham_list}
+            
+            for i, future in enumerate(concurrent.futures.as_completed(futures)):
+                progress_bar.progress((i + 1) / len(saham_list))
+                status_text.text(f"Memindai pasar... ({i+1}/{len(saham_list)} saham)")
+                try:
+                    res = future.result()
+                    if res is not None:
+                        raw_results.append(res)
+                except Exception:
+                    continue
 
-                is_macro_bullish = curr_price > last['MA200']
-                is_medium_bullish = curr_price > last['MA50']
-                is_micro_bullish = curr_price > last['VWAP'] if trade_mode == "Day Trading" else curr_price > last['EMA9']
+        progress_bar.empty()
+        status_text.empty()
 
-                if mtf_filter and not (is_macro_bullish and is_medium_bullish): continue
-
-                score = 0; alasan = []
-                
-                if is_macro_bullish: score += 20; alasan.append("Macro UP (MA200)")
-                if is_medium_bullish: score += 15; alasan.append("Medium UP (MA50)")
-                if is_micro_bullish: 
-                    score += 15
-                    alasan.append("Micro Momentum (VWAP)" if trade_mode == "Day Trading" else "Micro Momentum (EMA9)")
-                
-                if trade_mode == "Day Trading":
-                    if curr_price > prev['High']:
-                        score += 5; alasan.append("Breakout Prev. High")
-                else: 
-                    if last['EMA9'] > last['EMA21']:
-                        score += 5; alasan.append("Momentum Cross (EMA9>21)")
-                
-                if last['Volume'] > df['Vol_SMA20'].iloc[-1]: score += 20; alasan.append("Volume Spike")
-                if avg_val_20 > (1e10 if trade_mode == "Day Trading" else 5e9): 
-                    score += 10; alasan.append("Inst. Liquidity")
-
-                raw_results.append({
-                    "Ticker": ticker_bersih, "Sektor": sektor_nama, "Skor": score, 
-                    "Harga": int(curr_price), "ATR": last['ATR'], "Alasan": alasan, "RSI": last['RSI']
-                })
-            except: continue
-
+        # Pemrosesan Lanjutan: Rotasi Sektor & Perhitungan Risiko
         df_all = pd.DataFrame(raw_results)
         sector_report, leading_sectors = analyze_sector_momentum(df_all)
         
@@ -293,11 +302,11 @@ def run_screening():
             tp = int(stock['Harga'] + (stock['Harga'] - sl) * (1.5 if trade_mode == "Day Trading" else 2.0))
             rrr = (tp - stock['Harga']) / (stock['Harga'] - sl) if stock['Harga'] > sl else 0
 
-            # Hitung Rekomendasi Lot Berdasarkan Risiko (Position Sizing)
+            # Kalkulator Lot Berdasarkan Input Pengguna
             risiko_per_lembar = stock['Harga'] - sl
             if risiko_per_lembar > 0:
                 lembar_maksimal = modal_risiko / risiko_per_lembar
-                lot_maksimal = int(lembar_maksimal / 100) # 1 lot = 100 lembar
+                lot_maksimal = int(lembar_maksimal / 100) 
             else:
                 lot_maksimal = 0
 
@@ -316,7 +325,6 @@ def run_screening():
         st.session_state.final_picks = final_picks[:10] 
         st.session_state.sector_report = sector_report
         st.session_state.pdf_session = session 
-        progress_bar.empty()
         if any(p['Skor'] >= 85 for p in st.session_state.final_picks): play_alert_sound()
 
     # --- DISPLAY UI ---
