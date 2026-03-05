@@ -27,7 +27,6 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # --- 2. IMPORT MODUL (LAZY LOADING) ---
-# Modul tidak lagi di-load di awal secara paksa, melainkan hanya saat dipanggil
 def load_and_run_module(module_name, run_function_name):
     """Mencoba load modul dan langsung menjalankannya, lebih cepat dan hemat memori"""
     try:
@@ -43,7 +42,6 @@ def load_and_run_module(module_name, run_function_name):
     except Exception as e:
         st.error(f"⚠️ Terjadi kesalahan saat menjalankan modul {module_name}: {e}")
 
-# Mengecek keberadaan modul untuk tombol di Dashboard
 def check_module_exists(module_name):
     try:
         importlib.util.find_spec(f"modules.{module_name}")
@@ -59,7 +57,6 @@ st.markdown("""
     [data-testid="stSidebar"] {display: none;}
     footer {visibility: hidden;}
     
-    /* Style Tombol Menu Dashboard */
     div.stButton > button {
         width: 100%; border-radius: 12px; height: 85px;
         font-weight: bold; font-size: 18px;
@@ -70,7 +67,6 @@ st.markdown("""
         background-color: #ff0000; border-color: #ff0000; color: white;
     }
     
-    /* Style Tombol Beli (Lynk.id) */
     [data-testid="stLinkButton"] a {
         background-color: #2ECC71 !important;
         color: white !important;
@@ -93,7 +89,6 @@ st.markdown("""
         height: 40px !important; background-color: #444 !important; font-size: 14px !important;
     }
 
-    /* Style Landing Page Header */
     .landing-header {
         text-align: center; 
         padding: 30px; 
@@ -103,7 +98,6 @@ st.markdown("""
         margin-bottom: 30px;
     }
     
-    /* Kotak Info Promo Trial */
     .promo-box {
         background-color: #2c3e50;
         padding: 12px;
@@ -127,7 +121,7 @@ if 'trial_expiry_date' not in st.session_state: st.session_state.trial_expiry_da
 def bersihkan_nomor_wa(wa_str):
     """Membuang 0, +62, spasi, strip, dan format float .0 agar akurat dicocokkan"""
     w = str(wa_str).strip().replace(" ", "").replace("-", "")
-    if w.endswith(".0"): w = w[:-2] # Jika pandas membacanya sebagai desimal
+    if w.endswith(".0"): w = w[:-2] 
     if w.startswith("+62"): w = w[3:]
     if w.startswith("62"): w = w[2:]
     if w.startswith("0"): w = w[1:]
@@ -138,15 +132,12 @@ def cek_dan_catat_trial(nama_user, wa_user):
     tz_wib = pytz.timezone('Asia/Jakarta')
     hari_ini = datetime.now(tz_wib).date()
     
-    # Bersihkan WA dari user input untuk dicocokkan
     wa_user_bersih = bersihkan_nomor_wa(wa_user)
 
-    # 1. KONEKSI KE GOOGLE SHEETS
     try:
         scopes = ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive']
         s_creds = dict(st.secrets["gcp_service_account"])
         
-        # Penyembuh PEM Error
         pk = str(s_creds.get("private_key", ""))
         pk = pk.replace("\\n", "\n").replace("\\r", "").strip('"').strip("'").strip()
         if "-----BEGIN PRIVATE KEY-----" not in pk: pk = "-----BEGIN PRIVATE KEY-----\n" + pk
@@ -168,30 +159,25 @@ def cek_dan_catat_trial(nama_user, wa_user):
         st.error(f"⚠️ Error Asli: {e}")
         return False, "Koneksi Google Sheets Gagal."
 
-    # 2. LOGIKA PENGECEKAN USER (MENCEGAH EXPIRED MUNDUR)
     if 'Nomor_WA' in df.columns:
-        # Bersihkan juga nomor WA yang ada di database agar 'apple to apple'
         df['Nomor_WA_Clean'] = df['Nomor_WA'].apply(bersihkan_nomor_wa)
         user_exist = df[df['Nomor_WA_Clean'] == wa_user_bersih]
     else:
         user_exist = pd.DataFrame()
 
     if not user_exist.empty:
-        # USER LAMA: Mengunci tanggal dari login pertama kalinya
         tgl_expired_str = str(user_exist.iloc[0]['Tanggal_Expired'])
         tgl_expired = datetime.strptime(tgl_expired_str, "%Y-%m-%d").date()
         
         if hari_ini <= tgl_expired:
-            return True, tgl_expired_str # Masih valid
+            return True, tgl_expired_str 
         else:
             return False, "❌ Masa trial 14 hari Anda sudah habis. Silakan beli Akses Premium seumur hidup."
     else:
-        # USER BARU: Berikan 14 hari, catat ke Google Sheets
         tgl_expired = hari_ini + timedelta(days=14)
         tgl_expired_str = tgl_expired.strftime("%Y-%m-%d")
         
         try:
-            # Menggunakan kutip satu (') di depan WA agar Google Sheets tidak membuang angka nol
             wa_simpan = f"'{wa_user.strip()}"
             sheet.append_row([wa_simpan, nama_user.strip(), hari_ini.strftime("%Y-%m-%d"), tgl_expired_str])
             return True, tgl_expired_str
@@ -247,8 +233,13 @@ def login_page():
                 kode_permanen = st.secrets.get("PASSWORD_RAHASIA", "KODE_TIDAK_VALID_KARENA_BELUM_DISET_X99")
                 kode_trial = st.secrets.get("TRIAL_CODE", "CUAN14HARI")
                 
+                # Cek dulu apakah wa mengandung karakter selain angka (mengabaikan +, -, dan spasi yang wajar)
+                wa_cek_angka = wa.replace("+", "").replace("-", "").replace(" ", "").strip()
+                
                 if nama.strip() == "" or wa.strip() == "": 
                     st.warning("Mohon isi Nama dan Nomor WhatsApp terlebih dahulu.")
+                elif not wa_cek_angka.isdigit():
+                    st.warning("⚠️ Nomor WhatsApp hanya boleh berisi angka.")
                 elif pw.strip() == kode_permanen:
                     st.session_state.logged_in = True
                     st.session_state.user_name = nama
@@ -302,7 +293,6 @@ def show_dashboard():
         if st.button("🔍 Screening Saham Harian Pro", use_container_width=True):
             st.session_state.current_menu = "screening"; st.rerun()
     with c2:
-        # Mengecek cepat file modul tanpa memuat isinya
         if check_module_exists("analisa_cepat"):
             if st.button("⚡ Analisa Cepat Pro", use_container_width=True):
                 st.session_state.current_menu = "analisa_cepat"; st.rerun()
@@ -346,7 +336,6 @@ def main_app():
             st.markdown('</div>', unsafe_allow_html=True)
             st.markdown("---")
 
-        # Menjalankan modul secara Lazy Load
         m = st.session_state.current_menu
         if m == "screening": load_and_run_module("screening", "run_screening")
         elif m == "analisa_cepat": load_and_run_module("analisa_cepat", "run_analisa_cepat")
