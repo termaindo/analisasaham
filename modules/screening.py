@@ -16,6 +16,8 @@ from modules.universe import UNIVERSE_SAHAM, is_syariah, get_sector_data
 # --- FUNGSI FORMAT RUPIAH ---
 def format_rp(angka):
     """Fungsi untuk memformat angka menjadi format ribuan dengan titik"""
+    if isinstance(angka, str):
+        return angka
     return f"{int(angka):,}".replace(',', '.')
 
 # --- 1. FUNGSI AUDIO ALERT ---
@@ -50,7 +52,7 @@ def export_to_pdf(hasil_lolos, trade_mode, session, sector_report, logo_path="lo
     pdf.set_text_color(255, 255, 255)
     pdf.set_font("Arial", 'B', 16)
     pdf.set_xy(35, 8) 
-    pdf.cell(0, 10, "Expert Stock Pro - Screening Saham Harian Pro", ln=True)
+    pdf.cell(0, 10, "Expert Stock Pro - Ultimate Alpha Report", ln=True)
     
     # Hyperlink Sumber 
     pdf.set_y(28)
@@ -69,6 +71,16 @@ def export_to_pdf(hasil_lolos, trade_mode, session, sector_report, logo_path="lo
     pdf.set_font("Arial", 'I', 8)
     pdf.cell(0, 5, f"Dicetak: {waktu_cetak}", ln=True, align='R')
     pdf.ln(2)
+
+    # --- SEKSI OVERVIEW SEKTOR ---
+    if not sector_report.empty:
+        pdf.set_fill_color(220, 235, 255)
+        pdf.set_font("Arial", 'B', 10)
+        pdf.cell(190, 7, "  MARKET OVERVIEW (SEKTOR TERKUAT HARI INI)", 0, ln=True, fill=True)
+        pdf.set_font("Arial", '', 9)
+        top_sectors = ", ".join(sector_report.index[:3].tolist())
+        pdf.multi_cell(190, 6, f" Aliran dana (Capital Flow) terbesar saat ini terdeteksi pada sektor: {top_sectors}")
+        pdf.ln(3)
 
     # --- SEKSI A: TOP 3 PRIORITAS ---
     pdf.set_fill_color(240, 240, 240)
@@ -89,6 +101,9 @@ def export_to_pdf(hasil_lolos, trade_mode, session, sector_report, logo_path="lo
         pdf.cell(60, 5, f"Stop Loss: Rp {format_rp(item['SL'])}", ln=True)
         pdf.set_text_color(0, 0, 0)
         
+        pdf.set_font("Arial", 'B', 8)
+        pdf.cell(190, 5, f"Batas Alokasi Maksimal: {item['Lot_Maks']}", ln=True)
+        
         pdf.set_font("Arial", 'I', 8)
         pdf.multi_cell(190, 4, f"Logic: {item['Logic']}")
         pdf.ln(2)
@@ -103,27 +118,26 @@ def export_to_pdf(hasil_lolos, trade_mode, session, sector_report, logo_path="lo
         pdf.cell(190, 8, "B. RADAR WATCHLIST (RANK 4-10)", 0, ln=True, fill=True)
         pdf.ln(2)
         
-        pdf.set_font("Arial", 'B', 8)
-        pdf.cell(20, 6, "Ticker", 1, 0, 'C')
-        pdf.cell(45, 6, "Sektor", 1, 0, 'C')
-        pdf.cell(15, 6, "Skor", 1, 0, 'C')
-        pdf.cell(35, 6, "Entry", 1, 0, 'C')
-        pdf.cell(25, 6, "SL", 1, 0, 'C')
-        pdf.cell(25, 6, "TP", 1, 0, 'C')
-        pdf.cell(25, 6, "Maks Lot", 1, 1, 'C')
-        
-        pdf.set_font("Arial", '', 8)
         for w in watchlist:
-            pdf.cell(20, 6, w['Ticker'], 1, 0, 'C')
-            pdf.cell(45, 6, w['Sektor'][:20], 1, 0, 'C')
-            pdf.cell(15, 6, str(w['Skor']), 1, 0, 'C')
-            pdf.cell(35, 6, w['Entry'], 1, 0, 'C')
-            pdf.cell(25, 6, format_rp(w['SL']), 1, 0, 'C')
-            pdf.cell(25, 6, format_rp(w['TP']), 1, 0, 'C')
-            pdf.cell(25, 6, w['Lot_Maks'], 1, 1, 'C')
+            pdf.set_font("Arial", 'B', 9)
+            pdf.cell(190, 5, f"{w['Ticker']} ({w['Sektor'][:20]}) | Skor: {w['Skor']}", ln=True)
+            
+            pdf.set_font("Arial", '', 8)
+            pdf.cell(45, 5, f"Entry: {w['Entry']}", 0)
+            pdf.set_text_color(0, 128, 0)
+            pdf.cell(40, 5, f"TP: Rp {format_rp(w['TP'])}", 0)
+            pdf.set_text_color(200, 0, 0)
+            pdf.cell(40, 5, f"SL: Rp {format_rp(w['SL'])}", 0)
+            pdf.set_text_color(0, 0, 0)
+            pdf.cell(40, 5, f"Maks: {w['Lot_Maks']}", ln=True)
+
+            pdf.set_font("Arial", 'I', 7)
+            pdf.multi_cell(190, 4, f"Logic: {w['Logic']}")
+            pdf.line(10, pdf.get_y(), 200, pdf.get_y())
+            pdf.ln(2)
 
     # --- DISCLAIMER FOOTER PDF ---
-    pdf.ln(10)
+    pdf.ln(5)
     pdf.set_font("Arial", 'B', 8)
     pdf.cell(190, 5, "DISCLAIMER:", ln=True) 
     pdf.set_font("Arial", 'I', 7)
@@ -295,10 +309,9 @@ def run_screening():
         
         raw_results = []
         
-        # --- PENYEMPURNAAN PROGRESS BAR & MULTITHREADING ---
-        st.write(f"### 🔄 Menjalankan mesin pencari pada {len(saham_list)} saham...")
+        # PERUBAHAN TEKS: Sesuai dengan instruksi Anda
+        st.write("### 🔄 Menjalankan mesin pencari saham potensial.")
         
-        # Elemen dinamis untuk menampilkan teks progres
         status_text = st.empty()
         progress_bar = st.progress(0)
         
@@ -311,7 +324,6 @@ def run_screening():
             for future in concurrent.futures.as_completed(futures):
                 completed += 1
                 
-                # Memperbarui teks dan bar secara real-time
                 status_text.text(f"Menganalisa data pasar: {completed} / {total_saham} saham selesai diproses...")
                 progress_bar.progress(completed / total_saham)
                 
@@ -319,8 +331,8 @@ def run_screening():
                 if result is not None:
                     raw_results.append(result)
 
-        # Ubah teks saat selesai, lalu hapus bar agar UI tetap bersih
-        status_text.success(f"✅ Analisa selesai! Ditemukan {len(raw_results)} saham yang lolos filter awal.")
+        # MENGHAPUS NOTIFIKASI SUKSES: Agar tampilan langsung bersih menuju hasil
+        status_text.empty()
         progress_bar.empty()
 
         df_all = pd.DataFrame(raw_results)
@@ -374,22 +386,31 @@ def run_screening():
         st.session_state.sector_report = sector_report
         st.session_state.pdf_session = session 
         
+        # Penanda bahwa analisa sudah selesai dijalankan agar UI selalu muncul
+        st.session_state.analysis_done = True 
+        
         if any(p['Skor'] >= 85 for p in st.session_state.final_picks): play_alert_sound()
 
     # --- DISPLAY UI ---
-    if 'final_picks' in st.session_state and st.session_state.final_picks:
-        res = st.session_state.final_picks
+    # Logika diperbarui: UI akan selalu muncul jika analisa sudah dijalankan
+    if st.session_state.get('analysis_done', False):
+        res = st.session_state.get('final_picks', [])
         top_3 = res[:3]
         watchlist = res[3:10]
 
         st.subheader("🌐 Market Overview")
         c1, c2 = st.columns([2, 1])
         with c1:
-            fig = px.bar(st.session_state.sector_report.reset_index(), x='Sektor', y='Avg_Score', color='Avg_Score', color_continuous_scale='Greens', title="Kekuatan Sektor Saat Ini")
-            st.plotly_chart(fig, use_container_width=True)
+            if 'sector_report' in st.session_state and not st.session_state.sector_report.empty:
+                fig = px.bar(st.session_state.sector_report.reset_index(), x='Sektor', y='Avg_Score', color='Avg_Score', color_continuous_scale='Greens', title="Kekuatan Sektor Saat Ini")
+                st.plotly_chart(fig, use_container_width=True)
+            else:
+                st.info("Data sektor tidak tersedia atau belum ada pergerakan signifikan.")
+                
         with c2:
             st.write("**Top Leading Sectors:**")
-            for s in st.session_state.sector_report.index[:3]: st.success(s)
+            if 'sector_report' in st.session_state and not st.session_state.sector_report.empty:
+                for s in st.session_state.sector_report.index[:3]: st.success(s)
 
         st.markdown("---")
         
@@ -407,6 +428,7 @@ def run_screening():
                     st.warning(f"🛡️ **Maks. Aman:** {item['Lot_Maks']}")
                     st.caption(f"💡 {item['Logic']}")
         else:
+            # Pesan akan muncul jika tidak ada saham yang lolos filter final
             st.warning("Belum ada saham yang memenuhi kriteria ketat institusi saat ini.")
 
         if watchlist:
