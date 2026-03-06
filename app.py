@@ -240,6 +240,8 @@ def login_page():
                     st.warning("Mohon isi Nama dan Nomor WhatsApp terlebih dahulu.")
                 elif not wa_cek_angka.isdigit():
                     st.warning("⚠️ Nomor WhatsApp hanya boleh berisi angka.")
+                elif len(wa_cek_angka) < 10:
+                    st.warning("⚠️ Nomor WhatsApp tidak valid (minimal harus 10 digit).")
                 elif pw.strip() == kode_permanen:
                     st.session_state.logged_in = True
                     st.session_state.user_name = nama
