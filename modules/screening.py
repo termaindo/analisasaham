@@ -54,7 +54,7 @@ def export_to_pdf(hasil_lolos, trade_mode, session, sector_report, logo_path="lo
     pdf.set_xy(35, 8) 
     pdf.cell(0, 10, "Expert Stock Pro - Ultimate Alpha Report", ln=True)
     
-    # Hyperlink Sumber (Telah Diperbarui)
+    # Hyperlink Sumber 
     pdf.set_y(28)
     pdf.set_font("Arial", 'I', 10)
     pdf.set_text_color(0, 0, 255) 
@@ -111,7 +111,6 @@ def export_to_pdf(hasil_lolos, trade_mode, session, sector_report, logo_path="lo
             pdf.line(10, pdf.get_y(), 200, pdf.get_y())
             pdf.ln(2)
     else:
-        # Menampilkan pesan elegan jika tidak ada saham yang lolos
         pdf.ln(3)
         pdf.set_font("Arial", 'I', 10)
         pdf.cell(190, 6, "Belum ada saham yang memenuhi kriteria ketat institusi saat ini.", ln=True, align='C')
@@ -234,52 +233,102 @@ def process_single_stock(ticker, trade_mode, mtf_filter):
 
 # --- 6. MODUL UTAMA ---
 def run_screening():
-    st.set_page_config(page_title="🔍 Screening Saham Harian Pro", layout="wide")
-    st.markdown("<h1 style='text-align: center;'>🔍 Screening Saham Harian Pro</h1>", unsafe_allow_html=True)
+    st.set_page_config(page_title="🔍 Screening Saham Harian", layout="wide")
+    
+    # --- PILIHAN MODE UI (Telah dipindahkan dari sidebar ke halaman utama) ---
+    st.markdown("<h4 style='text-align: center;'>Pilih Mode Aplikasi</h4>", unsafe_allow_html=True)
+    ui_mode = st.radio(
+        "👁️ Tampilan Aplikasi:", 
+        ["🌱 Mode Praktis (Untuk Pemula)", "💼 Mode Pro (Indikator Lengkap)"], 
+        horizontal=True,
+        label_visibility="collapsed"
+    )
+    st.markdown("---")
+    
+    if "Praktis" in ui_mode:
+        st.markdown("<h1 style='text-align: center;'>🔍 Asisten Saham Pintar</h1>", unsafe_allow_html=True)
+        st.markdown("<p style='text-align: center; color: gray;'>Mencarikan saham potensial dengan perhitungan aman secara otomatis.</p>", unsafe_allow_html=True)
+    else:
+        st.markdown("<h1 style='text-align: center;'>🔍 Screening Saham Harian Pro</h1>", unsafe_allow_html=True)
+
     st.markdown("---")
 
-    # --- INFORMASI JAM OPTIMAL & PEMILIHAN MODE ---
-    st.write("### ⚙️ Pemilihan Strategi & Waktu Analisa")
-    
-    st.info("⏰ **Panduan Waktu Analisa Optimal:** \n"
-            "- **Day Trading:** 09.30 - 11.00 WIB (Untuk momentum harian tertinggi).\n"
-            "- **Swing Trading:** > 16.00 WIB (Untuk konfirmasi harga penutupan yang solid).")
-    
-    trade_mode = st.radio("Pilih Strategi Trading (Mode Analisa):", ["Day Trading", "Swing Trading"], horizontal=True)
+    # --- FITUR GLOSARIUM (KAMUS TRADER) ---
+    with st.expander("📖 Glosarium Istilah (Kamus Trader) - Klik untuk Membaca"):
+        st.markdown("""
+        **Panduan Singkat Membaca Hasil Analisa:**
+        * **Entry:** Rentang harga yang disarankan untuk mulai membeli/mengantri saham. Jangan mengejar harga (*fomo*) jika sudah terlewat jauh di atas area ini.
+        * **TP (Take Profit):** Target harga ideal untuk merealisasikan keuntungan (menjual saham).
+        * **SL (Stop Loss):** Batas harga toleransi kerugian. Jika harga turun menyentuh level ini, sangat disarankan untuk menjual saham (*cut loss*) demi melindungi sisa modal Anda dari kerugian yang lebih besar.
+        * **RRR (Risk-Reward Ratio):** Rasio perbandingan antara potensi keuntungan dengan potensi kerugian. Semakin besar angkanya, semakin bagus transaksinya. (Contoh 1.5x berarti potensi untungnya 1,5 kali lipat dari risiko ruginya).
+        * **ATR (Average True Range):** Indikator yang mengukur tingkat volatilitas (gejolak/ayunan) harga saham. Semakin tinggi ATR, rentang gerak saham tersebut semakin liar. Sistem ini otomatis menggunakan ATR untuk menentukan titik Stop Loss yang logis agar tidak mudah 'tersapu' oleh ayunan harian.
+        * **Maks Lot (Position Sizing):** Rekomendasi porsi maksimal jumlah Lot yang aman untuk dibeli, dihitung secara otomatis oleh sistem berdasarkan total modal Anda dan batasan kerugian yang Anda izinkan. Ini menjaga portofolio Anda agar tidak 'All-In' atau over-konsentrasi di satu saham saja.
+        * **MA (Moving Average):** Harga rata-rata saham dalam rentang waktu tertentu. MA50 untuk rata-rata menengah (50 hari), MA200 untuk rata-rata jangka panjang (200 hari). Saham yang sehat umumnya bergerak di atas garis MA ini.
+        * **VWAP (Volume Weighted Average Price):** Rata-rata harga saham intraday yang telah dibobotkan dengan volumenya. Ini adalah indikator patokan utama para trader institusi.
+        """)
 
-    # --- PENGATURAN & KALKULATOR DI HALAMAN UTAMA (DALAM EXPANDER) ---
-    with st.expander("🛠️ Pengaturan Filter & Manajemen Risiko (Klik untuk Edit)", expanded=False):
-        st.write("**Filter Institusi Tambahan:**")
-        col_f1, col_f2 = st.columns(2)
-        with col_f1:
-            mtf_filter = st.checkbox("Hanya saham yang searah dengan tren besar", value=True)
-        with col_f2:
-            sector_boost = st.checkbox("Hanya saham dari Sektor yang kuat", value=True)
-        
-        st.markdown("---")
-        st.write("**💼 Kalkulator Lot Maksimal (Institutional Position Sizing):**")
-        st.caption("Manajemen risiko profesional berdasarkan Modal & Batas Kerugian.")
+    # --- INFORMASI JAM OPTIMAL & PEMILIHAN MODE ---
+    if "Praktis" in ui_mode:
+        st.write("### 1️⃣ Pilih Gaya Beli Anda")
+        trade_mode = st.radio("Suka memantau layar setiap hari atau disimpan beberapa hari?", 
+                              ["Day Trading (Beli Pagi, Jual Siang/Sore)", "Swing Trading (Beli & Simpan Beberapa Hari)"], horizontal=True)
+        # Menyeragamkan variabel agar terbaca oleh mesin di bawah
+        trade_mode = "Day Trading" if "Day" in trade_mode else "Swing Trading"
+    else:
+        st.write("### ⚙️ Pemilihan Strategi & Waktu Analisa")
+        st.info("⏰ **Panduan Waktu Analisa Optimal:** \n"
+                "- **Day Trading:** 09.30 - 11.00 WIB (Untuk momentum harian tertinggi).\n"
+                "- **Swing Trading:** > 16.00 WIB (Untuk konfirmasi harga penutupan yang solid).")
+        trade_mode = st.radio("Pilih Strategi Trading (Mode Analisa):", ["Day Trading", "Swing Trading"], horizontal=True)
+
+    # --- PENGATURAN & KALKULATOR RISIKO BERDASARKAN MODE ---
+    if "Praktis" in ui_mode:
+        st.write("### 2️⃣ Kalkulator Keamanan Dana")
+        # Di mode praktis, filter teknikal disembunyikan dan otomatis diaktifkan
+        mtf_filter = True
+        sector_boost = True
         
         col_m1, col_m2 = st.columns(2)
         with col_m1:
-            total_modal = st.number_input("Total Modal Portofolio Anda (Rp):", min_value=1000000, value=100000000, step=5000000)
+            total_modal = st.number_input("Berapa Total Uang Anda untuk Saham? (Rp):", min_value=1000000, value=10000000, step=1000000)
         with col_m2:
-            modal_risiko = st.number_input("Nominal Maksimal Siap Rugi (Rp):", min_value=10000, value=1000000, step=50000, help="Ketik angka murni tanpa titik.")
+            modal_risiko = st.number_input("Batas maksimal uang yang rela hilang per saham? (Rp):", min_value=10000, value=100000, step=50000)
         
-        risiko_persen = (modal_risiko / total_modal) * 100 if total_modal > 0 else 0
-        batas_alokasi_persen = 15.0
-        batas_alokasi_rp = total_modal * (batas_alokasi_persen / 100)
-        
-        st.markdown(
-            f"""
-            <div style="background-color:#d4edda; border-left: 5px solid #28a745; padding: 10px; border-radius: 5px;">
-                <p style="margin:0; font-size:12px; color:#155724;">Total Modal: <b>Rp {format_rp(total_modal)}</b></p>
-                <p style="margin:0; font-size:12px; color:#155724;">Nominal Siap Rugi (<b>{risiko_persen:.1f}%</b> dari modal):</p>
-                <h4 style="margin:0; color:#155724;">Rp {format_rp(modal_risiko)}</h4>
-                <p style="margin:0; margin-top:5px; font-size:10px; color:#155724;"><i>*Sistem membatasi maks beli 15% modal (Rp {format_rp(batas_alokasi_rp)}) per saham agar tidak over-konsentrasi.</i></p>
-            </div>
-            """, unsafe_allow_html=True
-        )
+        batas_alokasi_rp = total_modal * 0.15
+        st.success(f"Sistem akan memastikan Anda tidak membeli saham melebihi batas aman (Maksimal Rp {format_rp(batas_alokasi_rp)} per saham).")
+    else:
+        with st.expander("🛠️ Pengaturan Filter & Manajemen Risiko (Klik untuk Edit)", expanded=False):
+            st.write("**Filter Institusi Tambahan:**")
+            col_f1, col_f2 = st.columns(2)
+            with col_f1:
+                mtf_filter = st.checkbox("Hanya saham yang searah dengan tren besar", value=True)
+            with col_f2:
+                sector_boost = st.checkbox("Hanya saham dari Sektor yang kuat", value=True)
+            
+            st.markdown("---")
+            st.write("**💼 Kalkulator Lot Maksimal (Institutional Position Sizing):**")
+            st.caption("Manajemen risiko profesional berdasarkan Modal & Batas Kerugian.")
+            
+            col_m1, col_m2 = st.columns(2)
+            with col_m1:
+                total_modal = st.number_input("Total Modal Portofolio Anda (Rp):", min_value=1000000, value=100000000, step=5000000)
+            with col_m2:
+                modal_risiko = st.number_input("Nominal Maksimal Siap Rugi (Rp):", min_value=10000, value=1000000, step=50000)
+            
+            risiko_persen = (modal_risiko / total_modal) * 100 if total_modal > 0 else 0
+            batas_alokasi_persen = 15.0
+            batas_alokasi_rp = total_modal * (batas_alokasi_persen / 100)
+            
+            st.markdown(
+                f"""
+                <div style="background-color:#d4edda; border-left: 5px solid #28a745; padding: 10px; border-radius: 5px;">
+                    <p style="margin:0; font-size:12px; color:#155724;">Total Modal: <b>Rp {format_rp(total_modal)}</b></p>
+                    <p style="margin:0; font-size:12px; color:#155724;">Nominal Siap Rugi (<b>{risiko_persen:.1f}%</b> dari modal):</p>
+                    <h4 style="margin:0; color:#155724;">Rp {format_rp(modal_risiko)}</h4>
+                    <p style="margin:0; margin-top:5px; font-size:10px; color:#155724;"><i>*Sistem membatasi maks beli 15% modal (Rp {format_rp(batas_alokasi_rp)}) per saham agar tidak over-konsentrasi.</i></p>
+                </div>
+                """, unsafe_allow_html=True
+            )
 
     tz = pytz.timezone('Asia/Jakarta')
     now = datetime.now(tz)
@@ -287,36 +336,23 @@ def run_screening():
     is_weekend = now.weekday() >= 5
     session, status_desc = get_market_session()
 
+    # --- TAMPILAN STATUS MARKET BERDASARKAN MODE ---
     if "Tutup" in status_desc:
-        st.error(f"**Status Market:** {session} ({status_desc})")
+        st.error(f"**Bursa Saham Sedang Tutup**" if "Praktis" in ui_mode else f"**Status Market:** {session} ({status_desc})")
     else:
-        st.info(f"**Status Market:** {session} ({status_desc})")
-
-    if trade_mode == "Day Trading":
-        is_golden = 9.5 <= curr_time_float <= 11.0 and not is_weekend
-        if is_golden: 
-            st.success("🌟 **GOLDEN HOURS AKTIF (09.30 - 11.00 WIB):** Waktu paling optimal untuk mencari saham potensial dan eksekusi Day Trading. Volatilitas dan volume sedang berada di puncaknya.")
-        else: 
-            if not is_weekend:
-                st.warning("⚠️ **NOTIFIKASI WIN RATE:** Screening & Eksekusi Day Trading disarankan dijalankan pada pukul 09.30-11.00 WIB. Saat ini bukan jam optimal, sinyal mungkin rentan terjebak *sideways*.")
-            else:
-                st.warning("🚫 **PASAR TUTUP:** Data Day Trading yang dihasilkan adalah hasil penutupan terakhir. Gunakan hanya untuk evaluasi.")
-    elif trade_mode == "Swing Trading":
-        is_swing = curr_time_float >= 16.0 or is_weekend
-        if is_swing: 
-            st.success("✅ **WAKTU ANALISA SWING IDEAL:** Data penutupan telah final. Ini adalah waktu terbaik untuk menyusun *Watchlist* dan *Trading Plan* untuk esok hari.")
-        else: 
-            st.info("ℹ️ **INFO:** Screening Swing Trading paling akurat dilakukan setelah jam 16.00 WIB untuk memastikan struktur harga penutupan harian tidak berubah.")
+        st.info(f"**Bursa Saham Sedang Buka**" if "Praktis" in ui_mode else f"**Status Market:** {session} ({status_desc})")
 
     st.markdown("---")
 
-    if st.button(f"🚀 JALANKAN ANALISA {trade_mode.upper()}"):
+    tombol_cari = "🚀 CARIKAN SAHAM UNTUK SAYA" if "Praktis" in ui_mode else f"🚀 JALANKAN ANALISA {trade_mode.upper()}"
+    
+    if st.button(tombol_cari):
         saham_list = [f"{t}.JK" for tickers in UNIVERSE_SAHAM.values() for t in tickers]
         saham_list = list(set(saham_list))
         
         raw_results = []
         
-        st.write("### 🔄 Menjalankan mesin pencari saham potensial.")
+        st.write("### 🔄 Mesin sedang memilah ratusan saham. Mohon tunggu...")
         
         status_text = st.empty()
         progress_bar = st.progress(0)
@@ -330,7 +366,7 @@ def run_screening():
             for future in concurrent.futures.as_completed(futures):
                 completed += 1
                 
-                status_text.text(f"Menganalisa data pasar: {completed} / {total_saham} saham selesai diproses...")
+                status_text.text(f"Memeriksa {completed} dari {total_saham} saham...")
                 progress_bar.progress(completed / total_saham)
                 
                 result = future.result()
@@ -401,46 +437,62 @@ def run_screening():
         top_3 = res[:3]
         watchlist = res[3:10]
 
-        st.subheader("🌐 Market Overview")
+        st.subheader("🌐 Kondisi Pasar Saat Ini" if "Praktis" in ui_mode else "🌐 Market Overview")
         c1, c2 = st.columns([2, 1])
         with c1:
             if 'sector_report' in st.session_state and not st.session_state.sector_report.empty:
                 fig = px.bar(st.session_state.sector_report.reset_index(), x='Sektor', y='Avg_Score', color='Avg_Score', color_continuous_scale='Greens', title="Kekuatan Sektor Saat Ini")
                 st.plotly_chart(fig, use_container_width=True)
             else:
-                st.info("Data sektor tidak tersedia atau belum ada pergerakan signifikan.")
+                st.info("Data sektor tidak tersedia.")
                 
         with c2:
-            st.write("**Top Leading Sectors:**")
+            st.write("**Sektor Paling Ramai (Banyak Uang Masuk):**" if "Praktis" in ui_mode else "**Top Leading Sectors:**")
             if 'sector_report' in st.session_state and not st.session_state.sector_report.empty:
                 for s in st.session_state.sector_report.index[:3]: st.success(s)
 
         st.markdown("---")
         
-        st.header(f"🏆 Top 3 Prioritas {trade_mode}")
+        st.header(f"🏆 Pilihan Terbaik Saat Ini" if "Praktis" in ui_mode else f"🏆 Top 3 Prioritas {trade_mode}")
         if top_3:
             cols = st.columns(len(top_3))
             for idx, item in enumerate(top_3):
                 with cols[idx]:
                     st.markdown(f"### {item['Ticker']}")
-                    st.write(f"**Sektor:** {item['Sektor']}")
-                    st.metric("Skor Institusi", f"{item['Skor']}/100 Pts", item['Status'])
-                    st.write(f"**Target (TP):** Rp {format_rp(item['TP'])}")
-                    st.write(f"**Proteksi (SL):** Rp {format_rp(item['SL'])}")
-                    st.info(f"Area Entry: {item['Entry']}")
-                    st.warning(f"🛡️ **Maks. Aman:** {item['Lot_Maks']}")
-                    st.caption(f"💡 {item['Logic']}")
+                    st.write(f"**Industri:** {item['Sektor']}")
+                    
+                    if "Praktis" in ui_mode:
+                        st.info(f"🛒 **Beli di harga:** {item['Entry']}")
+                        st.success(f"💰 **Jual Untung di:** Rp {format_rp(item['TP'])}")
+                        st.error(f"🛑 **Jual Rugi (Batas Aman) jika menyentuh:** Rp {format_rp(item['SL'])}")
+                        st.warning(f"📦 **Maksimal Beli:** {item['Lot_Maks']}")
+                    else:
+                        st.metric("Skor Institusi", f"{item['Skor']}/100 Pts", item['Status'])
+                        st.write(f"**Target (TP):** Rp {format_rp(item['TP'])}")
+                        st.write(f"**Proteksi (SL):** Rp {format_rp(item['SL'])}")
+                        st.info(f"Area Entry: {item['Entry']}")
+                        st.warning(f"🛡️ **Maks. Aman:** {item['Lot_Maks']}")
+                        st.caption(f"💡 {item['Logic']}")
         else:
-            st.warning("Belum ada saham yang memenuhi kriteria ketat institusi saat ini.")
+            st.warning("Mesin belum menemukan saham yang benar-benar aman saat ini. Silakan coba beberapa saat lagi.")
 
         if watchlist:
             st.markdown("---")
-            st.subheader(f"📋 Radar Watchlist (Rank 4-10)")
+            st.subheader(f"📋 Daftar Cadangan (Peringkat 4-10)" if "Praktis" in ui_mode else f"📋 Radar Watchlist (Rank 4-10)")
             df_watch_display = pd.DataFrame(watchlist).copy()
             df_watch_display['SL'] = df_watch_display['SL'].apply(format_rp)
             df_watch_display['TP'] = df_watch_display['TP'].apply(format_rp)
             
-            kolom_tampil = ["Ticker", "Sektor", "Skor", "Status", "Entry", "SL", "TP", "RRR", "Lot_Maks"]
+            if "Praktis" in ui_mode:
+                kolom_tampil = ["Ticker", "Sektor", "Entry", "SL", "TP", "Lot_Maks"]
+                # Mengubah nama kolom agar lebih mudah dipahami
+                df_watch_display = df_watch_display.rename(columns={
+                    "Sektor": "Industri", "Entry": "Area Beli", "SL": "Jual Rugi (Batas Aman)", "TP": "Jual Untung (Target)"
+                })
+                kolom_tampil = ["Ticker", "Industri", "Area Beli", "Jual Rugi (Batas Aman)", "Jual Untung (Target)", "Lot_Maks"]
+            else:
+                kolom_tampil = ["Ticker", "Sektor", "Skor", "Status", "Entry", "SL", "TP", "RRR", "Lot_Maks"]
+                
             st.dataframe(df_watch_display[kolom_tampil], use_container_width=True, hide_index=True)
         
         st.markdown("<br><hr>", unsafe_allow_html=True)
