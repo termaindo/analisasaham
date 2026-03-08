@@ -235,7 +235,7 @@ def process_single_stock(ticker, trade_mode, mtf_filter):
 def run_screening():
     st.set_page_config(page_title="🔍 Screening Saham Harian", layout="wide")
     
-    # --- PILIHAN MODE UI (Telah dipindahkan dari sidebar ke halaman utama) ---
+    # --- PILIHAN MODE UI ---
     st.markdown("<h4 style='text-align: center;'>Pilih Mode Aplikasi</h4>", unsafe_allow_html=True)
     ui_mode = st.radio(
         "👁️ Tampilan Aplikasi:", 
@@ -272,7 +272,6 @@ def run_screening():
         st.write("### 1️⃣ Pilih Gaya Beli Anda")
         trade_mode = st.radio("Suka memantau layar setiap hari atau disimpan beberapa hari?", 
                               ["Day Trading (Beli Pagi, Jual Siang/Sore)", "Swing Trading (Beli & Simpan Beberapa Hari)"], horizontal=True)
-        # Menyeragamkan variabel agar terbaca oleh mesin di bawah
         trade_mode = "Day Trading" if "Day" in trade_mode else "Swing Trading"
     else:
         st.write("### ⚙️ Pemilihan Strategi & Waktu Analisa")
@@ -284,7 +283,6 @@ def run_screening():
     # --- PENGATURAN & KALKULATOR RISIKO BERDASARKAN MODE ---
     if "Praktis" in ui_mode:
         st.write("### 2️⃣ Kalkulator Keamanan Dana")
-        # Di mode praktis, filter teknikal disembunyikan dan otomatis diaktifkan
         mtf_filter = True
         sector_boost = True
         
@@ -336,11 +334,15 @@ def run_screening():
     is_weekend = now.weekday() >= 5
     session, status_desc = get_market_session()
 
-    # --- TAMPILAN STATUS MARKET BERDASARKAN MODE ---
+    # --- TAMPILAN STATUS MARKET BERDASARKAN MODE (TELAH DIPERBAIKI) ---
     if "Tutup" in status_desc:
-        st.error(f"**Bursa Saham Sedang Tutup**" if "Praktis" in ui_mode else f"**Status Market:** {session} ({status_desc})")
+        st.error(f"🛑 **Bursa Saham Sedang Tutup ({session})**" if "Praktis" in ui_mode else f"**Status Market:** {session} ({status_desc})")
+    elif "Wait" in status_desc:
+        st.warning(f"⏳ **Bursa Saham Belum Buka (Sesi Pra-Pasar)**" if "Praktis" in ui_mode else f"**Status Market:** {session} ({status_desc})")
+    elif "Analysis" in status_desc:
+        st.info(f"🌙 **Bursa Saham Sudah Tutup (Sesi Pasca-Pasar)**" if "Praktis" in ui_mode else f"**Status Market:** {session} ({status_desc})")
     else:
-        st.info(f"**Bursa Saham Sedang Buka**" if "Praktis" in ui_mode else f"**Status Market:** {session} ({status_desc})")
+        st.success(f"🟢 **Bursa Saham Sedang Buka (Live Market)**" if "Praktis" in ui_mode else f"**Status Market:** {session} ({status_desc})")
 
     st.markdown("---")
 
