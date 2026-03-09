@@ -97,9 +97,10 @@ def export_to_pdf(hasil_lolos, trade_mode, session, sector_report, logo_path="lo
             pdf.set_font("Arial", '', 9)
             pdf.cell(60, 5, f"Entry: {item['Entry']}", 0)
             pdf.set_text_color(0, 128, 0)
-            pdf.cell(60, 5, f"TP Target: Rp {format_rp(item['TP'])}", 0)
+            # Menambahkan persentase Reward dan Risk di PDF (Top 3)
+            pdf.cell(65, 5, f"TP Target: Rp {format_rp(item['TP'])} ({item['Pct_Reward']})", 0)
             pdf.set_text_color(200, 0, 0)
-            pdf.cell(60, 5, f"Stop Loss: Rp {format_rp(item['SL'])}", ln=True)
+            pdf.cell(65, 5, f"Stop Loss: Rp {format_rp(item['SL'])} ({item['Pct_Risk']})", ln=True)
             pdf.set_text_color(0, 0, 0)
             
             pdf.set_font("Arial", 'B', 8)
@@ -129,13 +130,14 @@ def export_to_pdf(hasil_lolos, trade_mode, session, sector_report, logo_path="lo
             pdf.cell(190, 5, f"{w['Ticker']} ({w['Sektor'][:20]}) | Skor: {w['Skor']}", ln=True)
             
             pdf.set_font("Arial", '', 8)
-            pdf.cell(45, 5, f"Entry: {w['Entry']}", 0)
+            pdf.cell(40, 5, f"Entry: {w['Entry']}", 0)
             pdf.set_text_color(0, 128, 0)
-            pdf.cell(40, 5, f"TP: Rp {format_rp(w['TP'])}", 0)
+            # Menambahkan persentase Reward dan Risk di PDF (Watchlist)
+            pdf.cell(50, 5, f"TP: Rp {format_rp(w['TP'])} ({w['Pct_Reward']})", 0)
             pdf.set_text_color(200, 0, 0)
-            pdf.cell(40, 5, f"SL: Rp {format_rp(w['SL'])}", 0)
+            pdf.cell(50, 5, f"SL: Rp {format_rp(w['SL'])} ({w['Pct_Risk']})", 0)
             pdf.set_text_color(0, 0, 0)
-            pdf.cell(40, 5, f"Maks: {w['Lot_Maks']}", ln=True)
+            pdf.cell(50, 5, f"Maks: {w['Lot_Maks']}", ln=True)
 
             pdf.set_font("Arial", 'I', 7)
             pdf.multi_cell(190, 4, f"Logic: {w['Logic']}")
@@ -354,7 +356,6 @@ def run_screening():
         
         raw_results = []
         
-        # PERBAIKAN: Memasukkan teks notifikasi ke dalam wadah st.empty() agar bisa dihapus
         loading_header = st.empty()
         loading_header.write("### 🔄 Mesin sedang memilah ratusan saham. Mohon tunggu...")
         
@@ -377,7 +378,6 @@ def run_screening():
                 if result is not None:
                     raw_results.append(result)
 
-        # Menghapus notifikasi dan progress bar setelah proses selesai
         loading_header.empty()
         status_text.empty()
         progress_bar.empty()
@@ -417,6 +417,10 @@ def run_screening():
             else:
                 lot_maksimal = 0
 
+            # KALKULASI PERSENTASE RISK DAN REWARD
+            pct_risk = ((stock['Harga'] - sl) / stock['Harga']) * 100 if stock['Harga'] > 0 else 0
+            pct_reward = ((tp - stock['Harga']) / stock['Harga']) * 100 if stock['Harga'] > 0 else 0
+
             if f_score >= 65 and rrr >= 1.4:
                 final_picks.append({
                     "Ticker": stock['Ticker'], "Sektor": stock['Sektor'], "Skor": f_score,
@@ -425,7 +429,10 @@ def run_screening():
                     "SL": sl, "TP": tp, "RRR": f"{rrr:.1f}x",
                     "Status": "🔥 HIGH CONVICTION" if f_score >= 85 else "🎯 READY",
                     "Logic": " | ".join(stock['Alasan']),
-                    "Lot_Maks": f"{format_rp(lot_maksimal)} Lot" 
+                    "Lot_Maks": f"{format_rp(lot_maksimal)} Lot",
+                    # Menyimpan persentase untuk PDF dan Web
+                    "Pct_Risk": f"-{pct_risk:.1f}%",
+                    "Pct_Reward": f"+{pct_reward:.1f}%"
                 })
 
         final_picks.sort(key=lambda x: x['Skor'], reverse=True)
@@ -469,13 +476,15 @@ def run_screening():
                     
                     if "Praktis" in ui_mode:
                         st.info(f"🛒 **Beli di harga:** {item['Entry']}")
-                        st.success(f"💰 **Jual Untung di:** Rp {format_rp(item['TP'])}")
-                        st.error(f"🛑 **Jual Rugi (Batas Aman) jika menyentuh:** Rp {format_rp(item['SL'])}")
+                        # Menambahkan persentase di UI Praktis
+                        st.success(f"💰 **Jual Untung di:** Rp {format_rp(item['TP'])} ({item['Pct_Reward']})")
+                        st.error(f"🛑 **Jual Rugi (Batas Aman) jika menyentuh:** Rp {format_rp(item['SL'])} ({item['Pct_Risk']})")
                         st.warning(f"📦 **Maksimal Beli:** {item['Lot_Maks']}")
                     else:
                         st.metric("Skor Institusi", f"{item['Skor']}/100 Pts", item['Status'])
-                        st.write(f"**Target (TP):** Rp {format_rp(item['TP'])}")
-                        st.write(f"**Proteksi (SL):** Rp {format_rp(item['SL'])}")
+                        # Menambahkan persentase di UI Pro
+                        st.write(f"**Target (TP):** Rp {format_rp(item['TP'])} ({item['Pct_Reward']})")
+                        st.write(f"**Proteksi (SL):** Rp {format_rp(item['SL'])} ({item['Pct_Risk']})")
                         st.info(f"Area Entry: {item['Entry']}")
                         st.warning(f"🛡️ **Maks. Aman:** {item['Lot_Maks']}")
                         st.caption(f"💡 {item['Logic']}")
@@ -486,8 +495,10 @@ def run_screening():
             st.markdown("---")
             st.subheader(f"📋 Daftar Cadangan (Peringkat 4-10)" if "Praktis" in ui_mode else f"📋 Radar Watchlist (Rank 4-10)")
             df_watch_display = pd.DataFrame(watchlist).copy()
-            df_watch_display['SL'] = df_watch_display['SL'].apply(format_rp)
-            df_watch_display['TP'] = df_watch_display['TP'].apply(format_rp)
+            
+            # Memformat kolom SL dan TP agar ikut menampilkan persentasenya di tabel
+            df_watch_display['SL'] = df_watch_display.apply(lambda x: f"Rp {format_rp(x['SL'])} ({x['Pct_Risk']})", axis=1)
+            df_watch_display['TP'] = df_watch_display.apply(lambda x: f"Rp {format_rp(x['TP'])} ({x['Pct_Reward']})", axis=1)
             
             if "Praktis" in ui_mode:
                 kolom_tampil = ["Ticker", "Sektor", "Entry", "SL", "TP", "Lot_Maks"]
