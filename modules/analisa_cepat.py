@@ -357,7 +357,8 @@ def run_analisa_cepat():
                     t_score += 15; alasan_tek.append(f"Sector Hot: [{sector.title()}]")
             else:
                 # Fallback: Menggunakan base technical momentum individu jika berjalan standalone
-                if t_score >= 60: 
+                # UPDATE KOREKSI: Hanya diberikan jika skor base teknikal mencapai minimal 70
+                if t_score >= 70: 
                     t_score += 15; alasan_tek.append(f"Sector Proxy: [{sector.title()}]")
 
             teks_alasan = ", ".join(alasan_tek) if alasan_tek else "Tidak ada sinyal kuat"
