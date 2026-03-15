@@ -6,6 +6,7 @@ from plotly.subplots import make_subplots
 import base64
 from datetime import datetime
 import os
+import yfinance as yf
 from fpdf import FPDF
 
 # --- MENGGUNAKAN RELATIVE IMPORT SEBAGAI PENGAMAN ---
@@ -163,9 +164,11 @@ def generate_pdf_fpdf(data, logo_path="logo_expert_stock_pro.png"):
     pdf.set_font("Arial", 'B', 12)
     pdf.cell(0, 10, txt=f"SKOR TEKNIKAL: {data['score']}/100", ln=True)
     pdf.set_font("Arial", '', 11)
-    pdf.cell(0, 6, txt=f"Sinyal: {data['signal']} ({data['confidence']})", ln=True)
+    pdf.cell(0, 6, txt=f"Sinyal: {data['signal']}", ln=True)
+    pdf.set_font("Arial", 'I', 10)
+    pdf.cell(0, 6, txt=f"Catatan: {data['confidence']}", ln=True)
     
-    pdf.ln(5)
+    pdf.ln(3)
     
     # --- DIMENSI 1: TREND ANALYSIS ---
     pdf.set_font("Arial", 'B', 11)
@@ -203,12 +206,11 @@ def generate_pdf_fpdf(data, logo_path="logo_expert_stock_pro.png"):
     pdf.cell(0, 5, txt=f"- Pressure : {data['pressure']}", ln=True)
     pdf.ln(3)
 
-    # --- DIMENSI 5: TRADING PLAN ---
+    # --- DIMENSI 5: TRADING PLAN & POSITION SIZING ---
     pdf.set_font("Arial", 'B', 11)
-    pdf.cell(0, 8, txt="5. TRADING PLAN", ln=True)
+    pdf.cell(0, 8, txt="5. TRADING PLAN & POSITION SIZING", ln=True)
     
-    # Penyesuaian Tampilan Trading Plan di PDF berdasarkan Skor
-    if data['score'] < 60:
+    if data['score'] < 70:
         pdf.set_font("Arial", 'I', 11)
         pdf.set_text_color(220, 53, 69) # Warna merah untuk peringatan
         pdf.multi_cell(0, 6, txt="Tidak Disarankan untuk Melakukan Trading dulu, karena belum didukung oleh indikator teknikal yang memadai.")
@@ -216,9 +218,17 @@ def generate_pdf_fpdf(data, logo_path="logo_expert_stock_pro.png"):
     else:
         pdf.set_font("Arial", '', 11)
         pdf.cell(0, 6, txt=f"Harga Saat Ini : Rp {data['harga']:,.0f}", ln=True)
-        pdf.cell(0, 6, txt=f"Area Entry     : Rp {data['entry_bawah']:,.0f} - Rp {data['entry_atas']:,.0f}", ln=True)
-        pdf.cell(0, 6, txt=f"Stop Loss      : Rp {data['sl_final']:,.0f} (-{data['risk_pct']:.1f}%)", ln=True)
-        pdf.cell(0, 6, txt=f"Target         : Rp {data['tp_final']:,.0f} (+{data['tp_pct']:.1f}%)", ln=True)
+        pdf.cell(0, 6, txt=f"Area Entry     : Rp {data['entry_bawah']:,.0f} - Rp {data['entry_atas']:,.0f} ({data['caption_entry']})", ln=True)
+        pdf.cell(0, 6, txt=f"Stop Loss      : Rp {data['sl_final']:,.0f} (-{data['risk_pct']:.1f}%) ({data['caption_sl']})", ln=True)
+        pdf.cell(0, 6, txt=f"Target         : Rp {data['tp_final']:,.0f} (+{data['tp_pct']:.1f}%) ({data['caption_tp']})", ln=True)
+        
+        pdf.ln(2)
+        pdf.set_font("Arial", 'B', 11)
+        pdf.cell(0, 6, txt="* POSITION SIZING (UKURAN LOT MAKSIMAL)", ln=True)
+        pdf.set_font("Arial", '', 11)
+        pdf.cell(0, 6, txt=f"Rekomendasi Aman  : {data['final_lot']} LOT", ln=True)
+        pdf.set_font("Arial", 'I', 9)
+        pdf.cell(0, 5, txt=f"(Dihitung secara otomatis berdasarkan Max Risk Rp {data['max_risiko']:,.0f} dan Max Portofolio 15% dari Modal Rp {data['total_modal']:,.0f})", ln=True)
     
     pdf.ln(5)
     
@@ -268,13 +278,20 @@ def run_teknikal():
         
     st.markdown("---")
 
-    col_inp, _ = st.columns([1, 2])
+    # --- TAMBAHAN INPUT MODAL & RISIKO ---
+    st.markdown("### ⚙️ Pengaturan Manajemen Risiko (Position Sizing)")
+    col_inp, col_mod, col_rsk = st.columns([1, 1, 1])
     with col_inp:
         ticker_input = st.text_input("Kode Saham (Contoh: BBRI):", value="BBRI").upper()
+    with col_mod:
+        total_modal_input = st.number_input("Total Modal Investasi (Rp):", min_value=100000, value=10000000, step=1000000, format="%d")
+    with col_rsk:
+        max_risiko_input = st.number_input("Maks Risiko / Kerugian (Rp):", min_value=10000, value=250000, step=50000, format="%d")
+
     ticker = ticker_input if ticker_input.endswith(".JK") else f"{ticker_input}.JK"
 
     if st.button(f"Jalankan Analisa Lengkap {ticker_input}"):
-        with st.spinner("Mengevaluasi tren, indikator, pola, dan sentimen berita..."):
+        with st.spinner("Mengevaluasi tren, indikator, pola, risiko, dan sentimen berita..."):
             data = get_full_stock_data(ticker)
             df = data['history']
             info = data.get('info', {})
@@ -323,19 +340,16 @@ def run_teknikal():
             # v) Volatilitas & Risiko (10 Poin)
             if (curr_price > last['MA20']) and (curr_price <= last['BB_Upper']): score += 10
 
-            # Mapping Rekomendasi
-            if score >= 80:
-                signal = "STRONG BUY"
-                confidence = "Sangat Tinggi (Target Operasi Utama)"
-            elif score >= 60:
-                signal = "BUY / ACCUMULATE"
-                confidence = "Tinggi (Menunggu Konfirmasi Penuh)"
-            elif score >= 40:
-                signal = "HOLD / WAIT"
-                confidence = "Menengah (Sideways / Transisi)"
+            # --- KOREKSI TIER SCORING & PESAN ---
+            if score >= 85:
+                signal = "BOLEH TRADING"
+                confidence = "Boleh Trading sesuai Trading Plan yang sudah dibuatkan."
+            elif 70 <= score <= 84:
+                signal = "HATI-HATI"
+                confidence = "Indikator cukup mendukung untuk saham ini dimasukkan dalam daftar pantauan ('watch list'), atau boleh trading dengan lot sebagian dulu."
             else:
-                signal = "SELL / AVOID"
-                confidence = "Rendah (Hancur Lebur Secara Teknikal)"
+                signal = "DILARANG TRADING"
+                confidence = "Tidak Disarankan untuk melakukan trading dulu, karena belum didukung oleh indikator teknikal yang memadai."
 
             # ==========================================
             # TAMPILAN HEADER
@@ -353,10 +367,9 @@ def run_teknikal():
             st.header("🏆 SKOR TEKNIKAL")
             st.progress(score / 100.0)
             
-            teks_hasil = f"**Skor: {score}/100** — Sinyal: **{signal}** ({confidence})"
-            if score >= 80: st.success(teks_hasil)
-            elif score >= 60: st.info(teks_hasil)
-            elif score >= 40: st.warning(teks_hasil)
+            teks_hasil = f"**Skor: {score}/100** — Sinyal: **{signal}**\n\n*{confidence}*"
+            if score >= 85: st.success(teks_hasil)
+            elif score >= 70: st.warning(teks_hasil)
             else: st.error(teks_hasil)
             
             st.markdown("---")
@@ -369,13 +382,9 @@ def run_teknikal():
             arah_rsi = "↗️ Naik" if last['RSI'] > prev_1['RSI'] else "↘️ Turun"
             is_div = "Terdeteksi (Bullish)" if (curr_price < prev_5['Close'] and last['RSI'] > prev_5['RSI']) else "Tidak Terdeteksi"
             
-            # KOREKSI LOGIKA PRESSURE: Bandingkan Close Hari Ini vs Close Kemarin
-            if last['Close'] > prev_1['Close']:
-                market_pressure = "Buying Pressure (Naik)"
-            elif last['Close'] < prev_1['Close']:
-                market_pressure = "Selling Pressure (Turun)"
-            else:
-                market_pressure = "Neutral (Stagnan)"
+            if last['Close'] > prev_1['Close']: market_pressure = "Buying Pressure (Naik)"
+            elif last['Close'] < prev_1['Close']: market_pressure = "Selling Pressure (Turun)"
+            else: market_pressure = "Neutral (Stagnan)"
 
             posisi_ma_pdf = "Di atas MA20 (Kuning)" if curr_price > last['MA20'] else "Di bawah MA20 (Kuning)"
             rsi_status = 'Overbought' if last['RSI']>70 else 'Oversold' if last['RSI']<30 else 'Neutral'
@@ -387,57 +396,73 @@ def run_teknikal():
             
             # --- PENYESUAIAN TRADING PLAN BERDASARKAN SKOR ---
             entry_atas = curr_price
+            caption_entry = ""
+            caption_sl = ""
+            caption_tp = ""
             
-            if score >= 80:
-                # Skenario Skor >= 80
+            if score >= 85:
+                # Skenario Boleh Trading (>= 85)
                 diskon_entry = curr_price * 0.96 # Turun 4%
                 ema9_sekarang = last['EMA9']
-                entry_bawah = max(ema9_sekarang, diskon_entry) # Ambil yang lebih tinggi
+                entry_bawah = max(ema9_sekarang, diskon_entry)
                 avg_entry = (entry_atas + entry_bawah) / 2
                 
                 sl_atr = avg_entry - (2.5 * atr)
                 sl_hard = avg_entry * 0.92 # Turun 8%
                 sl_final = max(sl_atr, sl_hard) 
                 
-                # RRR 1:2
                 risk_nominal = avg_entry - sl_final
-                tp_final = avg_entry + (risk_nominal * 2) 
+                tp_final = avg_entry + (risk_nominal * 2) # RRR 1:2
                 
                 caption_entry = "Maks Koreksi 4% / EMA9"
                 caption_sl = "Maks Risk 8% / 2.5x ATR"
                 caption_tp = "Risk/Reward Ratio 1 : 2.0"
                 
-            elif 60 <= score <= 79:
-                # Skenario Skor 60 - 79
+            elif 70 <= score <= 84:
+                # Skenario Hati-hati (70 - 84)
                 diskon_entry = curr_price * 0.985 # Turun 1.5%
                 vwap_sekarang = last['VWAP_20'] if not pd.isna(last['VWAP_20']) else curr_price
-                entry_bawah = max(vwap_sekarang, diskon_entry) # Ambil yang lebih tinggi
+                entry_bawah = max(vwap_sekarang, diskon_entry) 
                 avg_entry = (entry_atas + entry_bawah) / 2
                 
                 sl_atr = avg_entry - (1.5 * atr)
                 sl_hard = avg_entry * 0.97 # Turun 3%
                 sl_final = max(sl_atr, sl_hard)
                 
-                # RRR 1:1.5
                 risk_nominal = avg_entry - sl_final
-                tp_final = avg_entry + (risk_nominal * 1.5)
+                tp_final = avg_entry + (risk_nominal * 1.5) # RRR 1:1.5
                 
                 caption_entry = "Maks Koreksi 1.5% / VWAP"
                 caption_sl = "Maks Risk 3% / 1.5x ATR"
                 caption_tp = "Risk/Reward Ratio 1 : 1.5"
                 
             else:
-                # Skenario Skor < 60 (Dihitung default untuk mencegah error variabel undefined, walau tidak akan ditampilkan secara penuh)
+                # Skenario Dilarang Trading (< 70)
                 entry_bawah = curr_price
                 avg_entry = curr_price
                 sl_final = curr_price
                 tp_final = curr_price
-                caption_entry = ""
-                caption_sl = ""
-                caption_tp = ""
 
             risk_pct_riil = ((avg_entry - sl_final) / avg_entry) * 100 if avg_entry > 0 else 0
             tp_pct_riil = ((tp_final - avg_entry) / avg_entry) * 100 if avg_entry > 0 else 0
+
+            # --- KALKULASI POSITION SIZING ---
+            if score >= 70:
+                risk_per_share = avg_entry - sl_final
+                
+                # 1) Batas Berdasarkan Toleransi Kerugian (Risk-Based Limit)
+                max_lembar_risk = (max_risiko_input / risk_per_share) if risk_per_share > 0 else 0
+                
+                # 2) Batas Berdasarkan Diversifikasi Modal 15% (Capital-Based Limit)
+                max_lembar_capital = (0.15 * total_modal_input) / avg_entry if avg_entry > 0 else 0
+                
+                # 3) Keputusan Final Ukuran Lot Maksimal
+                final_lembar = min(max_lembar_risk, max_lembar_capital)
+                final_lot = int(final_lembar // 100)
+            else:
+                max_lembar_risk = 0
+                max_lembar_capital = 0
+                final_lot = 0
 
             # --- VISUALISASI CHART ---
             fig = make_subplots(rows=3, cols=1, shared_xaxes=True, vertical_spacing=0.03, row_heights=[0.6, 0.2, 0.2])
@@ -490,9 +515,9 @@ def run_teknikal():
                     st.info(f"• **Sentimen:** {sentimen_status}\n\n• **Headline:** {sentimen_headline}")
 
             st.markdown("---")
-            st.subheader("5. TRADING SIGNAL & PLAN")
+            st.subheader("5. TRADING PLAN & POSITION SIZING")
             
-            if score < 60:
+            if score < 70:
                 st.error("🚨 **Tidak Disarankan untuk Melakukan Trading dulu, karena belum didukung oleh indikator teknikal yang memadai.**")
             else:
                 st.write(f"#### Harga Saat Ini: Rp {int(curr_price):,.0f}")
@@ -507,6 +532,21 @@ def run_teknikal():
                 with s3:
                     st.success(f"**TARGET PROFIT**\n\n**Rp {int(tp_final):,.0f} (+{tp_pct_riil:.1f}%)**")
                     st.caption(caption_tp)
+
+                # Menampilkan Position Sizing Calculation
+                st.markdown("<br>", unsafe_allow_html=True)
+                st.info(f"💡 **KALKULASI UKURAN LOT MAKSIMAL (POSITION SIZING)**\nDihitung berdasarkan Modal **Rp {total_modal_input:,.0f}** & Maks Risiko **Rp {max_risiko_input:,.0f}**")
+                
+                col_ps1, col_ps2, col_ps3 = st.columns(3)
+                with col_ps1:
+                    st.metric("Risk-Based Limit", f"{int(max_lembar_risk):,.0f} Lembar")
+                    st.caption("Batas Berdasarkan Toleransi Kerugian")
+                with col_ps2:
+                    st.metric("Capital-Based Limit (15%)", f"{int(max_lembar_capital):,.0f} Lembar")
+                    st.caption("Batas Hindari All-In")
+                with col_ps3:
+                    st.success(f"**FINAL MAX LOT: {final_lot} LOT**")
+                    st.caption("Diambil Angka Paling Konservatif")
 
             st.markdown("---")
 
@@ -541,8 +581,14 @@ def run_teknikal():
                 'risk_pct': risk_pct_riil,
                 'tp_final': tp_final,
                 'tp_pct': tp_pct_riil,
+                'caption_entry': caption_entry,
+                'caption_sl': caption_sl,
+                'caption_tp': caption_tp,
                 'sentiment': sentimen_status,
-                'headline': sentimen_headline
+                'headline': sentimen_headline,
+                'total_modal': total_modal_input,
+                'max_risiko': max_risiko_input,
+                'final_lot': final_lot
             }
             
             pdf_bytes = generate_pdf_fpdf(pdf_data)
