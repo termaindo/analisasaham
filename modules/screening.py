@@ -35,7 +35,9 @@ def analyze_sector_momentum(full_results_df):
         'Skor': 'mean',
         'Ticker': 'count'
     }).rename(columns={'Ticker': 'Jumlah_Saham', 'Skor': 'Avg_Score'}).sort_values('Avg_Score', ascending=False)
-    leading_sectors = sector_summary[sector_summary['Avg_Score'] >= 60].index.tolist()
+    
+    # UPDATE: Standar kekuatan sektor dinaikkan menjadi 70 menyesuaikan kondisi pasar
+    leading_sectors = sector_summary[sector_summary['Avg_Score'] >= 70].index.tolist()
     return sector_summary, leading_sectors
 
 # --- 3. FUNGSI GENERATOR PDF (INSTITUTIONAL FORMAT) ---
@@ -104,7 +106,7 @@ def export_to_pdf(hasil_lolos, trade_mode, session, sector_report, logo_path="lo
             pdf.set_text_color(0, 0, 0)
             
             pdf.set_font("Arial", 'B', 8)
-            pdf.cell(190, 5, f"Batas Alokasi Maksimal: {item['Lot_Maks']}", ln=True)
+            pdf.cell(190, 5, f"Batas Alokasi Maksimal: {item['Lot_Maks']} ({item['Status']})", ln=True)
             
             pdf.set_font("Arial", 'I', 8)
             pdf.multi_cell(190, 4, f"Logic: {item['Logic']}")
@@ -421,13 +423,15 @@ def run_screening():
             pct_risk = ((stock['Harga'] - sl) / stock['Harga']) * 100 if stock['Harga'] > 0 else 0
             pct_reward = ((tp - stock['Harga']) / stock['Harga']) * 100 if stock['Harga'] > 0 else 0
 
-            if f_score >= 65 and rrr >= 1.4:
+            # UPDATE: Kriteria batas bawah diperketat menjadi 70
+            if f_score >= 70 and rrr >= 1.4:
                 final_picks.append({
                     "Ticker": stock['Ticker'], "Sektor": stock['Sektor'], "Skor": f_score,
                     "Harga_Saat_Ini": int(stock['Harga']),
                     "Entry": f"Rp {format_rp(stock['Harga']*0.99)} - {format_rp(stock['Harga'])}",
                     "SL": sl, "TP": tp, "RRR": f"{rrr:.1f}x",
-                    "Status": "🔥 HIGH CONVICTION" if f_score >= 85 else "🎯 READY",
+                    # UPDATE: Status Sizing yang baru (85 All in, 70-84 Cicil Sebagian)
+                    "Status": "🔥 FULL SIZING" if f_score >= 85 else "🎯 CICIL SEBAGIAN",
                     "Logic": " | ".join(stock['Alasan']),
                     "Lot_Maks": f"{format_rp(lot_maksimal)} Lot",
                     # Menyimpan persentase untuk PDF dan Web
@@ -479,7 +483,7 @@ def run_screening():
                         # Menambahkan persentase di UI Praktis
                         st.success(f"💰 **Jual Untung di:** Rp {format_rp(item['TP'])} ({item['Pct_Reward']})")
                         st.error(f"🛑 **Jual Rugi (Batas Aman) jika menyentuh:** Rp {format_rp(item['SL'])} ({item['Pct_Risk']})")
-                        st.warning(f"📦 **Maksimal Beli:** {item['Lot_Maks']}")
+                        st.warning(f"📦 **Maksimal Beli:** {item['Lot_Maks']} ({item['Status']})")
                     else:
                         st.metric("Skor Institusi", f"{item['Skor']}/100 Pts", item['Status'])
                         # Menambahkan persentase di UI Pro
@@ -506,7 +510,7 @@ def run_screening():
                 df_watch_display = df_watch_display.rename(columns={
                     "Sektor": "Industri", "Entry": "Area Beli", "SL": "Jual Rugi (Batas Aman)", "TP": "Jual Untung (Target)"
                 })
-                kolom_tampil = ["Ticker", "Industri", "Area Beli", "Jual Rugi (Batas Aman)", "Jual Untung (Target)", "Lot_Maks"]
+                kolom_tampil = ["Ticker", "Industri", "Area Beli", "Jual Rugi (Batas Aman)", "Jual Untung (Target)", "Lot_Maks", "Status"]
             else:
                 kolom_tampil = ["Ticker", "Sektor", "Skor", "Status", "Entry", "SL", "TP", "RRR", "Lot_Maks"]
                 
