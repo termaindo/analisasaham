@@ -375,7 +375,7 @@ def run_screening():
                 completed += 1
                 
                 status_text.text(f"Memeriksa {completed} saham...")
-                progress_bar.progress(completed / total_saham)
+                progress_bar.progress(completed)
                 
                 result = future.result()
                 if result is not None:
