@@ -41,7 +41,8 @@ UNIVERSE_SAHAM = {
         "BELI", "BUKA", "GOTO", "WIFI"
     ],
     "TRANSPORTATION": [
-        "ELPI", "NELY", "SMDR", "TMAS"        
+        "ELPI", "NELY", "SMDR", "TMAS"
+    ]    
 }
 
 # 2. BENCHMARK VALUASI (Tetap sama, karena ini rata-rata sektor)
