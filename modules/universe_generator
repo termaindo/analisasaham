@@ -1,0 +1,268 @@
+import streamlit as st
+import pandas as pd
+import yfinance as yf
+import numpy as np
+from datetime import datetime
+import io
+from google.oauth2 import service_account
+from googleapiclient.discovery import build
+from googleapiclient.http import MediaIoBaseUpload, MediaIoBaseDownload
+
+# ==========================================
+# KONFIGURASI HALAMAN & STATE (HARAM SIDEBAR)
+# ==========================================
+st.set_page_config(page_title="Admin Control Center", layout="wide")
+
+if 'logged_in' not in st.session_state:
+    st.session_state['logged_in'] = True
+if 'error_logs' not in st.session_state:
+    st.session_state['error_logs'] = []
+if 'pre_data' not in st.session_state:
+    st.session_state['pre_data'] = None
+
+def logout():
+    for key in st.session_state.keys():
+        del st.session_state[key]
+    st.rerun()
+
+# ==========================================
+# FUNGSI UTILITAS: GOOGLE DRIVE API
+# ==========================================
+def get_gdrive_service():
+    """Menginisialisasi koneksi ke Google Drive via Service Account"""
+    try:
+        credentials_dict = dict(st.secrets["gcp_service_account"])
+        creds = service_account.Credentials.from_service_account_info(
+            credentials_dict, scopes=['https://www.googleapis.com/auth/drive']
+        )
+        service = build('drive', 'v3', credentials=creds)
+        return service, True
+    except Exception as e:
+        st.session_state['error_logs'].append(f"[{datetime.now().strftime('%H:%M:%S')}] ERROR Init GDrive: {str(e)}")
+        return None, False
+
+def download_csv_from_gdrive(file_name, folder_id):
+    """Mengunduh file CSV dari GDrive ke DataFrame Pandas"""
+    service, status = get_gdrive_service()
+    if not status: return None
+    
+    try:
+        query = f"name='{file_name}' and '{folder_id}' in parents and trashed=false"
+        results = service.files().list(q=query, fields="files(id, name)").execute()
+        items = results.get('files', [])
+        
+        if not items:
+            st.session_state['error_logs'].append(f"[{datetime.now().strftime('%H:%M:%S')}] ERROR: File {file_name} tidak ditemukan di folder.")
+            return None
+            
+        file_id = items[0]['id']
+        request = service.files().get_media(fileId=file_id)
+        file = io.BytesIO()
+        downloader = MediaIoBaseDownload(file, request)
+        done = False
+        while done is False:
+            status, done = downloader.next_chunk()
+            
+        file.seek(0)
+        return pd.read_csv(file)
+    except Exception as e:
+        st.session_state['error_logs'].append(f"[{datetime.now().strftime('%H:%M:%S')}] ERROR Download {file_name}: {str(e)}")
+        return None
+
+def upload_to_gdrive(csv_data, file_name, folder_id):
+    """Mengunggah (overwrite) file ke GDrive"""
+    service, status = get_gdrive_service()
+    if not status: return False
+    
+    try:
+        query = f"name='{file_name}' and '{folder_id}' in parents and trashed=false"
+        results = service.files().list(q=query, fields="files(id)").execute()
+        items = results.get('files', [])
+
+        media = MediaIoBaseUpload(io.BytesIO(csv_data.encode('utf-8')), mimetype='text/csv', resumable=True)
+        
+        if items:
+            file_id = items[0]['id']
+            service.files().update(fileId=file_id, media_body=media).execute()
+        else:
+            file_metadata = {'name': file_name, 'parents': [folder_id]}
+            service.files().create(body=file_metadata, media_body=media).execute()
+        return True
+    except Exception as e:
+        st.session_state['error_logs'].append(f"[{datetime.now().strftime('%H:%M:%S')}] ERROR Upload GDrive: {str(e)}")
+        return False
+
+# ==========================================
+# BAGIAN 1: HEADER & STATUS SISTEM
+# ==========================================
+st.container()
+col_title, col_logout = st.columns([9, 1])
+with col_title:
+    st.title("Expert Stock Pro - Admin Control Center")
+with col_logout:
+    st.button("🚪 Logout", on_click=logout, use_container_width=True)
+
+st.divider()
+
+_, gdrive_status = get_gdrive_service()
+gdrive_indicator = "🟢 Terhubung" if gdrive_status else "🔴 Terputus (Cek Secrets)"
+
+col1, col2, col3 = st.columns(3)
+col1.metric("Status API GDrive", gdrive_indicator)
+col2.metric("Waktu Server", datetime.now().strftime("%Y-%m-%d %H:%M"))
+col3.metric("Status Sistem", "Siap Dieksekusi" if gdrive_status else "Menunggu Akses")
+
+st.divider()
+
+# ==========================================
+# BAGIAN 2: DATA PRE-FILTER (AUTO PULL)
+# ==========================================
+st.subheader("📥 Data Pre-Filter (Dari Google Drive)")
+
+# Tombol untuk menarik data pre-filter untuk direview sebelum eksekusi full
+if st.button("🔄 Tarik & Tampilkan Data pre_liquid_stocks.csv", use_container_width=False):
+    GDRIVE_FOLDER_ID = st.secrets.get("gdrive_folder_id", "")
+    if not GDRIVE_FOLDER_ID:
+        st.error("Folder ID GDrive belum disetting di Streamlit Secrets!")
+    else:
+        with st.spinner("Menarik data dari Google Drive..."):
+            df_pre = download_csv_from_gdrive("pre_liquid_stocks.csv", GDRIVE_FOLDER_ID)
+            if df_pre is not None:
+                st.session_state['pre_data'] = df_pre
+                st.success("Data berhasil ditarik!")
+
+if st.session_state['pre_data'] is not None:
+    st.write(f"🔍 Cuplikan Data (Total: {len(st.session_state['pre_data'])} Emiten):")
+    st.dataframe(st.session_state['pre_data'].head())
+else:
+    st.info("Klik tombol di atas untuk melihat cuplikan data pre-filter sebelum menjalankan generator.")
+
+st.divider()
+
+# ==========================================
+# BAGIAN 3: KONTROL EKSEKUSI & LOGIKA INTI
+# ==========================================
+st.subheader("⚙️ Kontrol Eksekusi")
+
+if st.button("🚀 Jalankan Generator & Sinkronisasi GDrive", use_container_width=True, type="primary"):
+    if st.session_state['pre_data'] is None:
+        st.error("Harap tarik data pre-filter terlebih dahulu!")
+    else:
+        st.session_state['error_logs'] = [] 
+        GDRIVE_FOLDER_ID = st.secrets.get("gdrive_folder_id", "")
+        
+        progress_text = st.empty()
+        progress_bar = st.progress(0)
+        console_container = st.empty()
+        
+        logs = []
+        def update_console(msg):
+            logs.append(msg)
+            console_container.code("\n".join(logs[-6:]), language="shell")
+
+        update_console("Memulai proses generator...")
+        
+        pre_data = st.session_state['pre_data']
+        processed_data = []
+        total_tickers = len(pre_data)
+        
+        LIMIT_DAY_TRADE = 5_000_000_000
+        LIMIT_SWING_TRADE = 2_000_000_000
+
+        for index, row in pre_data.iterrows():
+            raw_ticker = str(row['Kode Saham']).strip()
+            ticker = raw_ticker if raw_ticker.endswith('.JK') else f"{raw_ticker}.JK"
+            sektor = row.get('Sektor', 'Unknown')
+            
+            # Ambil nilai syariah manual dari file pre_liquid jika ada, jika tidak default 'Cek Manual'
+            syariah_status = row.get('Syariah', 'Cek Manual') 
+            
+            update_console(f"Membaca yfinance untuk {ticker}...")
+            
+            try:
+                stock = yf.Ticker(ticker)
+                hist = stock.history(period="20d")
+                
+                if hist.empty:
+                    raise ValueError("Data historis kosong")
+                
+                hist['Daily_Value'] = hist['Close'] * hist['Volume']
+                value_ma20 = hist['Daily_Value'].mean()
+                
+                day_trade = bool(value_ma20 >= LIMIT_DAY_TRADE)
+                swing_trade = bool(value_ma20 >= LIMIT_SWING_TRADE)
+                
+                info = stock.info
+                per = info.get('trailingPE', info.get('forwardPE', np.nan))
+                pbV = info.get('priceToBook', np.nan)
+                
+                processed_data.append({
+                    'ticker': ticker,
+                    'sektor': sektor,
+                    'syariah': syariah_status,
+                    'value_MA20': value_ma20,
+                    'day_trade': day_trade,
+                    'swing_trade': swing_trade,
+                    'PER_raw': per,
+                    'PBV_raw': pbV
+                })
+                
+                update_console(f"✅ {ticker} Berhasil")
+                
+            except Exception as e:
+                error_msg = f"❌ Gagal memproses {ticker}: {str(e)}"
+                update_console(error_msg)
+                st.session_state['error_logs'].append(f"[{datetime.now().strftime('%H:%M:%S')}] {error_msg}")
+            
+            progress = (index + 1) / total_tickers
+            progress_bar.progress(progress)
+            progress_text.text(f"Proses berjalan: {index + 1} / {total_tickers} saham")
+
+        # KALKULASI MEDIAN SEKTORAL
+        update_console("🔄 Menghitung Median Sektoral...")
+        df_result = pd.DataFrame(processed_data)
+        
+        if not df_result.empty:
+            sector_medians = df_result.groupby('sektor')[['PER_raw', 'PBV_raw']].median().reset_index()
+            sector_medians.rename(columns={
+                'PER_raw': 'avg_PER_3yr_sector',
+                'PBV_raw': 'avg_PBV_3yr_sector'
+            }, inplace=True)
+            
+            df_final = pd.merge(df_result, sector_medians, on='sektor', how='left')
+            df_final['last_update_universe'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            
+            cols_to_keep = [
+                'ticker', 'sektor', 'syariah', 'value_MA20', 
+                'day_trade', 'swing_trade', 'avg_PER_3yr_sector', 
+                'avg_PBV_3yr_sector', 'last_update_universe'
+            ]
+            df_final = df_final[cols_to_keep]
+            
+            # SINKRONISASI GDRIVE
+            update_console("☁️ Mengunggah liquid_stocks.csv ke Google Drive...")
+            csv_string = df_final.to_csv(index=False)
+            
+            upload_success = upload_to_gdrive(csv_string, "liquid_stocks.csv", GDRIVE_FOLDER_ID)
+            
+            if upload_success:
+                update_console("🎉 Sinkronisasi Selesai!")
+                st.success("Proses Generate & Overwrite ke GDrive Berhasil!")
+                st.write("📊 Cuplikan Hasil Olahan:")
+                st.dataframe(df_final.head())
+            else:
+                update_console("⚠️ Sinkronisasi GDrive Gagal.")
+                st.error("Gagal menimpa file di Google Drive. Cek log error.")
+                
+        else:
+            st.error("Data kosong. Tidak ada ticker yang berhasil diproses.")
+
+# ==========================================
+# BAGIAN 4: MANAJEMEN ERROR & LOG
+# ==========================================
+if st.session_state['error_logs']:
+    st.divider()
+    st.subheader("⚠️ Laporan Log Error")
+    st.warning(f"Terdapat {len(st.session_state['error_logs'])} catatan error.")
+    error_text = "\n".join(st.session_state['error_logs'])
+    st.download_button("📥 Unduh Log Error (.txt)", data=error_text, file_name=f"error_log_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt", mime="text/plain", type="secondary")
