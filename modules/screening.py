@@ -157,26 +157,143 @@ def export_to_pdf(hasil_lolos, trade_mode, session, sector_report, logo_path="lo
 
     return pdf.output(dest='S').encode('latin-1', 'ignore')
 
-# --- 4. INDIKATOR TEKNIKAL (MTF ENGINE) ---
+# --- 4. INDIKATOR TEKNIKAL ---
+
+def calculate_supertrend(df, period=10, multiplier=2):
+    """Menghitung Supertrend. Mengembalikan kolom 'Supertrend' dan 'Supertrend_Dir' (1=bullish, -1=bearish)."""
+    hl2 = (df['High'] + df['Low']) / 2
+    high_low = df['High'] - df['Low']
+    high_close = np.abs(df['High'] - df['Close'].shift())
+    low_close = np.abs(df['Low'] - df['Close'].shift())
+    tr = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
+    atr = tr.rolling(period).mean()
+
+    upper_band = hl2 + (multiplier * atr)
+    lower_band = hl2 - (multiplier * atr)
+
+    supertrend = pd.Series(index=df.index, dtype=float)
+    direction = pd.Series(index=df.index, dtype=int)
+
+    for i in range(1, len(df)):
+        if df['Close'].iloc[i] > upper_band.iloc[i - 1]:
+            direction.iloc[i] = 1
+        elif df['Close'].iloc[i] < lower_band.iloc[i - 1]:
+            direction.iloc[i] = -1
+        else:
+            direction.iloc[i] = direction.iloc[i - 1]
+            if direction.iloc[i] == 1 and lower_band.iloc[i] < lower_band.iloc[i - 1]:
+                lower_band.iloc[i] = lower_band.iloc[i - 1]
+            if direction.iloc[i] == -1 and upper_band.iloc[i] > upper_band.iloc[i - 1]:
+                upper_band.iloc[i] = upper_band.iloc[i - 1]
+
+        supertrend.iloc[i] = lower_band.iloc[i] if direction.iloc[i] == 1 else upper_band.iloc[i]
+
+    df['Supertrend'] = supertrend
+    df['Supertrend_Dir'] = direction
+    return df
+
+def calculate_psar(df, af_start=0.02, af_step=0.02, af_max=0.2):
+    """Menghitung Parabolic SAR. Mengembalikan kolom 'PSAR'."""
+    high = df['High'].values
+    low = df['Low'].values
+    close = df['Close'].values
+    n = len(df)
+
+    psar = close.copy()
+    bull = True
+    af = af_start
+    ep = low[0]
+    hp = high[0]
+    lp = low[0]
+
+    for i in range(2, n):
+        if bull:
+            psar[i] = psar[i - 1] + af * (hp - psar[i - 1])
+            psar[i] = min(psar[i], low[i - 1], low[i - 2])
+            if low[i] < psar[i]:
+                bull = False
+                psar[i] = hp
+                lp = low[i]
+                af = af_start
+                ep = lp
+            else:
+                if high[i] > hp:
+                    hp = high[i]
+                    af = min(af + af_step, af_max)
+                ep = hp
+        else:
+            psar[i] = psar[i - 1] + af * (lp - psar[i - 1])
+            psar[i] = max(psar[i], high[i - 1], high[i - 2])
+            if high[i] > psar[i]:
+                bull = True
+                psar[i] = lp
+                hp = high[i]
+                af = af_start
+                ep = hp
+            else:
+                if low[i] < lp:
+                    lp = low[i]
+                    af = min(af + af_step, af_max)
+                ep = lp
+
+    df['PSAR'] = psar
+    df['PSAR_Bull'] = df['Close'] > df['PSAR']
+    return df
+
 def calculate_indicators(df, trade_mode):
-    df['MA50'] = df['Close'].rolling(window=50).mean()
-    df['MA200'] = df['Close'].rolling(window=200).mean()
-    df['Vol_SMA20'] = df['Volume'].rolling(window=20).mean()
-    
-    delta = df['Close'].diff()
-    gain = (delta.where(delta > 0, 0)).rolling(14).mean()
-    loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
-    df['RSI'] = 100 - (100 / (1 + (gain/loss)))
-    
+    """Menghitung semua indikator teknikal sesuai mode."""
+    # --- ATR (dipakai semua mode untuk SL) ---
     high_low = df['High'] - df['Low']
     high_close = np.abs(df['High'] - df['Close'].shift())
     low_close = np.abs(df['Low'] - df['Close'].shift())
     df['ATR'] = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1).rolling(14).mean()
-    
-    df['EMA9'] = df['Close'].ewm(span=9, adjust=False).mean()
-    df['EMA21'] = df['Close'].ewm(span=21, adjust=False).mean()
-    df['VWAP'] = (df['Close'] * df['Volume']).rolling(window=5).sum() / df['Volume'].rolling(window=5).sum()
-    
+
+    if trade_mode == "Day Trading":
+        # Supertrend (10, 2)
+        df = calculate_supertrend(df, period=10, multiplier=2)
+
+        # VWAP (rolling 5-bar sebagai proxy intraday)
+        df['VWAP'] = (df['Close'] * df['Volume']).rolling(window=5).sum() / df['Volume'].rolling(window=5).sum()
+
+        # MACD (12, 26, 9)
+        ema12 = df['Close'].ewm(span=12, adjust=False).mean()
+        ema26 = df['Close'].ewm(span=26, adjust=False).mean()
+        df['MACD'] = ema12 - ema26
+        df['MACD_Signal'] = df['MACD'].ewm(span=9, adjust=False).mean()
+
+        # RSI (9)
+        delta = df['Close'].diff()
+        gain = delta.where(delta > 0, 0).rolling(9).mean()
+        loss = (-delta.where(delta < 0, 0)).rolling(9).mean()
+        df['RSI'] = 100 - (100 / (1 + (gain / loss)))
+
+        # PSAR
+        df = calculate_psar(df)
+
+    else:  # Swing Trading
+        # Supertrend (10, 3)
+        df = calculate_supertrend(df, period=10, multiplier=3)
+
+        # MA Structure
+        df['MA20'] = df['Close'].rolling(window=20).mean()
+        df['MA50'] = df['Close'].rolling(window=50).mean()
+
+        # MACD (12, 26, 9)
+        ema12 = df['Close'].ewm(span=12, adjust=False).mean()
+        ema26 = df['Close'].ewm(span=26, adjust=False).mean()
+        df['MACD'] = ema12 - ema26
+        df['MACD_Signal'] = df['MACD'].ewm(span=9, adjust=False).mean()
+        df['MACD_Hist'] = df['MACD'] - df['MACD_Signal']
+
+        # RSI (14)
+        delta = df['Close'].diff()
+        gain = delta.where(delta > 0, 0).rolling(14).mean()
+        loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
+        df['RSI'] = 100 - (100 / (1 + (gain / loss)))
+
+        # PSAR
+        df = calculate_psar(df)
+
     return df
 
 # --- 5. MARKET SESSION ---
@@ -202,38 +319,78 @@ def process_single_stock(ticker, trade_mode, mtf_filter):
         avg_val_20 = (df['Close'] * df['Volume']).rolling(20).mean().iloc[-1]
         sektor_nama, _ = get_sector_data(ticker_bersih)
 
-        is_macro_bullish = curr_price > last['MA200']
-        is_medium_bullish = curr_price > last['MA50']
-        is_micro_bullish = curr_price > last['VWAP'] if trade_mode == "Day Trading" else curr_price > last['EMA9']
-
-        if mtf_filter and not (is_macro_bullish and is_medium_bullish): 
-            return None
-
         score = 0
         alasan = []
-        
-        if is_macro_bullish: score += 20; alasan.append("Macro UP (MA200)")
-        if is_medium_bullish: score += 15; alasan.append("Medium UP (MA50)")
-        if is_micro_bullish: 
-            score += 15
-            alasan.append("Micro Momentum (VWAP)" if trade_mode == "Day Trading" else "Micro Momentum (EMA9)")
-        
+
         if trade_mode == "Day Trading":
-            if curr_price > prev['High']:
-                score += 5; alasan.append("Breakout Prev. High")
-        else: 
-            if last['EMA9'] > last['EMA21']:
-                score += 5; alasan.append("Momentum Cross (EMA9>21)")
-        
-        if last['Volume'] > df['Vol_SMA20'].iloc[-1]: score += 20; alasan.append("Volume Spike")
-        if avg_val_20 > (1e10 if trade_mode == "Day Trading" else 5e9): 
-            score += 10; alasan.append("Inst. Liquidity")
+            # --- SCORING DAY TRADE ---
+
+            # 1. Supertrend (10, 2): 30 Poin
+            if last['Supertrend_Dir'] == 1:
+                score += 30
+                alasan.append("Supertrend Bullish (10,2)")
+
+            # 2. VWAP Alignment: 25 Poin
+            if curr_price > last['VWAP']:
+                score += 25
+                alasan.append("Price > VWAP")
+
+            # 3. MACD Golden Cross (12,26,9): 20 Poin
+            if last['MACD'] > last['MACD_Signal'] and prev['MACD'] <= prev['MACD_Signal']:
+                score += 20
+                alasan.append("MACD Golden Cross")
+
+            # 4. RSI Momentum (9), rentang ideal 45-70: 15 Poin
+            if 45 <= last['RSI'] <= 70:
+                score += 15
+                alasan.append(f"RSI Momentum ({last['RSI']:.1f})")
+
+            # 5. PSAR Acceleration (titik di bawah harga): 10 Poin
+            if last['PSAR_Bull']:
+                score += 10
+                alasan.append("PSAR Bullish (titik di bawah harga)")
+
+            # MTF Filter: untuk day trade, cukup pastikan supertrend bullish
+            if mtf_filter and last['Supertrend_Dir'] != 1:
+                return None
+
+        else:  # Swing Trading
+            # --- SCORING SWING TRADE ---
+
+            # 1. Supertrend (10, 3): 35 Poin
+            if last['Supertrend_Dir'] == 1:
+                score += 35
+                alasan.append("Supertrend Bullish (10,3)")
+
+            # 2. MA Structure: 20 Poin — Price > MA50 AND MA20 > MA50
+            if curr_price > last['MA50'] and last['MA20'] > last['MA50']:
+                score += 20
+                alasan.append("MA Structure (Price>MA50, MA20>MA50)")
+
+            # 3. MACD Histogram mendaki (Growing): 20 Poin
+            if last['MACD_Hist'] > prev['MACD_Hist']:
+                score += 20
+                alasan.append("MACD Histogram Growing")
+
+            # 4. RSI Trend (14), memantul dari level 50: 15 Poin
+            if last['RSI'] > 50 and prev['RSI'] <= 50:
+                score += 15
+                alasan.append(f"RSI Bounce dari 50 ({last['RSI']:.1f})")
+
+            # 5. PSAR Confirm arah tren: 10 Poin
+            if last['PSAR_Bull']:
+                score += 10
+                alasan.append("PSAR Konfirmasi Tren Naik")
+
+            # MTF Filter: pastikan supertrend bullish dan MA structure terpenuhi
+            if mtf_filter and not (last['Supertrend_Dir'] == 1 and curr_price > last['MA50']):
+                return None
 
         return {
-            "Ticker": ticker_bersih, "Sektor": sektor_nama, "Skor": score, 
+            "Ticker": ticker_bersih, "Sektor": sektor_nama, "Skor": score,
             "Harga": int(curr_price), "ATR": last['ATR'], "Alasan": alasan, "RSI": last['RSI']
         }
-    except: 
+    except:
         return None
 
 # --- 6. MODUL UTAMA ---
@@ -394,20 +551,23 @@ def run_screening():
             
             if sector_boost and stock['Sektor'] in leading_sectors:
                 f_score += 15; stock['Alasan'].append(f"Sector Hot: {stock['Sektor']}")
-            
+
+            # --- PROTEKSI BERLAPIS: SL/TP ---
+            # ATR SL
             sl_mult = 1.8 if trade_mode == "Day Trading" else 2.5
             atr_sl = int(stock['Harga'] - (sl_mult * stock['ATR']))
-            
+
+            # Hard Cap SL: maks -3% (Day Trade) atau -8% (Swing)
             max_loss_pct = 0.03 if trade_mode == "Day Trading" else 0.08
             hard_cap_sl = int(stock['Harga'] * (1 - max_loss_pct))
-            
-            if hard_cap_sl > atr_sl:
-                sl = hard_cap_sl
-                stock['Alasan'].append(f"SL Hard Cap ({int(max_loss_pct*100)}%)")
-            else:
-                sl = atr_sl
 
-            tp = int(stock['Harga'] + (stock['Harga'] - sl) * (1.5 if trade_mode == "Day Trading" else 2.0))
+            # Pilih SL yang paling ketat (nilai terbesar/terdekat dengan harga)
+            sl = max(atr_sl, hard_cap_sl)
+
+            # TP dengan RR minimal 1.5x (Day) atau 2.0x (Swing)
+            rr_min = 1.5 if trade_mode == "Day Trading" else 2.0
+            tp = int(stock['Harga'] + (stock['Harga'] - sl) * rr_min)
+
             rrr = (tp - stock['Harga']) / (stock['Harga'] - sl) if stock['Harga'] > sl else 0
 
             risiko_per_lembar = stock['Harga'] - sl
