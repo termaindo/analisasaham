@@ -94,7 +94,7 @@ def export_to_pdf(hasil_lolos, trade_mode, session, sector_report, logo_path="lo
     if top_3:
         for item in top_3:
             pdf.set_font("Arial", 'B', 10)
-            pdf.cell(190, 6, f"{item['Ticker']} - {item['Sektor']} | Score: {item['Skor']}/100", ln=True) 
+            pdf.cell(190, 6, f"{item['Ticker']} - {item['Sektor']} | Syariah: {item['Syariah']} | Score: {item['Skor']}/100", ln=True) 
             
             pdf.set_font("Arial", '', 9)
             pdf.cell(60, 5, f"Entry: {item['Entry']}", 0)
@@ -131,7 +131,7 @@ def export_to_pdf(hasil_lolos, trade_mode, session, sector_report, logo_path="lo
         
         for w in watchlist:
             pdf.set_font("Arial", 'B', 9)
-            pdf.cell(190, 5, f"{w['Ticker']} ({w['Sektor'][:20]}) | Skor: {w['Skor']}", ln=True)
+            pdf.cell(190, 5, f"{w['Ticker']} ({w['Sektor'][:20]}) | Syariah: {w['Syariah']} | Skor: {w['Skor']}", ln=True)
             
             pdf.set_font("Arial", '', 8)
             pdf.cell(40, 5, f"Entry: {w['Entry']}", 0)
@@ -386,8 +386,9 @@ def process_single_stock(ticker, trade_mode, mtf_filter):
             if mtf_filter and not (last['Supertrend_Dir'] == 1 and curr_price > last['MA50']):
                 return None
 
+        syariah_status = "Ya" if is_syariah(ticker_bersih) else "Tidak"
         return {
-            "Ticker": ticker_bersih, "Sektor": sektor_nama, "Skor": score,
+            "Ticker": ticker_bersih, "Sektor": sektor_nama, "Syariah": syariah_status, "Skor": score,
             "Harga": int(curr_price), "ATR": last['ATR'], "Alasan": alasan, "RSI": last['RSI']
         }
     except:
@@ -587,6 +588,7 @@ def run_screening():
                 final_picks.append({
                     "Ticker": stock['Ticker'], "Sektor": stock['Sektor'], "Skor": f_score,
                     "Harga_Saat_Ini": int(stock['Harga']),
+                    "Syariah": stock['Syariah'],
                     "Entry": f"Rp {format_rp(stock['Harga']*0.99)} - {format_rp(stock['Harga'])}",
                     "SL": sl, "TP": tp, "RRR": f"{rrr:.1f}x",
                     "Status": "🔥 FULL SIZING" if f_score >= 85 else "🎯 CICIL SEBAGIAN",
@@ -633,7 +635,8 @@ def run_screening():
             for idx, item in enumerate(top_3):
                 with cols[idx]:
                     st.markdown(f"### {item['Ticker']}")
-                    st.write(f"**Industri:** {item['Sektor']}")
+                    st.write(f"**Sektor:** {item['Sektor']}")
+                    st.write(f"**Syariah:** {item['Syariah']}")
                     
                     if "Praktis" in ui_mode:
                         st.info(f"🛒 **Beli di harga:** {item['Entry']}")
@@ -663,9 +666,9 @@ def run_screening():
                 df_watch_display = df_watch_display.rename(columns={
                     "Sektor": "Industri", "Entry": "Area Beli", "SL": "Jual Rugi (Batas Aman)", "TP": "Jual Untung (Target)"
                 })
-                kolom_tampil = ["Ticker", "Industri", "Area Beli", "Jual Rugi (Batas Aman)", "Jual Untung (Target)", "Lot_Maks", "Status"]
+                kolom_tampil = ["Ticker", "Industri", "Syariah", "Area Beli", "Jual Rugi (Batas Aman)", "Jual Untung (Target)", "Lot_Maks", "Status"]
             else:
-                kolom_tampil = ["Ticker", "Sektor", "Skor", "Status", "Entry", "SL", "TP", "RRR", "Lot_Maks"]
+                kolom_tampil = ["Ticker", "Sektor", "Syariah", "Skor", "Status", "Entry", "SL", "TP", "RRR", "Lot_Maks"]
                 
             st.dataframe(df_watch_display[kolom_tampil], use_container_width=True, hide_index=True)
         
