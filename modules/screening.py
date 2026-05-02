@@ -603,7 +603,9 @@ def run_screening():
             f_score = stock['Skor']
             
             if sector_boost and stock['Sektor'] in leading_sectors:
-                f_score += 15; stock['Alasan'].append(f"Sector Hot: {stock['Sektor']}")
+                f_score += 15
+                f_score = min(f_score, 100)
+                stock['Alasan'].append(f"Sector Hot: {stock['Sektor']}")
 
             # --- PROTEKSI BERLAPIS: SL/TP ---
             # ATR SL
