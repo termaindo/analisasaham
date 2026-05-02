@@ -325,9 +325,9 @@ def process_single_stock(ticker, trade_mode, mtf_filter):
         if trade_mode == "Day Trading":
             # --- SCORING DAY TRADE ---
 
-            # 1. Supertrend (10, 2): 30 Poin
+            # 1. Supertrend (10, 2): 25 Poin
             if last['Supertrend_Dir'] == 1:
-                score += 30
+                score += 25
                 alasan.append("Supertrend Bullish (10,2)")
 
             # 2. VWAP Alignment: 25 Poin
@@ -340,12 +340,17 @@ def process_single_stock(ticker, trade_mode, mtf_filter):
                 score += 20
                 alasan.append("MACD Golden Cross")
 
-            # 4. RSI Momentum (9), rentang ideal 45-70: 15 Poin
+            # 4. RSI Momentum (9), rentang ideal 45-70: 10 Poin
             if 45 <= last['RSI'] <= 70:
-                score += 15
+                score += 10
                 alasan.append(f"RSI Momentum ({last['RSI']:.1f})")
 
-            # 5. PSAR Acceleration (titik di bawah harga): 10 Poin
+            # 5. RSI Trend (9), arah naik: 10 Poin
+            if last['RSI'] > prev['RSI']:
+                score += 10
+                alasan.append(f"RSI Rising ({prev['RSI']:.1f}→{last['RSI']:.1f})")
+
+            # 6. PSAR Acceleration (titik di bawah harga): 10 Poin
             if last['PSAR_Bull']:
                 score += 10
                 alasan.append("PSAR Bullish (titik di bawah harga)")
@@ -357,9 +362,9 @@ def process_single_stock(ticker, trade_mode, mtf_filter):
         else:  # Swing Trading
             # --- SCORING SWING TRADE ---
 
-            # 1. Supertrend (10, 3): 35 Poin
+            # 1. Supertrend (10, 3): 30 Poin
             if last['Supertrend_Dir'] == 1:
-                score += 35
+                score += 30
                 alasan.append("Supertrend Bullish (10,3)")
 
             # 2. MA Structure: 20 Poin — Price > MA50 AND MA20 > MA50
@@ -372,12 +377,17 @@ def process_single_stock(ticker, trade_mode, mtf_filter):
                 score += 20
                 alasan.append("MACD Histogram Growing")
 
-            # 4. RSI Trend (14), memantul dari level 50: 15 Poin
-            if last['RSI'] > 50 and prev['RSI'] <= 50:
-                score += 15
-                alasan.append(f"RSI Bounce dari 50 ({last['RSI']:.1f})")
+            # 4. RSI Momentum (14), rentang ideal 50-70: 10 Poin
+            if 50 <= last['RSI'] <= 70:
+                score += 10
+                alasan.append(f"RSI Momentum ({last['RSI']:.1f})")
 
-            # 5. PSAR Confirm arah tren: 10 Poin
+            # 5. RSI Trend (14), arah naik: 10 Poin
+            if last['RSI'] > prev['RSI']:
+                score += 10
+                alasan.append(f"RSI Rising ({prev['RSI']:.1f}→{last['RSI']:.1f})")
+
+            # 6. PSAR Confirm arah tren: 10 Poin
             if last['PSAR_Bull']:
                 score += 10
                 alasan.append("PSAR Konfirmasi Tren Naik")
@@ -555,7 +565,7 @@ def run_screening():
 
             # --- PROTEKSI BERLAPIS: SL/TP ---
             # ATR SL
-            sl_mult = 1.8 if trade_mode == "Day Trading" else 2.5
+            sl_mult = 1.5 if trade_mode == "Day Trading" else 2.0
             atr_sl = int(stock['Harga'] - (sl_mult * stock['ATR']))
 
             # Hard Cap SL: maks -3% (Day Trade) atau -8% (Swing)
