@@ -196,7 +196,7 @@ def run_analisa_cepat():
                 st.error("Data gagal dimuat. Mohon tunggu 1 menit lalu 'Clear Cache' di pojok kanan atas.")
                 return
 
-            # --- 2. DATA TEKNIKAL & INDIKATOR SCORING ---
+            # --- 2. DATA TEKNIKAL & KALKULASI INDIKATOR ---
             df['MA20'] = df['Close'].rolling(20).mean()
             df['MA50'] = df['Close'].rolling(50).mean()
             df['MA200'] = df['Close'].rolling(200).mean()
@@ -211,33 +211,133 @@ def run_analisa_cepat():
             df['EMA9'] = df['Close'].ewm(span=9, adjust=False).mean()
             df['EMA21'] = df['Close'].ewm(span=21, adjust=False).mean()
             
-            # Tambahan kalkulasi indikator pelengkap
+            # MACD
             df['EMA12'] = df['Close'].ewm(span=12, adjust=False).mean()
             df['EMA26'] = df['Close'].ewm(span=26, adjust=False).mean()
             df['MACD'] = df['EMA12'] - df['EMA26']
             df['Signal'] = df['MACD'].ewm(span=9, adjust=False).mean()
+            df['MACD_Hist'] = df['MACD'] - df['Signal']
 
+            # RSI
             delta = df['Close'].diff()
             gain = (delta.where(delta > 0, 0)).rolling(14).mean()
             loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
             df['RSI'] = 100 - (100 / (1 + (gain/loss)))
 
+            # ATR (dipakai juga untuk Supertrend & SL)
+            high_low = df['High'] - df['Low']
+            high_close = np.abs(df['High'] - df['Close'].shift())
+            low_close = np.abs(df['Low'] - df['Close'].shift())
+            ranges = pd.concat([high_low, high_close, low_close], axis=1)
+            df['ATR'] = ranges.max(axis=1).rolling(14).mean()
+
+            # --- SUPERTREND (10, 3) ---
+            st_period = 10
+            st_multiplier = 3.0
+            df['ST_ATR'] = df['ATR'].rolling(st_period).mean()
+            df['ST_UpperBand'] = ((df['High'] + df['Low']) / 2) + (st_multiplier * df['ST_ATR'])
+            df['ST_LowerBand'] = ((df['High'] + df['Low']) / 2) - (st_multiplier * df['ST_ATR'])
+
+            # Hitung Supertrend direction secara iteratif
+            supertrend_dir = [np.nan] * len(df)
+            final_upper = list(df['ST_UpperBand'])
+            final_lower = list(df['ST_LowerBand'])
+
+            for i in range(1, len(df)):
+                # Final Upper Band
+                if final_upper[i] < final_upper[i-1] or df['Close'].iloc[i-1] > final_upper[i-1]:
+                    final_upper[i] = final_upper[i]
+                else:
+                    final_upper[i] = final_upper[i-1]
+                # Final Lower Band
+                if final_lower[i] > final_lower[i-1] or df['Close'].iloc[i-1] < final_lower[i-1]:
+                    final_lower[i] = final_lower[i]
+                else:
+                    final_lower[i] = final_lower[i-1]
+                # Direction: 1 = Bullish (harga di atas lower band), -1 = Bearish
+                if np.isnan(supertrend_dir[i-1]):
+                    supertrend_dir[i] = 1 if df['Close'].iloc[i] > final_upper[i] else -1
+                else:
+                    if supertrend_dir[i-1] == -1 and df['Close'].iloc[i] > final_upper[i]:
+                        supertrend_dir[i] = 1
+                    elif supertrend_dir[i-1] == 1 and df['Close'].iloc[i] < final_lower[i]:
+                        supertrend_dir[i] = -1
+                    else:
+                        supertrend_dir[i] = supertrend_dir[i-1]
+
+            df['ST_Dir'] = supertrend_dir
+
+            # --- PARABOLIC SAR ---
+            af_start = 0.02
+            af_step  = 0.02
+            af_max   = 0.20
+            psar_vals = [np.nan] * len(df)
+            psar_bull = [True] * len(df)  # True = Bullish PSAR
+
+            if len(df) > 2:
+                psar_vals[0] = df['Low'].iloc[0]
+                psar_bull[0] = True
+                ep = df['High'].iloc[0]
+                af = af_start
+
+                for i in range(1, len(df)):
+                    prev_psar = psar_vals[i-1]
+                    prev_bull = psar_bull[i-1]
+
+                    if prev_bull:
+                        psar_vals[i] = prev_psar + af * (ep - prev_psar)
+                        psar_vals[i] = min(psar_vals[i], df['Low'].iloc[i-1], df['Low'].iloc[max(0, i-2)])
+                        if df['Low'].iloc[i] < psar_vals[i]:
+                            psar_bull[i] = False
+                            psar_vals[i] = ep
+                            ep = df['Low'].iloc[i]
+                            af = af_start
+                        else:
+                            psar_bull[i] = True
+                            if df['High'].iloc[i] > ep:
+                                ep = df['High'].iloc[i]
+                                af = min(af + af_step, af_max)
+                    else:
+                        psar_vals[i] = prev_psar - af * (prev_psar - ep)
+                        psar_vals[i] = max(psar_vals[i], df['High'].iloc[i-1], df['High'].iloc[max(0, i-2)])
+                        if df['High'].iloc[i] > psar_vals[i]:
+                            psar_bull[i] = True
+                            psar_vals[i] = ep
+                            ep = df['High'].iloc[i]
+                            af = af_start
+                        else:
+                            psar_bull[i] = False
+                            if df['Low'].iloc[i] < ep:
+                                ep = df['Low'].iloc[i]
+                                af = min(af + af_step, af_max)
+
+            df['PSAR_Bull'] = psar_bull
+
+            # Ambil nilai akhir indikator
             curr = df['Close'].iloc[-1]
             prev_close = df['Close'].iloc[-2]
             
+            ma20_val  = 0 if pd.isna(df['MA20'].iloc[-1])  else df['MA20'].iloc[-1]
+            ma50_val  = 0 if pd.isna(df['MA50'].iloc[-1])  else df['MA50'].iloc[-1]
             ma200_val = 0 if pd.isna(df['MA200'].iloc[-1]) else df['MA200'].iloc[-1]
-            ma50_val = 0 if pd.isna(df['MA50'].iloc[-1]) else df['MA50'].iloc[-1]
-            ema9_val = df['EMA9'].iloc[-1]
+            ema9_val  = df['EMA9'].iloc[-1]
             ema21_val = df['EMA21'].iloc[-1]
-            vwap_val = 0 if pd.isna(df['VWAP_20'].iloc[-1]) else df['VWAP_20'].iloc[-1]
+            vwap_val  = 0 if pd.isna(df['VWAP_20'].iloc[-1]) else df['VWAP_20'].iloc[-1]
             
-            vol_curr = df['Volume'].iloc[-1]
-            vol_ma20 = df['Vol_MA20'].iloc[-1]
+            vol_curr  = df['Volume'].iloc[-1]
+            vol_ma20  = df['Vol_MA20'].iloc[-1]
             
-            macd_val = df['MACD'].iloc[-1]
-            signal_val = df['Signal'].iloc[-1]
-            rsi_curr = df['RSI'].iloc[-1]
-            
+            macd_val    = df['MACD'].iloc[-1]
+            signal_val  = df['Signal'].iloc[-1]
+            macd_hist   = df['MACD_Hist'].iloc[-1]
+            macd_hist_prev = df['MACD_Hist'].iloc[-2] if len(df) >= 2 else 0
+
+            rsi_curr  = df['RSI'].iloc[-1]
+            rsi_prev  = df['RSI'].iloc[-2] if len(df) >= 2 else rsi_curr
+
+            st_dir_curr = df['ST_Dir'].iloc[-1]
+            psar_bull_curr = df['PSAR_Bull'].iloc[-1]
+
             # --- 3. SCORING FUNDAMENTAL ---
             f_score = 0
             sector = info.get('sector', '')
@@ -333,43 +433,76 @@ def run_analisa_cepat():
             elif div_yield >= 2: f_score += 5
 
 
-            # === B. PENILAIAN TEKNIKAL SWING TRADING (100 Poin Baru) ===
+            # ============================================================
+            # === B. SCORING TEKNIKAL — LOGIKA BARU (Total 100 Poin) ===
+            # ============================================================
             t_score = 0
             alasan_tek = []
 
-            # a) Filter Tren Utama (Maks 35)
-            if curr > ma200_val: t_score += 20; alasan_tek.append("Macro UP (MA200)")
-            if curr > ma50_val: t_score += 15; alasan_tek.append("Medium UP (MA50)")
+            # 1. Supertrend (10, 3) — Bobot 25
+            #    Filter utama tren besar agar tidak mudah terkena whipsaw.
+            if st_dir_curr == 1:
+                t_score += 25
+                alasan_tek.append("Supertrend Bullish")
 
-            # b) Sinyal Eksekusi / Micro Momentum (Maks 20)
-            if curr > ema9_val: t_score += 15; alasan_tek.append("Micro Momentum (EMA9)")
-            if ema9_val > ema21_val: t_score += 5; alasan_tek.append("Momentum Cross (EMA9>21)")
+            # 2. MA Structure (Price > MA50 & MA20 > MA50) — Bobot 20
+            #    Menjamin "Power" tren jangka menengah sudah terbentuk.
+            if ma50_val > 0:
+                if curr > ma50_val and ma20_val > ma50_val:
+                    t_score += 20
+                    alasan_tek.append("MA Structure (P>50 & 20>50)")
+                elif curr > ma50_val or ma20_val > ma50_val:
+                    # Kondisi setengah terpenuhi: salah satu saja → setengah poin
+                    t_score += 10
+                    alasan_tek.append("MA Structure (Parsial)")
 
-            # c) Konfirmasi Volume & Likuiditas (Maks 30)
-            if vol_curr > vol_ma20: t_score += 20; alasan_tek.append("Volume Spike")
-            if avg_value_ma20 > 5000000000: t_score += 10; alasan_tek.append("Inst. Liquidity")
+            # 3. Volume Spike (Accumulation) — Bobot 15
+            #    Menandakan adanya akumulasi bertahap oleh investor besar.
+            if vol_ma20 > 0 and vol_curr > vol_ma20:
+                t_score += 15
+                alasan_tek.append("Volume Spike (Akumulasi)")
 
-            # d) Ekstra Poin Sektor / Bonus Makro (Maks 15)
-            # Logika Ganda: Sinkronisasi dengan Modul Screening / Proxy Individual
-            if "sector_scores" in st.session_state and sector in st.session_state["sector_scores"]:
-                # Menggunakan rata-rata aktual jika data dari modul screening tersedia
-                if st.session_state["sector_scores"][sector] >= 60:
-                    t_score += 15; alasan_tek.append(f"Sector Hot: [{sector.title()}]")
-            else:
-                # Fallback: Menggunakan base technical momentum individu jika berjalan standalone
-                # UPDATE KOREKSI: Hanya diberikan jika skor base teknikal mencapai minimal 70
-                if t_score >= 70: 
-                    t_score += 15; alasan_tek.append(f"Sector Proxy: [{sector.title()}]")
+            # 4. MACD Histogram Growing — Bobot 15
+            #    Menangkap momentum yang sedang mekar/tumbuh.
+            #    Syarat: Histogram positif DAN lebih besar dari bar sebelumnya.
+            if macd_hist > 0 and macd_hist > macd_hist_prev:
+                t_score += 15
+                alasan_tek.append("MACD Hist Growing")
+            elif macd_hist > macd_hist_prev:
+                # Histogram negatif tapi sedang tumbuh ke atas (momentum recovery)
+                t_score += 7
+                alasan_tek.append("MACD Hist Recovery")
+
+            # 5. RSI Momentum (14) — Bobot 7.5
+            #    RSI sedang naik (momentum meningkat).
+            if rsi_curr > rsi_prev:
+                t_score += 7.5
+                alasan_tek.append("RSI Momentum Naik")
+
+            # 6. RSI Trend (14) — Bobot 7.5
+            #    RSI di zona sehat (40–70): tidak jenuh jual, tidak jenuh beli.
+            if 40 <= rsi_curr <= 70:
+                t_score += 7.5
+                alasan_tek.append(f"RSI Trend Sehat ({rsi_curr:.1f})")
+
+            # 7. PSAR Confirm — Bobot 10
+            #    PSAR di bawah harga (bullish confirmation).
+            if psar_bull_curr:
+                t_score += 10
+                alasan_tek.append("PSAR Bullish")
+
+            # Bulatkan t_score ke integer untuk tampilan rapi
+            t_score = round(t_score)
 
             teks_alasan = ", ".join(alasan_tek) if alasan_tek else "Tidak ada sinyal kuat"
+            # ============================================================
+            # === AKHIR SCORING TEKNIKAL BARU ===
+            # ============================================================
+
 
             # --- 4. RENTANG ENTRY & TRADING PLAN (Berbasis ATR & Sizing) ---
-            high_low = df['High'] - df['Low']
-            high_close = np.abs(df['High'] - df['Close'].shift())
-            low_close = np.abs(df['Low'] - df['Close'].shift())
-            ranges = pd.concat([high_low, high_close, low_close], axis=1)
-            atr = ranges.max(axis=1).rolling(14).mean().iloc[-1]
-            
+            atr = df['ATR'].iloc[-1]
+
             entry_atas = curr
             entry_bawah = curr * 0.99 # Diskon 1% (Buy on Weakness)
             avg_entry = (entry_atas + entry_bawah) / 2
