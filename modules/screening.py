@@ -54,7 +54,7 @@ def export_to_pdf(hasil_lolos, trade_mode, session, sector_report, logo_path="lo
     pdf.set_text_color(255, 255, 255)
     pdf.set_font("Arial", 'B', 16)
     pdf.set_xy(35, 8) 
-    pdf.cell(0, 10, "Expert Stock Pro - Screening Saham Harian Pro", ln=True)
+    pdf.cell(0, 10, "Expert Stock Pro - Ultimate Alpha Report", ln=True)
     
     # Hyperlink Sumber 
     pdf.set_y(28)
@@ -350,72 +350,85 @@ def process_single_stock(ticker, trade_mode, mtf_filter):
         score = 0
         alasan = []
 
+        # Hitung Vol_SMA20 untuk kedua mode
+        vol_sma20 = df['Volume'].rolling(20).mean().iloc[-1]
+
         if trade_mode == "Day Trading":
-            # --- SCORING DAY TRADE ---
+            # --- SCORING DAY TRADE (Total: 100) ---
 
-            # 1. Supertrend (10, 2): 25 Poin
-            if last['Supertrend_Dir'] == 1:
-                score += 25
-                alasan.append("Supertrend Bullish (10,2)")
+            # 1. Volume Spike (Vol > Vol_SMA20): 20 Poin
+            if last['Volume'] > vol_sma20:
+                score += 20
+                alasan.append("Volume Spike (>SMA20)")
 
-            # 2. VWAP Alignment: 25 Poin
+            # 2. VWAP Alignment: 20 Poin
             if curr_price > last['VWAP']:
-                score += 25
+                score += 20
                 alasan.append("Price > VWAP")
 
-            # 3. MACD Golden Cross (12,26,9): 20 Poin
-            if last['MACD'] > last['MACD_Signal'] and prev['MACD'] <= prev['MACD_Signal']:
+            # 3. Supertrend (10, 2): 20 Poin
+            if last['Supertrend_Dir'] == 1:
                 score += 20
+                alasan.append("Supertrend Bullish (10,2)")
+
+            # 4. MACD Golden Cross (12,26,9): 15 Poin
+            if last['MACD'] > last['MACD_Signal'] and prev['MACD'] <= prev['MACD_Signal']:
+                score += 15
                 alasan.append("MACD Golden Cross")
 
-            # 4. RSI Momentum (9), rentang ideal 45-70: 10 Poin
+            # 5. RSI Momentum (9), rentang ideal 45-70: 7.5 Poin
             if 45 <= last['RSI'] <= 70:
-                score += 10
+                score += 7.5
                 alasan.append(f"RSI Momentum ({last['RSI']:.1f})")
 
-            # 5. RSI Trend (9), arah naik: 10 Poin
+            # 6. RSI Trend (9), arah naik: 7.5 Poin
             if last['RSI'] > prev['RSI']:
-                score += 10
+                score += 7.5
                 alasan.append(f"RSI Rising ({prev['RSI']:.1f}->{last['RSI']:.1f})")
 
-            # 6. PSAR Acceleration (titik di bawah harga): 10 Poin
+            # 7. PSAR Acceleration (titik di bawah harga): 10 Poin
             if last['PSAR_Bull']:
                 score += 10
                 alasan.append("PSAR Bullish (titik di bawah harga)")
 
-            # MTF Filter: untuk day trade, cukup pastikan supertrend bullish
+            # MTF Filter: pastikan supertrend bullish
             if mtf_filter and last['Supertrend_Dir'] != 1:
                 return None
 
         else:  # Swing Trading
-            # --- SCORING SWING TRADE ---
+            # --- SCORING SWING TRADE (Total: 100) ---
 
-            # 1. Supertrend (10, 3): 30 Poin
+            # 1. Supertrend (10, 3): 25 Poin
             if last['Supertrend_Dir'] == 1:
-                score += 30
+                score += 25
                 alasan.append("Supertrend Bullish (10,3)")
 
-            # 2. MA Structure: 20 Poin — Price > MA50 AND MA20 > MA50
+            # 2. MA Structure (Price > MA50 AND MA20 > MA50): 20 Poin
             if curr_price > last['MA50'] and last['MA20'] > last['MA50']:
                 score += 20
                 alasan.append("MA Structure (Price>MA50, MA20>MA50)")
 
-            # 3. MACD Histogram mendaki (Growing): 20 Poin
+            # 3. Volume Spike / Accumulation (Vol > Vol_SMA20): 15 Poin
+            if last['Volume'] > vol_sma20:
+                score += 15
+                alasan.append("Volume Accumulation (>SMA20)")
+
+            # 4. MACD Histogram Growing: 15 Poin
             if last['MACD_Hist'] > prev['MACD_Hist']:
-                score += 20
+                score += 15
                 alasan.append("MACD Histogram Growing")
 
-            # 4. RSI Momentum (14), rentang ideal 50-70: 10 Poin
+            # 5. RSI Momentum (14), rentang ideal 50-70: 7.5 Poin
             if 50 <= last['RSI'] <= 70:
-                score += 10
+                score += 7.5
                 alasan.append(f"RSI Momentum ({last['RSI']:.1f})")
 
-            # 5. RSI Trend (14), arah naik: 10 Poin
+            # 6. RSI Trend (14), arah naik: 7.5 Poin
             if last['RSI'] > prev['RSI']:
-                score += 10
+                score += 7.5
                 alasan.append(f"RSI Rising ({prev['RSI']:.1f}->{last['RSI']:.1f})")
 
-            # 6. PSAR Confirm arah tren: 10 Poin
+            # 7. PSAR Confirm arah tren: 10 Poin
             if last['PSAR_Bull']:
                 score += 10
                 alasan.append("PSAR Konfirmasi Tren Naik")
