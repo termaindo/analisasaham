@@ -94,7 +94,7 @@ def export_to_pdf(hasil_lolos, trade_mode, session, sector_report, logo_path="lo
     if top_3:
         for item in top_3:
             pdf.set_font("Arial", 'B', 10)
-            pdf.cell(190, 6, f"{item['Ticker']} - {item['Sektor']} | Syariah: {item['Syariah']} | Score: {item['Skor']}/100", ln=True) 
+            pdf.cell(190, 6, f"{item['Ticker']} - {item['Sektor']} | Syariah: {item['Syariah']} | Quality: {item['Quality']} | Score: {item['Skor']}/100", ln=True) 
             
             pdf.set_font("Arial", '', 9)
             pdf.cell(60, 5, f"Entry: {item['Entry']}", 0)
@@ -131,7 +131,7 @@ def export_to_pdf(hasil_lolos, trade_mode, session, sector_report, logo_path="lo
         
         for w in watchlist:
             pdf.set_font("Arial", 'B', 9)
-            pdf.cell(190, 5, f"{w['Ticker']} ({w['Sektor'][:20]}) | Syariah: {w['Syariah']} | Skor: {w['Skor']}", ln=True)
+            pdf.cell(190, 5, f"{w['Ticker']} ({w['Sektor'][:20]}) | Syariah: {w['Syariah']} | Quality: {w['Quality']} | Skor: {w['Skor']}", ln=True)
             
             pdf.set_font("Arial", '', 8)
             pdf.cell(40, 5, f"Entry: {w['Entry']}", 0)
@@ -316,8 +316,36 @@ def process_single_stock(ticker, trade_mode, mtf_filter):
         last = df.iloc[-1]
         prev = df.iloc[-2]
         curr_price = last['Close']
-        avg_val_20 = (df['Close'] * df['Volume']).rolling(20).mean().iloc[-1]
         sektor_nama, _ = get_sector_data(ticker_bersih)
+
+        # === PRE-FILTER WAJIB ===
+
+        # 1. Likuiditas: Value_MA20 = rata-rata 20 hari (Close * Volume)
+        value_ma20 = (df['Close'] * df['Volume']).rolling(20).mean().iloc[-1]
+        if pd.isna(value_ma20) or value_ma20 <= 0:
+            return None
+
+        # 2. Market Cap: wajib > Rp 500 Miliar (500_000_000_000)
+        market_cap = data.get('info', {}).get('marketCap', None)
+        if market_cap is None or pd.isna(market_cap) or market_cap <= 500_000_000_000:
+            return None
+
+        # 3. Kesehatan (Quality): ROE dan ROA wajib > 0
+        #    Jika NaN/None → label "Unrated" (tidak gugur, tapi diberi label)
+        roe = data.get('info', {}).get('returnOnEquity', None)
+        roa = data.get('info', {}).get('returnOnAssets', None)
+
+        roe_ok = (roe is not None and not pd.isna(roe) and roe > 0)
+        roa_ok = (roa is not None and not pd.isna(roa) and roa > 0)
+
+        if (roe is not None and not pd.isna(roe)) or (roa is not None and not pd.isna(roa)):
+            # Ada data → wajib positif, kalau negatif gugur
+            if not roe_ok or not roa_ok:
+                return None
+            quality_label = "Rated"
+        else:
+            # Tidak ada data sama sekali → lolos dengan label Unrated
+            quality_label = "Unrated"
 
         score = 0
         alasan = []
@@ -398,7 +426,8 @@ def process_single_stock(ticker, trade_mode, mtf_filter):
 
         syariah_status = "Ya" if is_syariah(ticker_bersih) else "Tidak"
         return {
-            "Ticker": ticker_bersih, "Sektor": sektor_nama, "Syariah": syariah_status, "Skor": score,
+            "Ticker": ticker_bersih, "Sektor": sektor_nama, "Syariah": syariah_status,
+            "Quality": quality_label, "Skor": score,
             "Harga": int(curr_price), "ATR": last['ATR'], "Alasan": alasan, "RSI": last['RSI']
         }
     except:
@@ -599,6 +628,7 @@ def run_screening():
                     "Ticker": stock['Ticker'], "Sektor": stock['Sektor'], "Skor": f_score,
                     "Harga_Saat_Ini": int(stock['Harga']),
                     "Syariah": stock['Syariah'],
+                    "Quality": stock['Quality'],
                     "Entry": f"Rp {format_rp(stock['Harga']*0.99)} - {format_rp(stock['Harga'])}",
                     "SL": sl, "TP": tp, "RRR": f"{rrr:.1f}x",
                     "Status": "🔥 FULL SIZING" if f_score >= 85 else "🎯 CICIL SEBAGIAN",
@@ -646,7 +676,7 @@ def run_screening():
                 with cols[idx]:
                     st.markdown(f"### {item['Ticker']}")
                     st.write(f"**Sektor:** {item['Sektor']}")
-                    st.write(f"**Syariah:** {item['Syariah']}")
+                    st.write(f"**Syariah:** {item['Syariah']} | **Quality:** {item['Quality']}")
                     
                     if "Praktis" in ui_mode:
                         st.info(f"🛒 **Beli di harga:** {item['Entry']}")
@@ -676,9 +706,9 @@ def run_screening():
                 df_watch_display = df_watch_display.rename(columns={
                     "Sektor": "Industri", "Entry": "Area Beli", "SL": "Jual Rugi (Batas Aman)", "TP": "Jual Untung (Target)"
                 })
-                kolom_tampil = ["Ticker", "Industri", "Syariah", "Area Beli", "Jual Rugi (Batas Aman)", "Jual Untung (Target)", "Lot_Maks", "Status"]
+                kolom_tampil = ["Ticker", "Industri", "Syariah", "Quality", "Area Beli", "Jual Rugi (Batas Aman)", "Jual Untung (Target)", "Lot_Maks", "Status"]
             else:
-                kolom_tampil = ["Ticker", "Sektor", "Syariah", "Skor", "Status", "Entry", "SL", "TP", "RRR", "Lot_Maks"]
+                kolom_tampil = ["Ticker", "Sektor", "Syariah", "Quality", "Skor", "Status", "Entry", "SL", "TP", "RRR", "Lot_Maks"]
                 
             st.dataframe(df_watch_display[kolom_tampil], use_container_width=True, hide_index=True)
         
