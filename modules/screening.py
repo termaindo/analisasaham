@@ -376,7 +376,7 @@ def process_single_stock(ticker, trade_mode, mtf_filter):
             # 5. RSI Trend (9), arah naik: 10 Poin
             if last['RSI'] > prev['RSI']:
                 score += 10
-                alasan.append(f"RSI Rising ({prev['RSI']:.1f}→{last['RSI']:.1f})")
+                alasan.append(f"RSI Rising ({prev['RSI']:.1f}->{last['RSI']:.1f})")
 
             # 6. PSAR Acceleration (titik di bawah harga): 10 Poin
             if last['PSAR_Bull']:
@@ -413,7 +413,7 @@ def process_single_stock(ticker, trade_mode, mtf_filter):
             # 5. RSI Trend (14), arah naik: 10 Poin
             if last['RSI'] > prev['RSI']:
                 score += 10
-                alasan.append(f"RSI Rising ({prev['RSI']:.1f}→{last['RSI']:.1f})")
+                alasan.append(f"RSI Rising ({prev['RSI']:.1f}->{last['RSI']:.1f})")
 
             # 6. PSAR Confirm arah tren: 10 Poin
             if last['PSAR_Bull']:
