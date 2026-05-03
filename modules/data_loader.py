@@ -10,8 +10,6 @@ def hitung_div_yield_normal(info):
     """Mencegah angka dividen aneh (seperti 409% atau 909%)"""
     raw_yield = info.get('dividendYield')
     if raw_yield is None: return 0.0
-    # Jika angka > 1 (misal 4.5), berarti sudah persen. 
-    # Jika < 1 (misal 0.045), berarti desimal, harus dikali 100.
     return float(raw_yield) if raw_yield > 1 else float(raw_yield * 100)
 
 def scrape_local_financial_data(ticker):
@@ -37,7 +35,6 @@ def scrape_local_financial_data(ticker):
         if response.status_code == 200:
             soup = BeautifulSoup(response.text, 'html.parser')
             
-            # Mencari baris CAR
             car_row = soup.find(string=lambda text: text and ('Capital Adequacy Ratio' in text or 'CAR' in text))
             if car_row:
                 try:
@@ -45,7 +42,6 @@ def scrape_local_financial_data(ticker):
                     scraped_data['CAR'] = float(car_value_str.replace('%', '').replace(',', '.'))
                 except: pass
                 
-            # Mencari baris NPL
             npl_row = soup.find(string=lambda text: text and ('Non-Performing Loan' in text or 'NPL' in text))
             if npl_row:
                 try:
@@ -60,24 +56,43 @@ def scrape_local_financial_data(ticker):
 
 # --- SATU PINTU DATA (Anti-Rate Limit) ---
 @st.cache_data(ttl=3600, show_spinner=False)
-def get_full_stock_data(ticker):
+def get_full_stock_data(ticker, interval='1d'):  # ✅ Parameter interval ditambahkan
     """
     Mengambil semua data sekaligus untuk mencegah error 'Data tidak ditemukan'.
     Sudah terintegrasi dengan scraping khusus sektor perbankan.
+
+    Parameter:
+        ticker   : Kode saham (contoh: 'BBCA.JK')
+        interval : Interval candle yfinance (default: '1d').
+                   Nilai valid: '1m','2m','5m','15m','30m','60m',
+                                '90m','1h','1d','5d','1wk','1mo','3mo'
+                   Catatan: interval menit hanya tersedia untuk data < 60 hari.
     """
+
+    # Sesuaikan period otomatis berdasarkan interval
+    # (interval pendek butuh period lebih singkat agar tidak error di yfinance)
+    _period_map = {
+        '1m': '7d', '2m': '60d', '5m': '60d',
+        '15m': '60d', '30m': '60d', '60m': '730d',
+        '90m': '60d', '1h': '730d',
+        '1d': '2y', '5d': '2y', '1wk': '5y',
+        '1mo': '10y', '3mo': '10y'
+    }
+    period = _period_map.get(interval, '2y')
+
     stock = yf.Ticker(ticker)
     data = {
         "info": {},
         "history": pd.DataFrame(),
         "financials": pd.DataFrame(),
-        "balance_sheet": pd.DataFrame(), # Ditambahkan untuk kebutuhan fundamental.py
+        "balance_sheet": pd.DataFrame(),
         "cashflow": pd.DataFrame(),
         "dividends": pd.Series(dtype='float64')
     }
 
-    # 1. Ambil History 2 Tahun (Paling stabil)
+    # 1. Ambil History dengan interval & period yang sesuai
     try:
-        df = stock.history(period="2y")
+        df = stock.history(period=period, interval=interval)  # ✅ interval diteruskan ke yfinance
         if not df.empty:
             df.index = df.index.tz_localize(None)
             data["history"] = df
@@ -87,27 +102,24 @@ def get_full_stock_data(ticker):
     try:
         info = stock.info
         
-        # --- PROSES SUNTIK DATA SCRAPING (KHUSUS BANK) ---
         industry = info.get('industry', '')
         sector = info.get('sector', '')
         is_bank = 'Bank' in industry or sector == 'Financial Services'
         
         if is_bank:
             local_data = scrape_local_financial_data(ticker)
-            # Suntikkan data dengan nilai aman (fallback) jika web lokal gagal diakses
             info['capitalAdequacyRatio'] = local_data['CAR'] if local_data['CAR'] is not None else 18.0
             info['nonPerformingLoan'] = local_data['NPL'] if local_data['NPL'] is not None else 2.5
         
         data["info"] = info
         
-        # Khusus Dividen
         divs = stock.dividends
         if divs.empty:
             divs = stock.actions['Dividends'] if 'Dividends' in stock.actions else pd.Series(dtype='float64')
         data["dividends"] = divs
     except: pass
 
-    # 3. Ambil Laporan Keuangan, Neraca (Balance Sheet) & Cashflow
+    # 3. Ambil Laporan Keuangan, Neraca & Cashflow
     try:
         data["financials"] = stock.financials
         data["balance_sheet"] = stock.balance_sheet
