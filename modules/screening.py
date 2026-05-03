@@ -311,7 +311,8 @@ def get_market_session():
 def process_single_stock(ticker, trade_mode, mtf_filter):
     ticker_bersih = ticker.replace(".JK", "")
     try:
-        data = get_full_stock_data(ticker)
+        interval = '15m' if trade_mode == "Day Trading" else '1d'
+        data = get_full_stock_data(ticker, interval=interval)
         df = calculate_indicators(data['history'], trade_mode)
         last = df.iloc[-1]
         prev = df.iloc[-2]
@@ -325,9 +326,15 @@ def process_single_stock(ticker, trade_mode, mtf_filter):
         if pd.isna(value_ma20) or value_ma20 <= 0:
             return None
 
-        # 2. Market Cap: wajib > Rp 500 Miliar (500_000_000_000)
-        market_cap = data.get('info', {}).get('marketCap', None)
-        if market_cap is None or pd.isna(market_cap) or market_cap <= 500_000_000_000:
+        # 2. Market Cap: wajib > Rp 500 Miliar
+        #    yfinance mengembalikan marketCap saham .JK dalam satuan USD.
+        #    Konversi ke Rupiah: 1 USD ≈ Rp 16.000 (pakai konstanta konservatif)
+        USD_TO_IDR = 16_000
+        MC_MIN_IDR  = 500_000_000_000  # Rp 500 Miliar
+        MC_MIN_USD  = MC_MIN_IDR / USD_TO_IDR  # ≈ USD 31.25 Juta
+
+        market_cap_usd = data.get('info', {}).get('marketCap', None)
+        if market_cap_usd is None or pd.isna(market_cap_usd) or market_cap_usd <= MC_MIN_USD:
             return None
 
         # 3. Kesehatan (Quality): ROE dan ROA wajib > 0
@@ -335,11 +342,13 @@ def process_single_stock(ticker, trade_mode, mtf_filter):
         roe = data.get('info', {}).get('returnOnEquity', None)
         roa = data.get('info', {}).get('returnOnAssets', None)
 
-        roe_ok = (roe is not None and not pd.isna(roe) and roe > 0)
-        roa_ok = (roa is not None and not pd.isna(roa) and roa > 0)
+        roe_valid = roe is not None and not pd.isna(roe)
+        roa_valid = roa is not None and not pd.isna(roa)
 
-        if (roe is not None and not pd.isna(roe)) or (roa is not None and not pd.isna(roa)):
-            # Ada data → wajib positif, kalau negatif gugur
+        if roe_valid or roa_valid:
+            # Minimal salah satu ada datanya → keduanya harus positif jika tersedia
+            roe_ok = (not roe_valid) or (roe > 0)
+            roa_ok = (not roa_valid) or (roa > 0)
             if not roe_ok or not roa_ok:
                 return None
             quality_label = "Rated"
@@ -403,28 +412,27 @@ def process_single_stock(ticker, trade_mode, mtf_filter):
 
             # --- BONUS / PENALTI DAILY TREND (MTF) ---
             try:
+                # Untuk Day Trade (M15), kita perlu data Daily terpisah untuk konteks tren besar
                 data_daily = get_full_stock_data(ticker, interval='1d')
                 df_daily = data_daily['history']
-                df_daily['MA50_D'] = df_daily['Close'].rolling(50).mean()
-                df_daily['MA20_D'] = df_daily['Close'].rolling(20).mean()
-                last_d = df_daily.iloc[-1]
-                prev_d = df_daily.iloc[-2]
-                close_d = last_d['Close']
-                ma50_d  = last_d['MA50_D']
-                ma20_d  = last_d['MA20_D']
+                if not df_daily.empty:
+                    df_daily['MA50_D'] = df_daily['Close'].rolling(50).mean()
+                    df_daily['MA20_D'] = df_daily['Close'].rolling(20).mean()
+                    last_d = df_daily.iloc[-1]
+                    close_d = last_d['Close']
+                    ma50_d  = last_d['MA50_D']
+                    ma20_d  = last_d['MA20_D']
 
-                if close_d > ma50_d and ma20_d > ma50_d:
-                    # Bullish: harga dan MA20 di atas MA50
-                    score += 10
-                    alasan.append("Daily Bullish (>MA50)")
-                elif close_d > ma50_d:
-                    # Sideways: harga di atas MA50 tapi MA20 belum
-                    score += 5
-                    alasan.append("Daily Sideways (>MA50)")
-                else:
-                    # Downtrend: harga di bawah MA50
-                    score -= 15
-                    alasan.append("Daily Downtrend (<MA50) -15")
+                    if not pd.isna(ma50_d) and not pd.isna(ma20_d):
+                        if close_d > ma50_d and ma20_d > ma50_d:
+                            score += 10
+                            alasan.append("Daily Bullish (>MA50) +10")
+                        elif close_d > ma50_d:
+                            score += 5
+                            alasan.append("Daily Sideways (>MA50) +5")
+                        else:
+                            score -= 15
+                            alasan.append("Daily Downtrend (<MA50) -15")
             except Exception:
                 pass  # Jika data daily tidak tersedia, skip bonus MTF
 
