@@ -434,65 +434,107 @@ def run_analisa_cepat():
 
 
             # ============================================================
-            # === B. SCORING TEKNIKAL — LOGIKA BARU (Total 100 Poin) ===
+            # === B. SCORING TEKNIKAL — LOGIKA BARU (Hard Cap 100 Poin) ===
             # ============================================================
             t_score = 0
             alasan_tek = []
 
-            # 1. Supertrend (10, 3) — Bobot 25
-            #    Filter utama tren besar agar tidak mudah terkena whipsaw.
-            if st_dir_curr == 1:
+            # Ambil data historis ST_Dir untuk cek berapa hari sudah bullish
+            st_dir_series = df['ST_Dir'].dropna()
+            days_above_green = 0
+            for d in reversed(st_dir_series.values[:-1]):  # hitung mundur sebelum bar terakhir
+                if d == 1:
+                    days_above_green += 1
+                else:
+                    break
+            st_just_crossed = (st_dir_curr == 1 and days_above_green == 0)  # baru saja naik ke atas
+            st_sustained    = (st_dir_curr == 1 and days_above_green >= 3)   # sudah > 3 hari di atas
+
+            # a) Supertrend (10, 3) — Maks 25 poin
+            #    25 poin: harga baru naik ke atas garis hijau (fresh crossover)
+            #    20 poin: harga sudah > 3 hari di atas garis hijau
+            if st_just_crossed:
                 t_score += 25
-                alasan_tek.append("Supertrend Bullish")
+                alasan_tek.append("Supertrend Fresh Cross (+25)")
+            elif st_sustained:
+                t_score += 20
+                alasan_tek.append(f"Supertrend Sustained {days_above_green}d (+20)")
 
-            # 2. MA Structure (Price > MA50 & MA20 > MA50) — Bobot 20
-            #    Menjamin "Power" tren jangka menengah sudah terbentuk.
-            if ma50_val > 0:
-                if curr > ma50_val and ma20_val > ma50_val:
-                    t_score += 20
-                    alasan_tek.append("MA Structure (P>50 & 20>50)")
-                elif curr > ma50_val or ma20_val > ma50_val:
-                    # Kondisi setengah terpenuhi: salah satu saja → setengah poin
-                    t_score += 10
-                    alasan_tek.append("MA Structure (Parsial)")
+            # b) MA Structure — 20 poin
+            #    Price > MA50 AND MA20 > MA50 (Struktur Sehat)
+            if ma50_val > 0 and curr > ma50_val and ma20_val > ma50_val:
+                t_score += 20
+                alasan_tek.append("MA Structure Sehat (+20)")
 
-            # 3. Volume Spike (Accumulation) — Bobot 15
-            #    Menandakan adanya akumulasi bertahap oleh investor besar.
-            if vol_ma20 > 0 and vol_curr > vol_ma20:
-                t_score += 15
-                alasan_tek.append("Volume Spike (Akumulasi)")
-
-            # 4. MACD Histogram Growing — Bobot 15
-            #    Menangkap momentum yang sedang mekar/tumbuh.
-            #    Syarat: Histogram positif DAN lebih besar dari bar sebelumnya.
-            if macd_hist > 0 and macd_hist > macd_hist_prev:
-                t_score += 15
-                alasan_tek.append("MACD Hist Growing")
-            elif macd_hist > macd_hist_prev:
-                # Histogram negatif tapi sedang tumbuh ke atas (momentum recovery)
-                t_score += 7
-                alasan_tek.append("MACD Hist Recovery")
-
-            # 5. RSI Momentum (14) — Bobot 7.5
-            #    RSI sedang naik (momentum meningkat).
-            if rsi_curr > rsi_prev:
+            # c) MACD Golden Cross — 7.5 poin
+            #    Garis MACD baru memotong ke atas Signal Line
+            macd_prev  = df['MACD'].iloc[-2]  if len(df) >= 2 else macd_val
+            signal_prev = df['Signal'].iloc[-2] if len(df) >= 2 else signal_val
+            macd_golden_cross = (macd_val > signal_val) and (macd_prev <= signal_prev)
+            if macd_golden_cross:
                 t_score += 7.5
-                alasan_tek.append("RSI Momentum Naik")
+                alasan_tek.append("MACD Golden Cross (+7.5)")
 
-            # 6. RSI Trend (14) — Bobot 7.5
-            #    RSI di zona sehat (40–70): tidak jenuh jual, tidak jenuh beli.
-            if 40 <= rsi_curr <= 70:
+            # d) MACD Histogram — 7.5 poin
+            #    Histogram naik 3 hari berturut-turut
+            hist_series = df['MACD_Hist'].dropna()
+            hist_3d_rising = (
+                len(hist_series) >= 3 and
+                hist_series.iloc[-1] > hist_series.iloc[-2] > hist_series.iloc[-3]
+            )
+            if hist_3d_rising:
                 t_score += 7.5
-                alasan_tek.append(f"RSI Trend Sehat ({rsi_curr:.1f})")
+                alasan_tek.append("MACD Hist 3d Rising (+7.5)")
 
-            # 7. PSAR Confirm — Bobot 10
-            #    PSAR di bawah harga (bullish confirmation).
-            if psar_bull_curr:
+            # e) Volume Spike — 15 poin
+            #    Volume > 1.2x Vol_MA20
+            if vol_ma20 > 0 and vol_curr > 1.2 * vol_ma20:
+                t_score += 15
+                alasan_tek.append("Volume Spike >1.2x (+15)")
+
+            # f) RSI Momentum — 10 poin
+            #    RSI berada di zona 50–70 (momentum sehat, belum overbought)
+            if 50 <= rsi_curr <= 70:
                 t_score += 10
-                alasan_tek.append("PSAR Bullish")
+                alasan_tek.append(f"RSI Momentum {rsi_curr:.1f} (+10)")
 
-            # Bulatkan t_score ke integer untuk tampilan rapi
-            t_score = round(t_score)
+            # g) RSI Trend / Slope — 10 poin
+            #    RSI slope miring ke atas: rata-rata 3 hari terakhir naik
+            rsi_series = df['RSI'].dropna()
+            rsi_slope_up = (
+                len(rsi_series) >= 3 and
+                rsi_series.iloc[-1] > rsi_series.iloc[-2] > rsi_series.iloc[-3]
+            )
+            if rsi_slope_up:
+                t_score += 10
+                alasan_tek.append("RSI Slope Mendaki (+10)")
+
+            # h) PSAR — 5 poin
+            #    Titik PSAR pindah ke bawah harga (bullish flip atau sustained)
+            if psar_bull_curr:
+                t_score += 5
+                alasan_tek.append("PSAR di Bawah Harga (+5)")
+
+            # i) BONUS & PENALTI
+            # Bonus +10: MACD di area negatif tapi histogram mulai naik (Early Recovery)
+            macd_early_recovery = (macd_val < 0) and hist_3d_rising
+            if macd_early_recovery:
+                t_score += 10
+                alasan_tek.append("MACD Early Recovery Bonus (+10)")
+
+            # Bonus +10: Sektor Hot (dari session_state modul screening)
+            if "sector_scores" in st.session_state and sector in st.session_state["sector_scores"]:
+                if st.session_state["sector_scores"][sector] >= 60:
+                    t_score += 10
+                    alasan_tek.append(f"Sektor Hot: {sector.title()} (+10)")
+
+            # Penalti -15: RSI > 75 (Overbought / Jenuh Beli)
+            if rsi_curr > 75:
+                t_score -= 15
+                alasan_tek.append(f"RSI Overbought {rsi_curr:.1f} (-15)")
+
+            # Hard Cap: total skor tidak boleh melebihi 100
+            t_score = min(round(t_score), 100)
 
             teks_alasan = ", ".join(alasan_tek) if alasan_tek else "Tidak ada sinyal kuat"
             # ============================================================
