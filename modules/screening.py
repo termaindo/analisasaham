@@ -509,6 +509,9 @@ def process_single_stock(ticker, trade_mode, mtf_filter):
             if mtf_filter and not (last['Supertrend_Dir'] == 1 and curr_price > last['MA50']):
                 return None
 
+        # Hard cap score sebelum dikembalikan — semua bonus/penalti sudah dihitung
+        score = min(round(score), 100)
+
         syariah_status = "Ya" if is_syariah(ticker_bersih) else "Tidak"
         return {
             "Ticker": ticker_bersih, "Sektor": sektor_nama, "Syariah": syariah_status,
@@ -673,11 +676,13 @@ def run_screening():
         final_picks = []
         for stock in raw_results:
             f_score = stock['Skor']
-            
+
             if sector_boost and stock['Sektor'] in leading_sectors:
                 f_score += 10
-                f_score = min(f_score, 100)
                 stock['Alasan'].append(f"Sector Hot: {stock['Sektor']}")
+            
+            # Hard cap final setelah bonus Sector Hot
+            f_score = min(round(f_score), 100)
 
             # --- PROTEKSI BERLAPIS: SL/TP ---
             # ATR SL
