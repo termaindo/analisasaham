@@ -189,6 +189,24 @@ def ambil_csv_dari_gdrive(nama_file: str):
         from googleapiclient.http import MediaIoBaseDownload
         service = _get_drive_service()
 
+        # === DEBUG SEMENTARA: tampilkan SEMUA file yang terlihat oleh service account ===
+        all_files = service.files().list(
+            q="trashed=false",
+            spaces='drive',
+            fields='files(id, name, mimeType)',
+            supportsAllDrives=True,
+            includeItemsFromAllDrives=True
+        ).execute()
+        semua = all_files.get('files', [])
+        if semua:
+            st.info(f"📂 File yang terlihat oleh service account ({len(semua)} file):")
+            for f in semua:
+                st.code(f"nama: {f['name']} | mimeType: {f['mimeType']} | id: {f['id']}")
+        else:
+            st.warning("⚠️ Service account tidak melihat file APAPUN di Google Drive. "
+                       "Artinya tidak ada file/folder yang di-share ke service account ini.")
+        # === AKHIR DEBUG ===
+
         results = service.files().list(
             q=f"name='{nama_file}' and trashed=false",
             spaces='drive',
