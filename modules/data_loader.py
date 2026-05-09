@@ -145,7 +145,7 @@ def enrich_and_filter(pre_csv_path='pre_liquid_stocks.csv',
 
     progress_callback(i, total, ticker) → opsional, untuk progress bar Streamlit.
     """
-    df_pre = pd.read_csv(pre_csv_path)
+    df_pre = pd.read_csv(pre_csv_path, sep=None, engine='python')  # auto-detect separator
 
     # Normalisasi nama kolom (jaga-jaga spasi/kapital berbeda)
     df_pre.columns = df_pre.columns.str.strip()
