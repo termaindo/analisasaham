@@ -296,3 +296,46 @@ def enrich_and_filter(pre_csv_path='pre_liquid_stocks.csv',
     df.to_csv(out_csv_path, index=False)
 
     return df, before, after
+
+
+# --- ENTRY POINT YANG DIPANGGIL app.py (Step 2 Panel Admin) ---
+def process_liquid_stocks(df_pre: pd.DataFrame,
+                          min_value_ma20: int = 2_000_000_000,
+                          min_roe: float = 10.0) -> pd.DataFrame:
+    """
+    Wrapper yang dipanggil oleh app.py di Step 2 panel admin.
+    Menerima DataFrame dari pre_liquid_stocks.csv,
+    menjalankan enrich_and_filter(), dan mengembalikan df hasil.
+
+    Parameter:
+        df_pre        : DataFrame dari pre_liquid_stocks.csv
+        min_value_ma20: Filter minimum Value MA20 (default Rp 2 M)
+        min_roe       : Filter minimum ROE dalam % (default 10%)
+
+    Return:
+        DataFrame hasil enrichment yang siap disimpan sebagai liquid_stocks.csv
+    """
+    import tempfile, os
+
+    # Simpan df_pre ke file sementara agar bisa dibaca enrich_and_filter()
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.csv',
+                                     delete=False, encoding='utf-8') as tmp_in:
+        df_pre.to_csv(tmp_in, index=False)
+        tmp_in_path = tmp_in.name
+
+    tmp_out_path = tmp_in_path.replace('.csv', '_out.csv')
+
+    try:
+        df_hasil, _, _ = enrich_and_filter(
+            pre_csv_path=tmp_in_path,
+            out_csv_path=tmp_out_path,
+            min_value_ma20=min_value_ma20,
+            min_roe=min_roe,
+            progress_callback=None   # progress bar dihandle app.py via st.spinner
+        )
+    finally:
+        # Bersihkan file sementara
+        if os.path.exists(tmp_in_path):  os.remove(tmp_in_path)
+        if os.path.exists(tmp_out_path): os.remove(tmp_out_path)
+
+    return df_hasil
