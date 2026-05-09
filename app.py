@@ -16,12 +16,10 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# Menambahkan Meta Tags SEO ke dalam halaman HTML Streamlit
 st.markdown("""
     <meta name="description" content="Berhenti menebak arah pasar! Aplikasi analisa saham BEI dengan 6 modul premium: teknikal, fundamental & screening otomatis. Klaim trial 14 hari Anda sekarang.">
     <meta name="keywords" content="analisa saham, screening saham, saham BEI, aplikasi saham, trading saham, expert stock pro, teknikal saham, fundamental saham, drs. Musa Tanaja, M.Si.">
     <meta name="author" content="drs. Musa Tanaja, M.Si.">
-    
     <meta property="og:title" content="Expert Stock Pro: Level Up Analisa Saham BEI">
     <meta property="og:description" content="Berhenti menebak arah pasar! Aplikasi analisa saham BEI dengan 6 modul premium: teknikal, fundamental & screening otomatis. Klaim trial 14 hari Anda sekarang.">
     <meta property="og:type" content="website">
@@ -29,7 +27,6 @@ st.markdown("""
 
 # --- 2. IMPORT MODUL (LAZY LOADING) ---
 def load_and_run_module(module_name, run_function_name):
-    """Mencoba load modul dan langsung menjalankannya, lebih cepat dan hemat memori"""
     try:
         mod = importlib.import_module(f"modules.{module_name}")
         func = getattr(mod, run_function_name)
@@ -50,14 +47,14 @@ def check_module_exists(module_name):
     except ModuleNotFoundError:
         return False
 
-# --- 3. CSS CUSTOM (GABUNGAN DASHBOARD & LANDING PAGE) ---
+# --- 3. CSS CUSTOM ---
 st.markdown("""
 <style>
     header {visibility: hidden;}
     [data-testid="stHeader"] {display: none;}
     [data-testid="stSidebar"] {display: none;}
     footer {visibility: hidden;}
-    
+
     div.stButton > button {
         width: 100%; border-radius: 12px; height: 85px;
         font-weight: bold; font-size: 18px;
@@ -67,7 +64,7 @@ st.markdown("""
     div.stButton > button:hover {
         background-color: #ff0000; border-color: #ff0000; color: white;
     }
-    
+
     [data-testid="stLinkButton"] a {
         background-color: #2ECC71 !important;
         color: white !important;
@@ -91,14 +88,14 @@ st.markdown("""
     }
 
     .landing-header {
-        text-align: center; 
-        padding: 30px; 
-        background-color: #1E1E1E; 
-        border-radius: 15px; 
+        text-align: center;
+        padding: 30px;
+        background-color: #1E1E1E;
+        border-radius: 15px;
         border: 1px solid #2ECC71;
         margin-bottom: 30px;
     }
-    
+
     .promo-box {
         background-color: #2c3e50;
         padding: 12px;
@@ -137,11 +134,10 @@ if 'is_trial' not in st.session_state: st.session_state.is_trial = False
 if 'trial_expiry_date' not in st.session_state: st.session_state.trial_expiry_date = ""
 if 'is_admin' not in st.session_state: st.session_state.is_admin = False
 
-# --- FUNGSI PEMBERSIH NOMOR WA ANTI-ERROR ---
+# --- FUNGSI PEMBERSIH NOMOR WA ---
 def bersihkan_nomor_wa(wa_str):
-    """Membuang 0, +62, spasi, strip, dan format float .0 agar akurat dicocokkan"""
     w = str(wa_str).strip().replace(" ", "").replace("-", "")
-    if w.endswith(".0"): w = w[:-2] 
+    if w.endswith(".0"): w = w[:-2]
     if w.startswith("+62"): w = w[3:]
     if w.startswith("62"): w = w[2:]
     if w.startswith("0"): w = w[1:]
@@ -149,12 +145,6 @@ def bersihkan_nomor_wa(wa_str):
 
 # --- FUNGSI CEK LOGIN ADMIN ---
 def is_admin_login(nama, wa, pw):
-    """
-    Cek apakah kombinasi nama + WA + password cocok dengan kredensial admin.
-    Nama admin: 'musa' atau 'Musa' (case-insensitive).
-    WA admin: 0818337457.
-    Password admin: diambil dari st.secrets["ADMIN_PASSWORD"].
-    """
     nama_admin_valid = nama.strip().lower() == "musa"
     wa_bersih = bersihkan_nomor_wa(wa)
     wa_admin_bersih = bersihkan_nomor_wa("0818337457")
@@ -163,13 +153,15 @@ def is_admin_login(nama, wa, pw):
     pw_valid = pw.strip() == pw_admin
     return nama_admin_valid and wa_admin_valid and pw_valid
 
-# --- FUNGSI GOOGLE DRIVE: AMBIL FILE CSV ---
-def get_gdrive_client():
-    """Mengembalikan gspread client yang sudah terotentikasi."""
-    scopes = [
-        'https://www.googleapis.com/auth/spreadsheets',
-        'https://www.googleapis.com/auth/drive'
-    ]
+# --- GOOGLE DRIVE: KONSTANTA FOLDER ---
+GDRIVE_FOLDER_NAME = "ExpertStockPro_Data"
+
+def _get_drive_service():
+    """Helper: membuat Drive API service yang sudah terotentikasi."""
+    from googleapiclient.discovery import build
+    from google.oauth2.service_account import Credentials as SACredentials
+
+    scopes = ['https://www.googleapis.com/auth/drive']
     s_creds = dict(st.secrets["gcp_service_account"])
     pk = str(s_creds.get("private_key", ""))
     pk = pk.replace("\\n", "\n").replace("\\r", "").strip('"').strip("'").strip()
@@ -178,42 +170,40 @@ def get_gdrive_client():
     if "-----END PRIVATE KEY-----" not in pk:
         pk = pk + "\n-----END PRIVATE KEY-----\n"
     s_creds["private_key"] = pk
-    creds = Credentials.from_service_account_info(s_creds, scopes=scopes)
-    return gspread.authorize(creds)
+    creds = SACredentials.from_service_account_info(s_creds, scopes=scopes)
+    return build('drive', 'v3', credentials=creds)
 
-def ambil_csv_dari_gdrive(nama_file: str) -> pd.DataFrame | None:
-    """
-    Mengambil file CSV dari Google Drive berdasarkan nama file.
-    Mengembalikan DataFrame atau None jika gagal.
-    """
+def _get_folder_id(service, folder_name: str):
+    """Mencari folder ID berdasarkan nama folder di Google Drive."""
+    results = service.files().list(
+        q=f"name='{folder_name}' and mimeType='application/vnd.google-apps.folder' and trashed=false",
+        spaces='drive',
+        fields='files(id, name)'
+    ).execute()
+    items = results.get('files', [])
+    return items[0]['id'] if items else None
+
+def ambil_csv_dari_gdrive(nama_file: str):
+    """Mengambil file CSV dari folder GDRIVE_FOLDER_NAME di Google Drive."""
     try:
-        from googleapiclient.discovery import build
         from googleapiclient.http import MediaIoBaseDownload
-        from google.oauth2.service_account import Credentials as SACredentials
+        service = _get_drive_service()
 
-        scopes = ['https://www.googleapis.com/auth/drive']
-        s_creds = dict(st.secrets["gcp_service_account"])
-        pk = str(s_creds.get("private_key", ""))
-        pk = pk.replace("\\n", "\n").replace("\\r", "").strip('"').strip("'").strip()
-        if "-----BEGIN PRIVATE KEY-----" not in pk:
-            pk = "-----BEGIN PRIVATE KEY-----\n" + pk
-        if "-----END PRIVATE KEY-----" not in pk:
-            pk = pk + "\n-----END PRIVATE KEY-----\n"
-        s_creds["private_key"] = pk
+        folder_id = _get_folder_id(service, GDRIVE_FOLDER_NAME)
+        if not folder_id:
+            st.error(f"⚠️ Folder '{GDRIVE_FOLDER_NAME}' tidak ditemukan di Google Drive. "
+                     f"Pastikan folder sudah dibuat dan di-share ke service account.")
+            return None
 
-        creds = SACredentials.from_service_account_info(s_creds, scopes=scopes)
-        service = build('drive', 'v3', credentials=creds)
-
-        # Cari file berdasarkan nama
         results = service.files().list(
-            q=f"name='{nama_file}' and mimeType='text/csv' and trashed=false",
+            q=f"name='{nama_file}' and mimeType='text/csv' and '{folder_id}' in parents and trashed=false",
             spaces='drive',
             fields='files(id, name)'
         ).execute()
         items = results.get('files', [])
 
         if not items:
-            st.error(f"⚠️ File '{nama_file}' tidak ditemukan di Google Drive.")
+            st.error(f"⚠️ File '{nama_file}' tidak ditemukan di folder '{GDRIVE_FOLDER_NAME}'.")
             return None
 
         file_id = items[0]['id']
@@ -224,61 +214,46 @@ def ambil_csv_dari_gdrive(nama_file: str) -> pd.DataFrame | None:
         while not done:
             _, done = downloader.next_chunk()
         fh.seek(0)
-        df = pd.read_csv(fh)
-        return df
+        return pd.read_csv(fh)
 
     except Exception as e:
         st.error(f"⚠️ Gagal mengambil file dari Google Drive: {e}")
         return None
 
 def simpan_csv_ke_gdrive(df: pd.DataFrame, nama_file: str) -> bool:
-    """
-    Menyimpan DataFrame sebagai CSV ke Google Drive.
-    Jika file sudah ada, akan di-overwrite (update).
-    Mengembalikan True jika berhasil, False jika gagal.
-    """
+    """Menyimpan DataFrame sebagai CSV ke folder GDRIVE_FOLDER_NAME di Google Drive."""
     try:
-        from googleapiclient.discovery import build
         from googleapiclient.http import MediaIoBaseUpload
-        from google.oauth2.service_account import Credentials as SACredentials
+        service = _get_drive_service()
 
-        scopes = ['https://www.googleapis.com/auth/drive']
-        s_creds = dict(st.secrets["gcp_service_account"])
-        pk = str(s_creds.get("private_key", ""))
-        pk = pk.replace("\\n", "\n").replace("\\r", "").strip('"').strip("'").strip()
-        if "-----BEGIN PRIVATE KEY-----" not in pk:
-            pk = "-----BEGIN PRIVATE KEY-----\n" + pk
-        if "-----END PRIVATE KEY-----" not in pk:
-            pk = pk + "\n-----END PRIVATE KEY-----\n"
-        s_creds["private_key"] = pk
-
-        creds = SACredentials.from_service_account_info(s_creds, scopes=scopes)
-        service = build('drive', 'v3', credentials=creds)
+        folder_id = _get_folder_id(service, GDRIVE_FOLDER_NAME)
+        if not folder_id:
+            st.error(f"⚠️ Folder '{GDRIVE_FOLDER_NAME}' tidak ditemukan di Google Drive.")
+            return False
 
         csv_buffer = io.StringIO()
         df.to_csv(csv_buffer, index=False)
         csv_bytes = io.BytesIO(csv_buffer.getvalue().encode('utf-8'))
+        media = MediaIoBaseUpload(csv_bytes, mimetype='text/csv', resumable=True)
 
-        # Cek apakah file sudah ada (untuk update/overwrite)
         results = service.files().list(
-            q=f"name='{nama_file}' and mimeType='text/csv' and trashed=false",
+            q=f"name='{nama_file}' and mimeType='text/csv' and '{folder_id}' in parents and trashed=false",
             spaces='drive',
             fields='files(id, name)'
         ).execute()
         items = results.get('files', [])
 
-        media = MediaIoBaseUpload(csv_bytes, mimetype='text/csv', resumable=True)
-
         if items:
-            # Update file yang sudah ada
-            file_id = items[0]['id']
             service.files().update(
-                fileId=file_id,
+                fileId=items[0]['id'],
                 media_body=media
             ).execute()
         else:
-            # Buat file baru
-            file_metadata = {'name': nama_file, 'mimeType': 'text/csv'}
+            file_metadata = {
+                'name': nama_file,
+                'mimeType': 'text/csv',
+                'parents': [folder_id]
+            }
             service.files().create(
                 body=file_metadata,
                 media_body=media,
@@ -295,24 +270,21 @@ def simpan_csv_ke_gdrive(df: pd.DataFrame, nama_file: str) -> bool:
 def cek_dan_catat_trial(nama_user, wa_user):
     tz_wib = pytz.timezone('Asia/Jakarta')
     hari_ini = datetime.now(tz_wib).date()
-    
     wa_user_bersih = bersihkan_nomor_wa(wa_user)
 
     try:
         scopes = ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive']
         s_creds = dict(st.secrets["gcp_service_account"])
-        
         pk = str(s_creds.get("private_key", ""))
         pk = pk.replace("\\n", "\n").replace("\\r", "").strip('"').strip("'").strip()
         if "-----BEGIN PRIVATE KEY-----" not in pk: pk = "-----BEGIN PRIVATE KEY-----\n" + pk
         if "-----END PRIVATE KEY-----" not in pk: pk = pk + "\n-----END PRIVATE KEY-----\n"
         s_creds["private_key"] = pk
-        
         creds = Credentials.from_service_account_info(s_creds, scopes=scopes)
         client = gspread.authorize(creds)
         sheet = client.open("Data_Trial_ExpertStockPro").sheet1
         records = sheet.get_all_records()
-        
+
         if not records:
             sheet.append_row(["Nomor_WA", "Nama", "Tanggal_Mulai", "Tanggal_Expired"])
             df = pd.DataFrame(columns=["Nomor_WA", "Nama", "Tanggal_Mulai", "Tanggal_Expired"])
@@ -332,15 +304,13 @@ def cek_dan_catat_trial(nama_user, wa_user):
     if not user_exist.empty:
         tgl_expired_str = str(user_exist.iloc[0]['Tanggal_Expired'])
         tgl_expired = datetime.strptime(tgl_expired_str, "%Y-%m-%d").date()
-        
         if hari_ini <= tgl_expired:
-            return True, tgl_expired_str 
+            return True, tgl_expired_str
         else:
             return False, "❌ Masa trial 14 hari Anda sudah habis. Silakan beli Akses Premium seumur hidup."
     else:
         tgl_expired = hari_ini + timedelta(days=14)
         tgl_expired_str = tgl_expired.strftime("%Y-%m-%d")
-        
         try:
             wa_simpan = f"'{wa_user.strip()}"
             sheet.append_row([wa_simpan, nama_user.strip(), hari_ini.strftime("%Y-%m-%d"), tgl_expired_str])
@@ -348,7 +318,7 @@ def cek_dan_catat_trial(nama_user, wa_user):
         except Exception as e:
             return False, "❌ Gagal menyimpan data trial. Coba beberapa saat lagi."
 
-# --- 5. HALAMAN LOGIN (LANDING PAGE KONVERSI & TIMER PER-USER) ---
+# --- 5. HALAMAN LOGIN ---
 def login_page():
     kode_trial_tampil = st.secrets.get("TRIAL_CODE", "CUAN14HARI")
 
@@ -365,19 +335,19 @@ def login_page():
         st.markdown("""
         ### 🧐 Mengapa Expert Stock Pro?
         Banyak trader rugi karena **telat entry** atau **salah pilih emiten** akibat data yang berantakan. Kami menyatukan semuanya untuk Anda:
-        
+
         * ✅ **6 Modul Analisa Premium:** Dari Teknikal Pro hingga Kalkulator Dividen.
         * ✅ **Screening Otomatis:** Temukan saham *undervalued* dalam hitungan detik.
         * ✅ **Risk Management:** Fitur Stop Loss & Target Price otomatis di setiap analisa.
         * ✅ **Data Real-Time:** Akses langsung ke data pasar Bursa Efek Indonesia.
         * ✅ **Laporan PDF:** Hasil analisa bisa didownload dalam bentuk PDF.
-        
+
         **Jangan biarkan peluang cuan lewat begitu saja hanya karena Anda kurang tools profesional.**
         """)
 
     with col_right:
         st.info("### 🔑 Masuk ke Sistem")
-        
+
         st.markdown(f"""
         <div class="promo-box">
             💡 <b>Ingin mencoba aplikasi ini secara gratis?</b><br>
@@ -390,24 +360,20 @@ def login_page():
             nama = st.text_input("👤 Nama Panggilan", placeholder="Contoh: Sobat Cuan")
             wa = st.text_input("📱 Nomor WhatsApp", placeholder="Contoh: 08123456789")
             pw = st.text_input("🔑 Password Akses", type="password", placeholder="Masukkan kode akses / trial...")
-            
+
             submit_button = st.form_submit_button("BUKA AKSES DASHBOARD", use_container_width=True)
-            
+
             if submit_button:
                 kode_permanen = st.secrets.get("PASSWORD_RAHASIA", "KODE_TIDAK_VALID_KARENA_BELUM_DISET_X99")
                 kode_trial = st.secrets.get("TRIAL_CODE", "CUAN14HARI")
-                
-                # Cek dulu apakah wa mengandung karakter selain angka
                 wa_cek_angka = wa.replace("+", "").replace("-", "").replace(" ", "").strip()
-                
-                if nama.strip() == "" or wa.strip() == "": 
+
+                if nama.strip() == "" or wa.strip() == "":
                     st.warning("Mohon isi Nama dan Nomor WhatsApp terlebih dahulu.")
                 elif not wa_cek_angka.isdigit():
                     st.warning("⚠️ Nomor WhatsApp hanya boleh berisi angka.")
                 elif len(wa_cek_angka) < 10:
                     st.warning("⚠️ Nomor WhatsApp tidak valid. Harap isi No WA lengkap.")
-
-                # --- CEK LOGIN ADMIN (Prioritas pertama) ---
                 elif is_admin_login(nama, wa, pw):
                     st.session_state.logged_in = True
                     st.session_state.user_name = nama.strip()
@@ -415,8 +381,6 @@ def login_page():
                     st.session_state.is_trial = False
                     st.session_state.is_admin = True
                     st.rerun()
-
-                # --- CEK LOGIN PERMANEN ---
                 elif pw.strip() == kode_permanen:
                     st.session_state.logged_in = True
                     st.session_state.user_name = nama
@@ -424,11 +388,8 @@ def login_page():
                     st.session_state.is_trial = False
                     st.session_state.is_admin = False
                     st.rerun()
-
-                # --- CEK LOGIN TRIAL ---
                 elif pw.strip() == kode_trial:
                     is_valid, pesan_atau_tanggal = cek_dan_catat_trial(nama, wa)
-                    
                     if is_valid:
                         st.session_state.logged_in = True
                         st.session_state.user_name = nama
@@ -439,10 +400,10 @@ def login_page():
                         st.rerun()
                     else:
                         st.error(pesan_atau_tanggal)
-                else: 
+                else:
                     st.error("❌ Kode akses salah atau sudah kadaluwarsa.")
                     st.info(f"💡 Belum punya kode akses permanen? Anda bisa mencoba gratis selama 14 hari dengan menggunakan password: **{kode_trial}**")
-        
+
         st.markdown("---")
         st.markdown("<p style='text-align: center; color: #A0A0A0;'>Belum punya akses premium seumur hidup?</p>", unsafe_allow_html=True)
         st.link_button("🛒 DAPATKAN KODE AKSES SEKARANG", "https://lynk.id/hahastoresby", use_container_width=True)
@@ -450,7 +411,6 @@ def login_page():
 
 # --- 6A. PANEL ADMIN: KELOLA DATA LIQUID STOCKS ---
 def show_admin_data_panel():
-    """Panel khusus admin untuk menarik, memproses, dan menyimpan data liquid stocks."""
     st.markdown("""
     <div class="admin-panel">
         <h3 style="color: #e74c3c; margin-bottom: 5px;">
@@ -464,7 +424,6 @@ def show_admin_data_panel():
 
     col_a, col_b, col_c = st.columns(3)
 
-    # --- STEP 1: Tarik file pre_liquid_stocks.csv ---
     with col_a:
         st.markdown("**📥 Step 1: Tarik Data Sumber**")
         if st.button("Ambil pre_liquid_stocks.csv\ndari Google Drive", use_container_width=True, key="btn_ambil"):
@@ -477,24 +436,17 @@ def show_admin_data_panel():
             else:
                 st.error("❌ Gagal mengambil file.")
 
-    # --- STEP 2: Proses via data_loader.py ---
     with col_b:
         st.markdown("**⚙️ Step 2: Proses Data**")
         df_pre_ada = 'df_pre_liquid' in st.session_state and st.session_state['df_pre_liquid'] is not None
 
         if st.button("Proses via data_loader.py", use_container_width=True, key="btn_proses", disabled=not df_pre_ada):
             if df_pre_ada:
-                with st.spinner("Memproses data..."):
+                with st.spinner("Memproses data... ini bisa memakan beberapa menit."):
                     try:
-                        import importlib
                         loader = importlib.import_module("modules.data_loader")
-                        # Fungsi process_liquid_stocks(df) harus ada di data_loader.py
-                        # dan mengembalikan DataFrame hasil olahan
                         if hasattr(loader, 'process_liquid_stocks'):
                             df_hasil = loader.process_liquid_stocks(st.session_state['df_pre_liquid'].copy())
-                        elif hasattr(loader, 'run_data_loader'):
-                            # Fallback: jika data_loader punya fungsi run dengan input df
-                            df_hasil = loader.run_data_loader(st.session_state['df_pre_liquid'].copy())
                         else:
                             st.error("⚠️ Fungsi 'process_liquid_stocks' tidak ditemukan di data_loader.py.")
                             df_hasil = None
@@ -511,7 +463,6 @@ def show_admin_data_panel():
             else:
                 st.warning("Ambil data sumber terlebih dahulu di Step 1.")
 
-    # --- STEP 3: Simpan sebagai liquid_stocks.csv ---
     with col_c:
         st.markdown("**💾 Step 3: Simpan ke Google Drive**")
         df_hasil_ada = 'df_liquid_hasil' in st.session_state and st.session_state['df_liquid_hasil'] is not None
@@ -521,8 +472,7 @@ def show_admin_data_panel():
                 with st.spinner("Menyimpan ke Google Drive..."):
                     berhasil = simpan_csv_ke_gdrive(st.session_state['df_liquid_hasil'], "liquid_stocks.csv")
                 if berhasil:
-                    st.success("✅ liquid_stocks.csv berhasil disimpan ke Google Drive! Semua modul kini bisa menggunakan data terbaru.")
-                    # Bersihkan cache session setelah berhasil simpan
+                    st.success("✅ liquid_stocks.csv berhasil disimpan ke Google Drive!")
                     del st.session_state['df_pre_liquid']
                     del st.session_state['df_liquid_hasil']
                 else:
@@ -534,14 +484,12 @@ def show_admin_data_panel():
 
 # --- 6B. DASHBOARD UTAMA ---
 def show_dashboard():
-    # Tampilkan nama + badge admin jika admin
     if st.session_state.is_admin:
         st.markdown(
             f"### 👋 Halo <span style='color:#ff0000'>{st.session_state.user_name}</span> "
             f"<span class='admin-badge'>🔐 ADMIN</span>",
             unsafe_allow_html=True
         )
-        # Tampilkan panel admin di bagian paling atas
         show_admin_data_panel()
     else:
         st.markdown(f"### 👋 Halo Sobat <span style='color:#ff0000'>{st.session_state.user_name}</span>!", unsafe_allow_html=True)
@@ -558,7 +506,7 @@ def show_dashboard():
 #### **3. Kembali ke "Menu Utama"**
 * Bila sudah selesai analisa, klik tombol menu "Menu Utama" untuk kembali ke Beranda.
         """)
-    
+
     st.markdown("<h1 style='text-align: center; color: #ff0000; letter-spacing: 2px;'>📈 EXPERT STOCK PRO</h1>", unsafe_allow_html=True)
     st.write("Silakan pilih menu analisa:")
     st.markdown("---")
@@ -613,12 +561,12 @@ def main_app():
             st.markdown("---")
 
         m = st.session_state.current_menu
-        if m == "screening": load_and_run_module("screening", "run_screening")
+        if m == "screening":     load_and_run_module("screening", "run_screening")
         elif m == "analisa_cepat": load_and_run_module("analisa_cepat", "run_analisa_cepat")
-        elif m == "teknikal": load_and_run_module("teknikal", "run_teknikal")
+        elif m == "teknikal":    load_and_run_module("teknikal", "run_teknikal")
         elif m == "fundamental": load_and_run_module("fundamental", "run_fundamental")
-        elif m == "dividen": load_and_run_module("dividen", "run_dividen")
-        elif m == "perbandingan": load_and_run_module("perbandingan", "run_perbandingan")
+        elif m == "dividen":     load_and_run_module("dividen", "run_dividen")
+        elif m == "perbandingan":load_and_run_module("perbandingan", "run_perbandingan")
 
 if __name__ == "__main__":
     if st.session_state.logged_in:
