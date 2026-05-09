@@ -459,6 +459,11 @@ def show_admin_data_panel():
                 with st.spinner("Memproses data... ini bisa memakan beberapa menit."):
                     try:
                         loader = importlib.import_module("modules.data_loader")
+
+                        # === DEBUG ===
+                        st.write("✅ data_loader berhasil diimport")
+                        st.write("📋 Fungsi tersedia:", [f for f in dir(loader) if not f.startswith('_')])
+                        # === AKHIR DEBUG ===
                         if hasattr(loader, 'process_liquid_stocks'):
                             df_hasil = loader.process_liquid_stocks(st.session_state['df_pre_liquid'].copy())
                         else:
