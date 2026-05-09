@@ -184,26 +184,24 @@ def _get_folder_id(service, folder_name: str):
     return items[0]['id'] if items else None
 
 def ambil_csv_dari_gdrive(nama_file: str):
-    """Mengambil file CSV dari folder GDRIVE_FOLDER_NAME di Google Drive."""
+    """Mengambil file CSV dari Google Drive (cari by name di seluruh Drive)."""
     try:
         from googleapiclient.http import MediaIoBaseDownload
         service = _get_drive_service()
 
-        folder_id = _get_folder_id(service, GDRIVE_FOLDER_NAME)
-        if not folder_id:
-            st.error(f"⚠️ Folder '{GDRIVE_FOLDER_NAME}' tidak ditemukan di Google Drive. "
-                     f"Pastikan folder sudah dibuat dan di-share ke service account.")
-            return None
-
         results = service.files().list(
-            q=f"name='{nama_file}' and mimeType='text/csv' and '{folder_id}' in parents and trashed=false",
+            q=f"name='{nama_file}' and mimeType='text/csv' and trashed=false",
             spaces='drive',
-            fields='files(id, name)'
+            fields='files(id, name)',
+            supportsAllDrives=True,
+            includeItemsFromAllDrives=True
         ).execute()
         items = results.get('files', [])
 
         if not items:
-            st.error(f"⚠️ File '{nama_file}' tidak ditemukan di folder '{GDRIVE_FOLDER_NAME}'.")
+            st.error(f"⚠️ File '{nama_file}' tidak ditemukan di Google Drive. "
+                     f"Pastikan file sudah di-share ke: "
+                     f"`{st.secrets['gcp_service_account']['client_email']}`")
             return None
 
         file_id = items[0]['id']
@@ -221,43 +219,41 @@ def ambil_csv_dari_gdrive(nama_file: str):
         return None
 
 def simpan_csv_ke_gdrive(df: pd.DataFrame, nama_file: str) -> bool:
-    """Menyimpan DataFrame sebagai CSV ke folder GDRIVE_FOLDER_NAME di Google Drive."""
+    """Menyimpan DataFrame sebagai CSV ke Google Drive (update jika sudah ada)."""
     try:
         from googleapiclient.http import MediaIoBaseUpload
         service = _get_drive_service()
-
-        folder_id = _get_folder_id(service, GDRIVE_FOLDER_NAME)
-        if not folder_id:
-            st.error(f"⚠️ Folder '{GDRIVE_FOLDER_NAME}' tidak ditemukan di Google Drive.")
-            return False
 
         csv_buffer = io.StringIO()
         df.to_csv(csv_buffer, index=False)
         csv_bytes = io.BytesIO(csv_buffer.getvalue().encode('utf-8'))
         media = MediaIoBaseUpload(csv_bytes, mimetype='text/csv', resumable=True)
 
+        # Cari file yang sudah ada (untuk overwrite)
         results = service.files().list(
-            q=f"name='{nama_file}' and mimeType='text/csv' and '{folder_id}' in parents and trashed=false",
+            q=f"name='{nama_file}' and mimeType='text/csv' and trashed=false",
             spaces='drive',
-            fields='files(id, name)'
+            fields='files(id, name)',
+            supportsAllDrives=True,
+            includeItemsFromAllDrives=True
         ).execute()
         items = results.get('files', [])
 
         if items:
+            # Update file yang sudah ada
             service.files().update(
                 fileId=items[0]['id'],
-                media_body=media
+                media_body=media,
+                supportsAllDrives=True
             ).execute()
         else:
-            file_metadata = {
-                'name': nama_file,
-                'mimeType': 'text/csv',
-                'parents': [folder_id]
-            }
+            # Buat file baru (tanpa folder, langsung di root Drive service account)
+            file_metadata = {'name': nama_file, 'mimeType': 'text/csv'}
             service.files().create(
                 body=file_metadata,
                 media_body=media,
-                fields='id'
+                fields='id',
+                supportsAllDrives=True
             ).execute()
 
         return True
