@@ -127,3 +127,172 @@ def get_full_stock_data(ticker, interval='1d'):  # ✅ Parameter interval ditamb
     except: pass
 
     return data
+
+
+# --- ENRICHMENT & FILTER (untuk Panel Admin) ---
+def enrich_and_filter(pre_csv_path='pre_liquid_stocks.csv',
+                      out_csv_path='liquid_stocks.csv',
+                      min_value_ma20=2_000_000_000,
+                      min_roe=10.0,
+                      progress_callback=None):
+    """
+    Membaca pre_liquid_stocks.csv, fetch data tiap saham, lalu:
+      - Hitung Value_MA20, ROE, ROA, CAR (Bank), NPL (Bank)
+      - Hitung Median PER & PBV historis 3 tahun per ticker,
+        lalu agregasi menjadi median per sektor
+      - Filter: Value_MA20 >= min_value_ma20, ROE >= min_roe, ROA > 0
+      - Simpan hasilnya ke liquid_stocks.csv
+
+    progress_callback(i, total, ticker) → opsional, untuk progress bar Streamlit.
+    """
+    df_pre = pd.read_csv(pre_csv_path)
+
+    # Normalisasi nama kolom (jaga-jaga spasi/kapital berbeda)
+    df_pre.columns = df_pre.columns.str.strip()
+    col_map = {c: c for c in df_pre.columns}
+    # Pastikan kolom wajib ada
+    required = ['Kode Saham', 'Sektor', 'Syariah', 'Mkt Cap']
+    for r in required:
+        if r not in df_pre.columns:
+            raise ValueError(f"Kolom '{r}' tidak ditemukan di {pre_csv_path}")
+
+    records = []
+    total = len(df_pre)
+
+    for i, row in df_pre.iterrows():
+        ticker_raw = str(row['Kode Saham']).strip()
+        ticker = ticker_raw if ticker_raw.endswith('.JK') else ticker_raw + '.JK'
+        sektor  = row['Sektor']
+        syariah = row['Syariah']
+        mkt_cap = row['Mkt Cap']
+
+        if progress_callback:
+            progress_callback(i, total, ticker)
+
+        rec = {
+            'Kode Saham': ticker_raw,
+            'Sektor': sektor,
+            'Syariah': syariah,
+            'Mkt Cap': mkt_cap,
+            'Value_MA20': None,
+            'ROE': None,
+            'ROA': None,
+            'CAR': None,
+            'NPL': None,
+            '_PER_median_ticker': None,   # sementara, untuk agregasi sektoral
+            '_PBV_median_ticker': None,
+        }
+
+        try:
+            data = get_full_stock_data(ticker, interval='1d')
+            info = data['info']
+            hist = data['history']
+            fin  = data['financials']
+            bs   = data['balance_sheet']
+
+            # ── Value MA20 ──────────────────────────────────────────────
+            if not hist.empty and 'Close' in hist.columns and 'Volume' in hist.columns:
+                hist = hist.copy()
+                hist['Value'] = hist['Close'] * hist['Volume']
+                rec['Value_MA20'] = hist['Value'].tail(20).mean()
+
+            # ── ROE & ROA ────────────────────────────────────────────────
+            # ROE = Net Income / Total Equity
+            # ROA = Net Income / Total Assets
+            try:
+                net_income = None
+                total_equity = None
+                total_assets = None
+
+                if not fin.empty:
+                    ni_keys = ['Net Income', 'NetIncome', 'Net Income Common Stockholders']
+                    for k in ni_keys:
+                        if k in fin.index:
+                            net_income = fin.loc[k].iloc[0]
+                            break
+
+                if not bs.empty:
+                    eq_keys = ['Stockholders Equity', 'Total Stockholders Equity',
+                               'Common Stock Equity', 'Total Equity Gross Minority Interest']
+                    for k in eq_keys:
+                        if k in bs.index:
+                            total_equity = bs.loc[k].iloc[0]
+                            break
+
+                    asset_keys = ['Total Assets', 'TotalAssets']
+                    for k in asset_keys:
+                        if k in bs.index:
+                            total_assets = bs.loc[k].iloc[0]
+                            break
+
+                if net_income and total_equity and total_equity != 0:
+                    rec['ROE'] = round(float(net_income / total_equity) * 100, 2)
+                if net_income and total_assets and total_assets != 0:
+                    rec['ROA'] = round(float(net_income / total_assets) * 100, 2)
+            except:
+                pass
+
+            # ── CAR & NPL (Khusus Bank) ──────────────────────────────────
+            industry = info.get('industry', '')
+            sector_yf = info.get('sector', '')
+            is_bank = 'Bank' in industry or sector_yf == 'Financial Services'
+            if is_bank:
+                rec['CAR'] = info.get('capitalAdequacyRatio')
+                rec['NPL'] = info.get('nonPerformingLoan')
+
+            # ── Median PER & PBV Historis 3 Tahun per Ticker ────────────
+            # Gunakan history 3 tahun + EPS / BV per share dari info
+            # PER  = Close / EPS  → pakai trailingEps dari info (proxy stabil)
+            # PBV  = Close / Book Value per Share
+            try:
+                hist_3y = hist.tail(252 * 3) if len(hist) >= 252 else hist
+                closes = hist_3y['Close']
+
+                eps = info.get('trailingEps')
+                bvps = info.get('bookValue')  # Book Value Per Share
+
+                if eps and eps > 0 and not closes.empty:
+                    per_series = closes / eps
+                    rec['_PER_median_ticker'] = float(per_series.median())
+
+                if bvps and bvps > 0 and not closes.empty:
+                    pbv_series = closes / bvps
+                    rec['_PBV_median_ticker'] = float(pbv_series.median())
+            except:
+                pass
+
+        except Exception as e:
+            print(f"[enrich] Gagal fetch {ticker}: {e}")
+
+        records.append(rec)
+
+    df = pd.DataFrame(records)
+
+    # ── Hitung Median PER & PBV per Sektor ──────────────────────────────
+    sektoral_per = (
+        df.groupby('Sektor')['_PER_median_ticker']
+        .median()
+        .rename('Median_PER_3Y')
+    )
+    sektoral_pbv = (
+        df.groupby('Sektor')['_PBV_median_ticker']
+        .median()
+        .rename('Median_PBV_3Y')
+    )
+    df = df.join(sektoral_per, on='Sektor')
+    df = df.join(sektoral_pbv, on='Sektor')
+
+    # Buang kolom sementara
+    df.drop(columns=['_PER_median_ticker', '_PBV_median_ticker'], inplace=True)
+
+    # ── Filter ───────────────────────────────────────────────────────────
+    before = len(df)
+    df = df[df['Value_MA20'].notna() & (df['Value_MA20'] >= min_value_ma20)]
+    df = df[df['ROE'].notna()        & (df['ROE'] >= min_roe)]
+    df = df[df['ROA'].notna()        & (df['ROA'] > 0)]
+    after = len(df)
+
+    df.reset_index(drop=True, inplace=True)
+    df.to_csv(out_csv_path, index=False)
+
+    return df, before, after
