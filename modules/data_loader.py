@@ -55,7 +55,7 @@ def scrape_local_financial_data(ticker):
     return scraped_data
 
 # --- SATU PINTU DATA (Anti-Rate Limit) ---
-@st.cache_data(ttl=3600, show_spinner=False)
+@st.cache_data(ttl=1, show_spinner=False)  # ttl=1 → cache expired tiap 1 detik (debug mode)
 def get_full_stock_data(ticker, interval='1d'):  # ✅ Parameter interval ditambahkan
     """
     Mengambil semua data sekaligus untuk mencegah error 'Data tidak ditemukan'.
