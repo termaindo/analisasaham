@@ -190,9 +190,9 @@ def ambil_csv_dari_gdrive(nama_file: str):
         service = _get_drive_service()
 
         results = service.files().list(
-            q=f"name='{nama_file}' and mimeType='text/csv' and trashed=false",
+            q=f"name='{nama_file}' and trashed=false",
             spaces='drive',
-            fields='files(id, name)',
+            fields='files(id, name, mimeType)',
             supportsAllDrives=True,
             includeItemsFromAllDrives=True
         ).execute()
@@ -231,9 +231,9 @@ def simpan_csv_ke_gdrive(df: pd.DataFrame, nama_file: str) -> bool:
 
         # Cari file yang sudah ada (untuk overwrite)
         results = service.files().list(
-            q=f"name='{nama_file}' and mimeType='text/csv' and trashed=false",
+            q=f"name='{nama_file}' and trashed=false",
             spaces='drive',
-            fields='files(id, name)',
+            fields='files(id, name, mimeType)',
             supportsAllDrives=True,
             includeItemsFromAllDrives=True
         ).execute()
