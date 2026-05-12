@@ -382,14 +382,14 @@ def process_single_stock(ticker, trade_mode, mtf_filter):
 
         # Nilai akhir indikator bandarmologi
         obv_trend_up  = df['OBV'].iloc[-1] > df['OBV'].iloc[-3]   # OBV naik 3 bar terakhir
-        cmf_positive  = df['CMF'].iloc[-1] > -0.05                     # CMF positif = uang masuk
+        cmf_positive  = df['CMF'].iloc[-1] > 0                     # CMF positif = uang masuk
         vpt_trend_up  = df['VPT'].iloc[-1] > df['VPT'].iloc[-3]   # VPT naik 3 bar terakhir
         vol_sma20     = df['Volume'].rolling(20).mean().iloc[-1]
         rvol          = last['Volume'] / vol_sma20 if vol_sma20 > 0 else 0  # Relative Volume
 
-        # === PRE-FILTER BANDARMOLOGI (wajib — gugur jika tidak lolos) ===
-        # OBV harus trending naik (3 bar) DAN CMF harus positif
-        if not obv_trend_up or not cmf_positive:
+        # === PRE-FILTER BANDARMOLOGI (OR — cukup salah satu lolos) ===
+        # OBV trending naik ATAU CMF > -0.05 (uang belum keluar masif)
+        if not obv_trend_up and not cmf_positive:
             return None
 
         if trade_mode == "Day Trading":
