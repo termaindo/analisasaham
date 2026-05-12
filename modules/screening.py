@@ -359,28 +359,56 @@ def process_single_stock(ticker, trade_mode, mtf_filter):
         score = 0
         alasan = []
 
-        # Hitung Vol_SMA20 untuk kedua mode
-        vol_sma20 = df['Volume'].rolling(20).mean().iloc[-1]
+        # === KALKULASI INDIKATOR BANDARMOLOGI ===
+
+        # -- OBV (On-Balance Volume) --
+        obv = [0]
+        for i in range(1, len(df)):
+            if df['Close'].iloc[i] > df['Close'].iloc[i-1]:
+                obv.append(obv[-1] + df['Volume'].iloc[i])
+            elif df['Close'].iloc[i] < df['Close'].iloc[i-1]:
+                obv.append(obv[-1] - df['Volume'].iloc[i])
+            else:
+                obv.append(obv[-1])
+        df['OBV'] = obv
+
+        # -- CMF (Chaikin Money Flow, periode 20) --
+        mfm = ((df['Close'] - df['Low']) - (df['High'] - df['Close'])) / (df['High'] - df['Low']).replace(0, np.nan)
+        mfv = mfm * df['Volume']
+        df['CMF'] = mfv.rolling(20).sum() / df['Volume'].rolling(20).sum()
+
+        # -- VPT (Volume Price Trend) --
+        df['VPT'] = (df['Close'].pct_change() * df['Volume']).cumsum()
+
+        # Nilai akhir indikator bandarmologi
+        obv_trend_up  = df['OBV'].iloc[-1] > df['OBV'].iloc[-3]   # OBV naik 3 bar terakhir
+        cmf_positive  = df['CMF'].iloc[-1] > 0                     # CMF positif = uang masuk
+        vpt_trend_up  = df['VPT'].iloc[-1] > df['VPT'].iloc[-3]   # VPT naik 3 bar terakhir
+        vol_sma20     = df['Volume'].rolling(20).mean().iloc[-1]
+        rvol          = last['Volume'] / vol_sma20 if vol_sma20 > 0 else 0  # Relative Volume
+
+        # === PRE-FILTER BANDARMOLOGI (wajib — gugur jika tidak lolos) ===
+        # OBV harus trending naik (3 bar) DAN CMF harus positif
+        if not obv_trend_up or not cmf_positive:
+            return None
 
         if trade_mode == "Day Trading":
             # --- SCORING DAY TRADE (Total max: 100, TF: M15) ---
 
-            # 1. Volume Spike: 20 poin jika Vol > 1.2x SMA20, 10 poin jika Vol > SMA20
+            # 1. Volume Spike (tier): 15 poin
             if last['Volume'] > vol_sma20 * 1.2:
-                score += 20
+                score += 15
                 alasan.append("Volume Spike Kuat (>1.2x SMA20)")
             elif last['Volume'] > vol_sma20:
-                score += 10
+                score += 8
                 alasan.append("Volume Spike (>SMA20)")
 
-            # 2. VWAP Alignment: 20 Poin
+            # 2. VWAP Alignment: 15 Poin
             if curr_price > last['VWAP']:
-                score += 20
+                score += 15
                 alasan.append("Price > VWAP")
 
-            # 3. Supertrend (10,2):
-            #    20 poin: baru naik ke atas (candle sebelumnya di bawah)
-            #    15 poin: sudah >3 candle di atas garis hijau
+            # 3. Supertrend (10,2): maks 20 poin
             st_dir_series = df['Supertrend_Dir'].iloc[-5:]
             candles_above = (st_dir_series == 1).sum()
             if last['Supertrend_Dir'] == 1 and prev['Supertrend_Dir'] != 1:
@@ -388,11 +416,11 @@ def process_single_stock(ticker, trade_mode, mtf_filter):
                 alasan.append("Supertrend Baru Bullish (10,2)")
             elif last['Supertrend_Dir'] == 1 and candles_above > 3:
                 score += 15
-                alasan.append(f"Supertrend Bullish >3 Candle (10,2)")
+                alasan.append("Supertrend Bullish >3 Candle (10,2)")
 
-            # 4. MACD Golden Cross (12,26,9): 15 Poin
+            # 4. MACD Golden Cross: 10 Poin
             if last['MACD'] > last['MACD_Signal'] and prev['MACD'] <= prev['MACD_Signal']:
-                score += 15
+                score += 10
                 alasan.append("MACD Golden Cross")
 
             # 5. RSI Momentum (9), rentang ideal 45-70: 7.5 Poin
@@ -405,14 +433,26 @@ def process_single_stock(ticker, trade_mode, mtf_filter):
                 score += 7.5
                 alasan.append(f"RSI Rising ({prev['RSI']:.1f}->{last['RSI']:.1f})")
 
-            # 7. PSAR Acceleration (titik di bawah harga): 10 Poin
+            # 7. PSAR: 5 Poin
             if last['PSAR_Bull']:
-                score += 10
+                score += 5
                 alasan.append("PSAR Bullish")
+
+            # 8. RVOL (Relative Volume): 10 Poin
+            if rvol >= 2.5:
+                score += 10
+                alasan.append(f"RVOL Tinggi ({rvol:.1f}x)")
+            elif rvol >= 1.5:
+                score += 6
+                alasan.append(f"RVOL Moderat ({rvol:.1f}x)")
+
+            # 9. VPT Trend naik: 10 Poin
+            if vpt_trend_up:
+                score += 10
+                alasan.append("VPT Akumulasi Naik")
 
             # --- BONUS / PENALTI DAILY TREND (MTF) ---
             try:
-                # Untuk Day Trade (M15), kita perlu data Daily terpisah untuk konteks tren besar
                 data_daily = get_full_stock_data(ticker, interval='1d')
                 df_daily = data_daily['history']
                 if not df_daily.empty:
@@ -422,7 +462,6 @@ def process_single_stock(ticker, trade_mode, mtf_filter):
                     close_d = last_d['Close']
                     ma50_d  = last_d['MA50_D']
                     ma20_d  = last_d['MA20_D']
-
                     if not pd.isna(ma50_d) and not pd.isna(ma20_d):
                         if close_d > ma50_d and ma20_d > ma50_d:
                             score += 10
@@ -434,7 +473,7 @@ def process_single_stock(ticker, trade_mode, mtf_filter):
                             score -= 15
                             alasan.append("Daily Downtrend (<MA50) -15")
             except Exception:
-                pass  # Jika data daily tidak tersedia, skip bonus MTF
+                pass
 
             # MTF Filter: pastikan supertrend M15 bullish
             if mtf_filter and last['Supertrend_Dir'] != 1:
@@ -443,26 +482,22 @@ def process_single_stock(ticker, trade_mode, mtf_filter):
         else:  # Swing Trading
             # --- SCORING SWING TRADE (Total max: 100, TF: Daily) ---
 
-            # 1. Supertrend (10,3):
-            #    25 poin: baru naik ke atas garis hijau
-            #    20 poin: sudah >3 hari di atas garis hijau
+            # 1. Supertrend (10,3): maks 20 poin
             st_dir_series = df['Supertrend_Dir'].iloc[-5:]
             candles_above = (st_dir_series == 1).sum()
             if last['Supertrend_Dir'] == 1 and prev['Supertrend_Dir'] != 1:
-                score += 25
+                score += 20
                 alasan.append("Supertrend Baru Bullish (10,3)")
             elif last['Supertrend_Dir'] == 1 and candles_above > 3:
-                score += 20
+                score += 15
                 alasan.append("Supertrend Bullish >3 Hari (10,3)")
 
-            # 2. MA Structure (Price > MA50 AND MA20 > MA50): 20 Poin
+            # 2. MA Structure (Price > MA50 AND MA20 > MA50): 15 Poin
             if curr_price > last['MA50'] and last['MA20'] > last['MA50']:
-                score += 20
+                score += 15
                 alasan.append("MA Structure (Price>MA50, MA20>MA50)")
 
-            # 3. MACD: split 7.5 + 7.5
-            #    7.5 poin: MACD Golden Cross (memotong ke atas Signal)
-            #    7.5 poin: Histogram hari ini > kemarin (momentum naik)
+            # 3. MACD: 7.5 + 7.5
             if last['MACD'] > last['MACD_Signal'] and prev['MACD'] <= prev['MACD_Signal']:
                 score += 7.5
                 alasan.append("MACD Golden Cross")
@@ -470,42 +505,49 @@ def process_single_stock(ticker, trade_mode, mtf_filter):
                 score += 7.5
                 alasan.append("MACD Histogram Growing")
 
-            # 4. Volume Spike: 15 poin jika Vol > 1.2x Vol_MA20
+            # 4. Volume Spike: 10 poin jika Vol > 1.2x Vol_MA20
             if last['Volume'] > vol_sma20 * 1.2:
-                score += 15
+                score += 10
                 alasan.append("Volume Spike (>1.2x MA20)")
 
-            # 5. RSI Momentum (14), rentang ideal 50-70: 10 Poin
+            # 5. RSI Momentum (14), rentang ideal 50-70: 7.5 Poin
             if 50 <= last['RSI'] <= 70:
-                score += 10
+                score += 7.5
                 alasan.append(f"RSI Momentum ({last['RSI']:.1f})")
 
-            # 6. RSI Trend (14), slope naik: 10 Poin
+            # 6. RSI Trend (14), slope naik: 7.5 Poin
             if last['RSI'] > prev['RSI']:
-                score += 10
+                score += 7.5
                 alasan.append(f"RSI Rising ({prev['RSI']:.1f}->{last['RSI']:.1f})")
 
-            # 7. PSAR: 5 poin jika titik PSAR pindah ke bawah harga
-            if last['PSAR_Bull'] and not df['PSAR_Bull'].iloc[-2]:
-                score += 5
-                alasan.append("PSAR Baru Pindah ke Bawah Harga")
-            elif last['PSAR_Bull']:
-                # tetap beri 5 poin jika sudah di bawah (agar tidak kehilangan sinyal konfirmasi)
+            # 7. PSAR: 5 Poin
+            if last['PSAR_Bull']:
                 score += 5
                 alasan.append("PSAR Konfirmasi Tren Naik")
 
+            # 8. RVOL: 10 Poin
+            if rvol >= 2.5:
+                score += 10
+                alasan.append(f"RVOL Tinggi ({rvol:.1f}x)")
+            elif rvol >= 1.5:
+                score += 6
+                alasan.append(f"RVOL Moderat ({rvol:.1f}x)")
+
+            # 9. VPT Trend naik: 10 Poin
+            if vpt_trend_up:
+                score += 10
+                alasan.append("VPT Akumulasi Naik")
+
             # --- BONUS / PENALTI SWING ---
-            # +10: MACD di area negatif tapi histogram sudah mulai naik (divergensi positif awal)
             if last['MACD'] < 0 and last['MACD_Hist'] > prev['MACD_Hist']:
                 score += 10
-                alasan.append("MACD Negatif tapi Histogram Naik (+10)")
+                alasan.append("MACD Early Recovery (+10)")
 
-            # -15: RSI overbought > 75
             if last['RSI'] > 75:
                 score -= 15
                 alasan.append(f"RSI Overbought ({last['RSI']:.1f}) -15")
 
-            # MTF Filter: pastikan supertrend bullish dan MA structure terpenuhi
+            # MTF Filter
             if mtf_filter and not (last['Supertrend_Dir'] == 1 and curr_price > last['MA50']):
                 return None
 
@@ -685,8 +727,8 @@ def run_screening():
             f_score = min(round(f_score), 100)
 
             # --- PROTEKSI BERLAPIS: SL/TP ---
-            # ATR SL
-            sl_mult = 1.5 if trade_mode == "Day Trading" else 2.0
+            # ATR SL: multiplier lebih lebar agar tidak mudah tereksekusi noise
+            sl_mult = 1.8 if trade_mode == "Day Trading" else 2.5
             atr_sl = int(stock['Harga'] - (sl_mult * stock['ATR']))
 
             # Hard Cap SL: maks -3% (Day Trade) atau -8% (Swing)
