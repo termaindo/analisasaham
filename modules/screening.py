@@ -381,8 +381,8 @@ def process_single_stock(ticker, trade_mode, mtf_filter):
         df['VPT'] = (df['Close'].pct_change() * df['Volume']).cumsum()
 
         # Nilai akhir indikator bandarmologi
-        obv_trend_up  = df['OBV'].iloc[-1] > df['OBV'].iloc[-3]   # OBV naik 3 bar terakhir
-        cmf_positive  = df['CMF'].iloc[-1] > 0                     # CMF positif = uang masuk
+        obv_trend_up  = df['OBV'].iloc[-1] > df['OBV'].iloc[-5]   # OBV naik 5 bar terakhir
+        cmf_positive  = df['CMF'].iloc[-1] > -0.1                  # CMF threshold -0.1
         vpt_trend_up  = df['VPT'].iloc[-1] > df['VPT'].iloc[-3]   # VPT naik 3 bar terakhir
         vol_sma20     = df['Volume'].rolling(20).mean().iloc[-1]
         rvol          = last['Volume'] / vol_sma20 if vol_sma20 > 0 else 0  # Relative Volume
