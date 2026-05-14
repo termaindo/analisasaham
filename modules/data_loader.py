@@ -85,7 +85,65 @@ def get_full_stock_data(ticker, interval='1d'):
     return data
 
 
-# --- NORMALISASI KOLOM (dipakai enrich_and_filter & process_liquid_stocks) ---
+# --- LOAD LIQUID STOCKS DARI GOOGLE DRIVE (Dipakai semua modul) ---
+@st.cache_data(ttl=60*60*24, show_spinner=False)
+def get_liquid_stocks() -> pd.DataFrame:
+    """
+    Mengambil liquid_stocks.csv dari Google Drive dan menyimpannya di cache.
+    Dipanggil oleh semua modul (screening, analisa_cepat, fundamental, dll).
+    Cache TTL 24 jam — otomatis refresh setiap hari atau saat admin update.
+    Mengembalikan DataFrame kosong jika file belum ada atau gagal diambil.
+    """
+    try:
+        from googleapiclient.discovery import build
+        from googleapiclient.http import MediaIoBaseDownload
+        from google.oauth2.service_account import Credentials as SACredentials
+        import io
+
+        scopes   = ['https://www.googleapis.com/auth/drive']
+        s_creds  = dict(st.secrets["gcp_service_account"])
+        pk       = str(s_creds.get("private_key", ""))
+        pk       = pk.replace("\\n", "\n").replace("\\r", "").strip('"').strip("'").strip()
+        if "-----BEGIN PRIVATE KEY-----" not in pk:
+            pk = "-----BEGIN PRIVATE KEY-----\n" + pk
+        if "-----END PRIVATE KEY-----" not in pk:
+            pk = pk + "\n-----END PRIVATE KEY-----\n"
+        s_creds["private_key"] = pk
+
+        creds   = SACredentials.from_service_account_info(s_creds, scopes=scopes)
+        service = build('drive', 'v3', credentials=creds)
+
+        results = service.files().list(
+            q="name='liquid_stocks.csv' and trashed=false",
+            spaces='drive',
+            fields='files(id, name)',
+            supportsAllDrives=True,
+            includeItemsFromAllDrives=True
+        ).execute()
+        items = results.get('files', [])
+
+        if not items:
+            return pd.DataFrame()
+
+        request    = service.files().get_media(fileId=items[0]['id'])
+        fh         = io.BytesIO()
+        downloader = MediaIoBaseDownload(fh, request)
+        done       = False
+        while not done:
+            _, done = downloader.next_chunk()
+        fh.seek(0)
+        return pd.read_csv(fh)
+
+    except Exception as e:
+        print(f"[get_liquid_stocks] Gagal load dari Google Drive: {e}")
+        return pd.DataFrame()
+
+
+def clear_liquid_stocks_cache():
+    """Dipanggil admin setelah Step 3 selesai agar semua user dapat data terbaru."""
+    get_liquid_stocks.clear()
+
+
 def _normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
     """
     Menormalisasi nama kolom DataFrame agar selalu konsisten,
