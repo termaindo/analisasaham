@@ -494,6 +494,13 @@ def show_admin_data_panel():
                     berhasil = simpan_csv_ke_gdrive(st.session_state['df_liquid_hasil'], "liquid_stocks.csv")
                 if berhasil:
                     st.success("✅ liquid_stocks.csv berhasil disimpan ke Google Drive!")
+                    # Hapus cache agar semua user langsung pakai data terbaru
+                    try:
+                        from modules.data_loader import clear_liquid_stocks_cache
+                        clear_liquid_stocks_cache()
+                        st.info("🔄 Cache data diperbarui — semua user akan memakai data terbaru.")
+                    except Exception as e:
+                        st.warning(f"⚠️ Cache tidak bisa dihapus otomatis: {e}")
                     del st.session_state['df_pre_liquid']
                     del st.session_state['df_liquid_hasil']
                 else:
