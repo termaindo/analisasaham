@@ -157,28 +157,23 @@ def enrich_and_filter(pre_csv_path='pre_liquid_stocks.csv',
             raise ValueError(f"Kolom '{r}' tidak ditemukan di {pre_csv_path}")
 
     records = []
-    total = len(df_pre)
+    total = len(df)
 
-    for i, row in df_pre.iterrows():
-        ticker_raw = str(row[col_map['Kode Saham']]).strip()
+    for i, row in df.iterrows():
+        ticker_raw = str(row['Kode Saham']).strip()
         ticker = ticker_raw if ticker_raw.endswith('.JK') else ticker_raw + '.JK'
-        sektor  = row[col_map['Sektor']]
-        syariah = row[col_map['Syariah']]
-        mkt_cap = row[col_map['Mkt Cap']]
+        sektor  = row['Sektor']
+        syariah = row['Syariah']
+        mkt_cap = row['Mkt Cap']
 
-        # Ambil ROE, ROA, NPM dari file jika tersedia (tidak perlu fetch yfinance)
-        roe_from_file = None
-        roa_from_file = None
-        npm_from_file = None
-        if col_map['ROE'] and col_map['ROE'] in row.index:
-            try: roe_from_file = float(str(row[col_map['ROE']]).replace('%','').replace(',','.').strip())
-            except: pass
-        if col_map['ROA'] and col_map['ROA'] in row.index:
-            try: roa_from_file = float(str(row[col_map['ROA']]).replace('%','').replace(',','.').strip())
-            except: pass
-        if col_map['NPM'] and col_map['NPM'] in row.index:
-            try: npm_from_file = float(str(row[col_map['NPM']]).replace('%','').replace(',','.').strip())
-            except: pass
+        # Ambil ROE, ROA, NPM dari file jika tersedia
+        def parse_pct(val):
+            try: return float(str(val).replace('%','').replace(',','.').strip())
+            except: return None
+
+        roe_from_file = parse_pct(row.get('ROE')) if 'ROE' in df.columns else None
+        roa_from_file = parse_pct(row.get('ROA')) if 'ROA' in df.columns else None
+        npm_from_file = parse_pct(row.get('NPM')) if 'NPM' in df.columns else None
 
         if progress_callback:
             progress_callback(i, total, ticker)
@@ -299,7 +294,7 @@ def enrich_and_filter(pre_csv_path='pre_liquid_stocks.csv',
     # Buang kolom sementara
     df.drop(columns=['_PER_median_ticker', '_PBV_median_ticker'], inplace=True)
 
-    # ── Filter ───────────────────────────────────────────────────────────
+    # Filter: Value_MA20, ROE, ROA
     before = len(df)
     df = df[df['Value_MA20'].notna() & (df['Value_MA20'] >= min_value_ma20)]
     df = df[df['ROE'].notna()        & (df['ROE'] >= min_roe)]
