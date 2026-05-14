@@ -13,182 +13,162 @@ def hitung_div_yield_normal(info):
     return float(raw_yield) if raw_yield > 1 else float(raw_yield * 100)
 
 def scrape_local_financial_data(ticker):
-    """
-    Fungsi untuk menyedot data spesifik (CAR, NPL) dari portal lokal 
-    jika yfinance tidak menyediakannya.
-    """
+    """Menyedot data CAR & NPL dari portal lokal untuk saham Bank."""
     clean_ticker = ticker.replace('.JK', '')
-    
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36'
-    }
-    
-    scraped_data = {
-        'CAR': None,
-        'NPL': None,
-    }
-    
+    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
+    scraped_data = {'CAR': None, 'NPL': None}
     try:
         url = f"https://www.idnfinancials.com/id/{clean_ticker}/financial-ratios"
         response = requests.get(url, headers=headers, timeout=10)
-        
         if response.status_code == 200:
             soup = BeautifulSoup(response.text, 'html.parser')
-            
-            car_row = soup.find(string=lambda text: text and ('Capital Adequacy Ratio' in text or 'CAR' in text))
+            car_row = soup.find(string=lambda t: t and ('Capital Adequacy Ratio' in t or 'CAR' in t))
             if car_row:
                 try:
-                    car_value_str = car_row.find_next('td').text.strip()
-                    scraped_data['CAR'] = float(car_value_str.replace('%', '').replace(',', '.'))
+                    scraped_data['CAR'] = float(car_row.find_next('td').text.strip().replace('%','').replace(',','.'))
                 except: pass
-                
-            npl_row = soup.find(string=lambda text: text and ('Non-Performing Loan' in text or 'NPL' in text))
+            npl_row = soup.find(string=lambda t: t and ('Non-Performing Loan' in t or 'NPL' in t))
             if npl_row:
                 try:
-                    npl_value_str = npl_row.find_next('td').text.strip()
-                    scraped_data['NPL'] = float(npl_value_str.replace('%', '').replace(',', '.'))
+                    scraped_data['NPL'] = float(npl_row.find_next('td').text.strip().replace('%','').replace(',','.'))
                 except: pass
-                
     except Exception as e:
-        print(f"Peringatan: Gagal melakukan scraping untuk {ticker}. Menggunakan nilai default. Detail: {e}")
-        
+        print(f"Peringatan: Gagal scraping {ticker}: {e}")
     return scraped_data
 
 # --- SATU PINTU DATA (Anti-Rate Limit) ---
-@st.cache_data(ttl=1, show_spinner=False)  # ttl=1 → cache expired tiap 1 detik (debug mode)
-def get_full_stock_data(ticker, interval='1d'):  # ✅ Parameter interval ditambahkan
+@st.cache_data(ttl=3600, show_spinner=False)
+def get_full_stock_data(ticker, interval='1d'):
     """
     Mengambil semua data sekaligus untuk mencegah error 'Data tidak ditemukan'.
     Sudah terintegrasi dengan scraping khusus sektor perbankan.
-
-    Parameter:
-        ticker   : Kode saham (contoh: 'BBCA.JK')
-        interval : Interval candle yfinance (default: '1d').
-                   Nilai valid: '1m','2m','5m','15m','30m','60m',
-                                '90m','1h','1d','5d','1wk','1mo','3mo'
-                   Catatan: interval menit hanya tersedia untuk data < 60 hari.
     """
-
-    # Sesuaikan period otomatis berdasarkan interval
-    # (interval pendek butuh period lebih singkat agar tidak error di yfinance)
     _period_map = {
-        '1m': '7d', '2m': '60d', '5m': '60d',
-        '15m': '60d', '30m': '60d', '60m': '730d',
-        '90m': '60d', '1h': '730d',
-        '1d': '2y', '5d': '2y', '1wk': '5y',
-        '1mo': '10y', '3mo': '10y'
+        '1m': '7d',  '2m': '60d', '5m': '60d',
+        '15m': '60d','30m': '60d','60m': '730d',
+        '90m': '60d','1h': '730d',
+        '1d': '2y',  '5d': '2y', '1wk': '5y',
+        '1mo': '10y','3mo': '10y'
     }
     period = _period_map.get(interval, '2y')
-
     stock = yf.Ticker(ticker)
     data = {
-        "info": {},
-        "history": pd.DataFrame(),
-        "financials": pd.DataFrame(),
-        "balance_sheet": pd.DataFrame(),
-        "cashflow": pd.DataFrame(),
-        "dividends": pd.Series(dtype='float64')
+        "info": {}, "history": pd.DataFrame(),
+        "financials": pd.DataFrame(), "balance_sheet": pd.DataFrame(),
+        "cashflow": pd.DataFrame(), "dividends": pd.Series(dtype='float64')
     }
-
-    # 1. Ambil History dengan interval & period yang sesuai
     try:
-        df = stock.history(period=period, interval=interval)  # ✅ interval diteruskan ke yfinance
+        df = stock.history(period=period, interval=interval)
         if not df.empty:
             df.index = df.index.tz_localize(None)
             data["history"] = df
     except: pass
-
-    # 2. Ambil Info, Scraping (jika Bank), & Dividen
     try:
         info = stock.info
-        
         industry = info.get('industry', '')
-        sector = info.get('sector', '')
-        is_bank = 'Bank' in industry or sector == 'Financial Services'
-        
-        if is_bank:
+        sector   = info.get('sector', '')
+        if 'Bank' in industry or sector == 'Financial Services':
             local_data = scrape_local_financial_data(ticker)
             info['capitalAdequacyRatio'] = local_data['CAR'] if local_data['CAR'] is not None else 18.0
-            info['nonPerformingLoan'] = local_data['NPL'] if local_data['NPL'] is not None else 2.5
-        
+            info['nonPerformingLoan']    = local_data['NPL'] if local_data['NPL'] is not None else 2.5
         data["info"] = info
-        
         divs = stock.dividends
         if divs.empty:
             divs = stock.actions['Dividends'] if 'Dividends' in stock.actions else pd.Series(dtype='float64')
         data["dividends"] = divs
     except: pass
-
-    # 3. Ambil Laporan Keuangan, Neraca & Cashflow
     try:
-        data["financials"] = stock.financials
+        data["financials"]    = stock.financials
         data["balance_sheet"] = stock.balance_sheet
-        data["cashflow"] = stock.cashflow
+        data["cashflow"]      = stock.cashflow
     except: pass
-
     return data
 
 
+# --- NORMALISASI KOLOM (dipakai enrich_and_filter & process_liquid_stocks) ---
+def _normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Menormalisasi nama kolom DataFrame agar selalu konsisten,
+    terlepas dari variasi nama kolom di file CSV yang diupload user.
+    Contoh: 'Ticker', 'Kode Saham', 'kode saham' → semua jadi 'Ticker'
+    """
+    df = df.copy()
+    df.columns = df.columns.str.strip()
+    rename_map = {}
+    for col in df.columns:
+        c = col.lower().strip().lstrip('\ufeff')  # hapus BOM jika ada
+        if c in ('ticker', 'kode saham', 'kode', 'saham'):
+            rename_map[col] = 'Ticker'
+        elif c in ('sektor', 'sector'):
+            rename_map[col] = 'Sektor'
+        elif c in ('syariah',):
+            rename_map[col] = 'Syariah'
+        elif c in ('mktcap', 'mkt cap', 'market cap', 'market_cap'):
+            rename_map[col] = 'MktCap'
+        elif c.startswith('roe'):
+            rename_map[col] = 'ROE'
+        elif c.startswith('roa'):
+            rename_map[col] = 'ROA'
+        elif c.startswith('npm') or 'profit margin' in c:
+            rename_map[col] = 'NPM'
+    return df.rename(columns=rename_map)
+
+
 # --- ENRICHMENT & FILTER (untuk Panel Admin) ---
-def enrich_and_filter(pre_csv_path='pre_liquid_stocks.csv',
-                      out_csv_path='liquid_stocks.csv',
-                      min_value_ma20=2_000_000_000,
-                      min_roe=10.0,
+def enrich_and_filter(df_input: pd.DataFrame,
+                      min_value_ma20: int = 2_000_000_000,
+                      min_roe: float = 10.0,
                       progress_callback=None):
     """
-    Membaca pre_liquid_stocks.csv, fetch data tiap saham, lalu:
-      - Hitung Value_MA20, ROE, ROA, CAR (Bank), NPL (Bank)
-      - Hitung Median PER & PBV historis 3 tahun per ticker,
-        lalu agregasi menjadi median per sektor
-      - Filter: Value_MA20 >= min_value_ma20, ROE >= min_roe, ROA > 0
-      - Simpan hasilnya ke liquid_stocks.csv
+    Menerima DataFrame dari pre_liquid_stocks.csv (sudah dinormalisasi),
+    fetch data tiap saham, hitung Value_MA20, ROE, ROA, CAR, NPL,
+    Median PER & PBV 3 tahun per sektor, lalu filter dan kembalikan DataFrame.
 
-    progress_callback(i, total, ticker) → opsional, untuk progress bar Streamlit.
+    progress_callback(i, total, ticker) → opsional untuk progress bar.
     """
-    df_pre = pd.read_csv(pre_csv_path, sep=None, engine='python')  # auto-detect separator
+    df_pre = _normalize_columns(df_input)
 
-    # Normalisasi nama kolom (jaga-jaga spasi/kapital berbeda)
-    df_pre.columns = df_pre.columns.str.strip()
-    col_map = {c: c for c in df_pre.columns}
-    # Pastikan kolom wajib ada
-    required = ['Kode Saham', 'Sektor', 'Syariah', 'Mkt Cap']
-    for r in required:
-        if r not in df_pre.columns:
-            raise ValueError(f"Kolom '{r}' tidak ditemukan di {pre_csv_path}")
+    # Validasi kolom wajib
+    required = ['Ticker', 'Sektor', 'Syariah', 'MktCap']
+    missing  = [r for r in required if r not in df_pre.columns]
+    if missing:
+        raise ValueError(
+            f"Kolom wajib tidak ditemukan setelah normalisasi: {missing}. "
+            f"Kolom tersedia: {list(df_pre.columns)}"
+        )
+
+    def parse_pct(val):
+        try: return float(str(val).replace('%','').replace(',','.').strip())
+        except: return None
 
     records = []
-    total = len(df)
+    total   = len(df_pre)
 
-    for i, row in df.iterrows():
-        ticker_raw = str(row['Kode Saham']).strip()
-        ticker = ticker_raw if ticker_raw.endswith('.JK') else ticker_raw + '.JK'
-        sektor  = row['Sektor']
-        syariah = row['Syariah']
-        mkt_cap = row['Mkt Cap']
+    for i, row in df_pre.iterrows():
+        ticker_raw = str(row['Ticker']).strip().replace('.JK', '')
+        ticker     = ticker_raw + '.JK'
+        sektor     = row['Sektor']
+        syariah    = row['Syariah']
+        mkt_cap    = row['MktCap']
 
-        # Ambil ROE, ROA, NPM dari file jika tersedia
-        def parse_pct(val):
-            try: return float(str(val).replace('%','').replace(',','.').strip())
-            except: return None
-
-        roe_from_file = parse_pct(row.get('ROE')) if 'ROE' in df.columns else None
-        roa_from_file = parse_pct(row.get('ROA')) if 'ROA' in df.columns else None
-        npm_from_file = parse_pct(row.get('NPM')) if 'NPM' in df.columns else None
+        roe_from_file = parse_pct(row.get('ROE')) if 'ROE' in df_pre.columns else None
+        roa_from_file = parse_pct(row.get('ROA')) if 'ROA' in df_pre.columns else None
+        npm_from_file = parse_pct(row.get('NPM')) if 'NPM' in df_pre.columns else None
 
         if progress_callback:
             progress_callback(i, total, ticker)
 
         rec = {
-            'Kode Saham': ticker_raw,
-            'Sektor': sektor,
-            'Syariah': syariah,
-            'Mkt Cap': mkt_cap,
+            'Ticker':    ticker_raw,
+            'Sektor':    sektor,
+            'Syariah':   syariah,
+            'MktCap':    mkt_cap,
             'Value_MA20': None,
-            'ROE': roe_from_file,   # ✅ dari file, bukan fetch
-            'ROA': roa_from_file,   # ✅ dari file, bukan fetch
-            'NPM': npm_from_file,   # ✅ dari file, bukan fetch
-            'CAR': None,
-            'NPL': None,
+            'ROE':  roe_from_file,
+            'ROA':  roa_from_file,
+            'NPM':  npm_from_file,
+            'CAR':  None,
+            'NPL':  None,
             '_PER_median_ticker': None,
             '_PBV_median_ticker': None,
         }
@@ -200,75 +180,49 @@ def enrich_and_filter(pre_csv_path='pre_liquid_stocks.csv',
             fin  = data['financials']
             bs   = data['balance_sheet']
 
-            # ── Value MA20 ──────────────────────────────────────────────
+            # ── Value MA20 ───────────────────────────────────────────────
             if not hist.empty and 'Close' in hist.columns and 'Volume' in hist.columns:
-                hist = hist.copy()
-                hist['Value'] = hist['Close'] * hist['Volume']
-                rec['Value_MA20'] = hist['Value'].tail(20).mean()
+                h = hist.copy()
+                h['Value']        = h['Close'] * h['Volume']
+                rec['Value_MA20'] = h['Value'].tail(20).mean()
 
-            # ── ROE & ROA: hanya fetch dari yfinance jika TIDAK ada di file ──
+            # ── ROE & ROA: fetch yfinance hanya jika tidak ada di file ───
             if rec['ROE'] is None or rec['ROA'] is None:
                 try:
-                    net_income   = None
-                    total_equity = None
-                    total_assets = None
-
+                    net_income = total_equity = total_assets = None
                     if not fin.empty:
-                        ni_keys = ['Net Income', 'NetIncome', 'Net Income Common Stockholders']
-                        for k in ni_keys:
+                        for k in ['Net Income','NetIncome','Net Income Common Stockholders']:
                             if k in fin.index:
-                                net_income = fin.loc[k].iloc[0]
-                                break
-
+                                net_income = fin.loc[k].iloc[0]; break
                     if not bs.empty:
-                        eq_keys = ['Stockholders Equity', 'Total Stockholders Equity',
-                                   'Common Stock Equity', 'Total Equity Gross Minority Interest']
-                        for k in eq_keys:
+                        for k in ['Stockholders Equity','Total Stockholders Equity',
+                                  'Common Stock Equity','Total Equity Gross Minority Interest']:
                             if k in bs.index:
-                                total_equity = bs.loc[k].iloc[0]
-                                break
-
-                        asset_keys = ['Total Assets', 'TotalAssets']
-                        for k in asset_keys:
+                                total_equity = bs.loc[k].iloc[0]; break
+                        for k in ['Total Assets','TotalAssets']:
                             if k in bs.index:
-                                total_assets = bs.loc[k].iloc[0]
-                                break
-
+                                total_assets = bs.loc[k].iloc[0]; break
                     if rec['ROE'] is None and net_income and total_equity and total_equity != 0:
                         rec['ROE'] = round(float(net_income / total_equity) * 100, 2)
                     if rec['ROA'] is None and net_income and total_assets and total_assets != 0:
                         rec['ROA'] = round(float(net_income / total_assets) * 100, 2)
-                except:
-                    pass
+                except: pass
 
             # ── CAR & NPL (Khusus Bank) ──────────────────────────────────
-            industry = info.get('industry', '')
-            sector_yf = info.get('sector', '')
-            is_bank = 'Bank' in industry or sector_yf == 'Financial Services'
-            if is_bank:
+            if 'Bank' in info.get('industry','') or info.get('sector','') == 'Financial Services':
                 rec['CAR'] = info.get('capitalAdequacyRatio')
                 rec['NPL'] = info.get('nonPerformingLoan')
 
             # ── Median PER & PBV Historis 3 Tahun per Ticker ────────────
-            # Gunakan history 3 tahun + EPS / BV per share dari info
-            # PER  = Close / EPS  → pakai trailingEps dari info (proxy stabil)
-            # PBV  = Close / Book Value per Share
             try:
-                hist_3y = hist.tail(252 * 3) if len(hist) >= 252 else hist
-                closes = hist_3y['Close']
-
-                eps = info.get('trailingEps')
-                bvps = info.get('bookValue')  # Book Value Per Share
-
-                if eps and eps > 0 and not closes.empty:
-                    per_series = closes / eps
-                    rec['_PER_median_ticker'] = float(per_series.median())
-
+                closes = hist.tail(252 * 3)['Close'] if len(hist) >= 252 else hist['Close']
+                eps  = info.get('trailingEps')
+                bvps = info.get('bookValue')
+                if eps  and eps  > 0 and not closes.empty:
+                    rec['_PER_median_ticker'] = float((closes / eps).median())
                 if bvps and bvps > 0 and not closes.empty:
-                    pbv_series = closes / bvps
-                    rec['_PBV_median_ticker'] = float(pbv_series.median())
-            except:
-                pass
+                    rec['_PBV_median_ticker'] = float((closes / bvps).median())
+            except: pass
 
         except Exception as e:
             print(f"[enrich] Gagal fetch {ticker}: {e}")
@@ -277,24 +231,12 @@ def enrich_and_filter(pre_csv_path='pre_liquid_stocks.csv',
 
     df = pd.DataFrame(records)
 
-    # ── Hitung Median PER & PBV per Sektor ──────────────────────────────
-    sektoral_per = (
-        df.groupby('Sektor')['_PER_median_ticker']
-        .median()
-        .rename('Median_PER_3Y')
-    )
-    sektoral_pbv = (
-        df.groupby('Sektor')['_PBV_median_ticker']
-        .median()
-        .rename('Median_PBV_3Y')
-    )
-    df = df.join(sektoral_per, on='Sektor')
-    df = df.join(sektoral_pbv, on='Sektor')
+    # ── Agregasi Median PER & PBV per Sektor ────────────────────────────
+    df = df.join(df.groupby('Sektor')['_PER_median_ticker'].median().rename('Median_PER_3Y'), on='Sektor')
+    df = df.join(df.groupby('Sektor')['_PBV_median_ticker'].median().rename('Median_PBV_3Y'), on='Sektor')
+    df.drop(columns=['_PER_median_ticker','_PBV_median_ticker'], inplace=True)
 
-    # Buang kolom sementara
-    df.drop(columns=['_PER_median_ticker', '_PBV_median_ticker'], inplace=True)
-
-    # Filter: Value_MA20, ROE, ROA
+    # ── Filter ───────────────────────────────────────────────────────────
     before = len(df)
     df = df[df['Value_MA20'].notna() & (df['Value_MA20'] >= min_value_ma20)]
     df = df[df['ROE'].notna()        & (df['ROE'] >= min_roe)]
@@ -302,8 +244,6 @@ def enrich_and_filter(pre_csv_path='pre_liquid_stocks.csv',
     after = len(df)
 
     df.reset_index(drop=True, inplace=True)
-    df.to_csv(out_csv_path, index=False)
-
     return df, before, after
 
 
@@ -312,39 +252,25 @@ def process_liquid_stocks(df_pre: pd.DataFrame,
                           min_value_ma20: int = 2_000_000_000,
                           min_roe: float = 10.0) -> pd.DataFrame:
     """
-    Wrapper yang dipanggil oleh app.py di Step 2 panel admin.
-    Menerima DataFrame dari pre_liquid_stocks.csv,
-    menjalankan enrich_and_filter(), dan mengembalikan df hasil.
-
-    Parameter:
-        df_pre        : DataFrame dari pre_liquid_stocks.csv
-        min_value_ma20: Filter minimum Value MA20 (default Rp 2 M)
-        min_roe       : Filter minimum ROE dalam % (default 10%)
-
-    Return:
-        DataFrame hasil enrichment yang siap disimpan sebagai liquid_stocks.csv
+    Dipanggil oleh app.py di Step 2 panel admin.
+    Menerima DataFrame langsung — TANPA file temporary.
     """
-    import tempfile, os
+    df_hasil, before, after = enrich_and_filter(
+        df_input=df_pre,
+        min_value_ma20=min_value_ma20,
+        min_roe=min_roe,
+    )
 
-    # Simpan df_pre ke file sementara agar bisa dibaca enrich_and_filter()
-    with tempfile.NamedTemporaryFile(mode='w', suffix='.csv',
-                                     delete=False, encoding='utf-8') as tmp_in:
-        df_pre.to_csv(tmp_in, index=False)
-        tmp_in_path = tmp_in.name
+    st.info(f"📊 Total awal: {before} saham → Lolos filter: {after} saham")
 
-    tmp_out_path = tmp_in_path.replace('.csv', '_out.csv')
-
-    try:
-        df_hasil, _, _ = enrich_and_filter(
-            pre_csv_path=tmp_in_path,
-            out_csv_path=tmp_out_path,
-            min_value_ma20=min_value_ma20,
-            min_roe=min_roe,
-            progress_callback=None   # progress bar dihandle app.py via st.spinner
+    if before > 0 and after == 0:
+        st.warning("⚠️ Semua saham dibuang filter. Menampilkan 5 sampel tanpa filter:")
+        df_debug, _, _ = enrich_and_filter(
+            df_input=df_pre,
+            min_value_ma20=0,
+            min_roe=-999,
         )
-    finally:
-        # Bersihkan file sementara
-        if os.path.exists(tmp_in_path):  os.remove(tmp_in_path)
-        if os.path.exists(tmp_out_path): os.remove(tmp_out_path)
+        cols = [c for c in ['Ticker','Value_MA20','ROE','ROA'] if c in df_debug.columns]
+        st.dataframe(df_debug[cols].head(5), use_container_width=True)
 
     return df_hasil
