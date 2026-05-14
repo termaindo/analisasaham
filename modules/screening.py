@@ -331,27 +331,32 @@ def process_single_stock(ticker, trade_mode, mtf_filter, df_universe):
         prev = df.iloc[-2]
         curr_price = last['Close']
 
-        # ── Sektor & Syariah dari universe CSV (bukan yfinance) ──────────
-        sektor_nama   = get_sector_from_universe(ticker_bersih, df_universe)
+        # ── Sektor & Syariah dari universe ──────────────────────────────
+        sektor_nama    = get_sector_from_universe(ticker_bersih, df_universe)
         syariah_status = "Ya" if is_syariah_from_universe(ticker_bersih, df_universe) else "Tidak"
 
-        # ── ROE, ROA, NPM dari universe CSV jika tersedia ────────────────
-        fundamental   = get_fundamental_from_universe(ticker_bersih, df_universe)
+        # ── ROE, ROA, NPM dari universe (liquid_stocks atau pre_liquid) ──
+        fundamental = get_fundamental_from_universe(ticker_bersih, df_universe)
         roe = fundamental['ROE']
         roa = fundamental['ROA']
 
         # Fallback ke yfinance jika tidak ada di file
         if roe is None:
             roe = data.get('info', {}).get('returnOnEquity', None)
-            if roe is not None: roe = roe * 100  # yfinance pakai desimal
+            if roe is not None: roe = roe * 100
         if roa is None:
             roa = data.get('info', {}).get('returnOnAssets', None)
             if roa is not None: roa = roa * 100
 
         # === PRE-FILTER WAJIB ===
 
-        # 1. Likuiditas: Value_MA20
-        value_ma20 = (df['Close'] * df['Volume']).rolling(20).mean().iloc[-1]
+        # 1. Likuiditas: Value_MA20 — pakai dari liquid_stocks jika ada
+        value_ma20_file = get_value_ma20_from_universe(ticker_bersih, df_universe)
+        if value_ma20_file is not None:
+            value_ma20 = value_ma20_file   # ✅ dari liquid_stocks, tidak perlu hitung ulang
+        else:
+            value_ma20 = (df['Close'] * df['Volume']).rolling(20).mean().iloc[-1]
+
         if pd.isna(value_ma20) or value_ma20 <= 0:
             return None
 
@@ -509,6 +514,15 @@ def run_screening():
     else:
         st.markdown("<h1 style='text-align: center;'>🔍 Screening Saham Harian Pro</h1>", unsafe_allow_html=True)
 
+    # Tampilkan sumber data — hanya untuk admin
+    if st.session_state.get('is_admin', False):
+        df_liquid = get_liquid_stocks()
+        if not df_liquid.empty:
+            st.caption(f"📋 Universe aktif: **{len(saham_list)} saham** dari `liquid_stocks.csv` (Google Drive) ✅")
+        else:
+            st.caption(f"📋 Universe aktif: **{len(saham_list)} saham** dari `pre_liquid_stocks.csv` (repo lokal) ⚠️ *liquid_stocks.csv belum tersedia*")
+    st.markdown("---")
+
     with st.expander("📖 Glosarium Istilah (Kamus Trader) - Klik untuk Membaca"):
         st.markdown("""
         **Panduan Singkat Membaca Hasil Analisa:**
@@ -588,7 +602,7 @@ def run_screening():
         status_text = st.empty()
         progress_bar = st.progress(0)
         total_saham = len(saham_list)
-        
+
         with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
             futures = {
                 executor.submit(process_single_stock, ticker, trade_mode, mtf_filter, df_universe): ticker
@@ -597,7 +611,7 @@ def run_screening():
             completed = 0
             for future in concurrent.futures.as_completed(futures):
                 completed += 1
-                status_text.text(f"Memeriksa {completed}/{total_saham} saham...")
+                status_text.text(f"Memeriksa {completed} saham...")
                 progress_bar.progress(completed / total_saham)
                 result = future.result()
                 if result is not None:
