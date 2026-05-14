@@ -509,9 +509,6 @@ def run_screening():
     else:
         st.markdown("<h1 style='text-align: center;'>🔍 Screening Saham Harian Pro</h1>", unsafe_allow_html=True)
 
-    st.caption(f"📋 Universe aktif: **{len(saham_list)} saham** dari `pre_liquid_stocks.csv`")
-    st.markdown("---")
-
     with st.expander("📖 Glosarium Istilah (Kamus Trader) - Klik untuk Membaca"):
         st.markdown("""
         **Panduan Singkat Membaca Hasil Analisa:**
