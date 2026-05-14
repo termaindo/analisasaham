@@ -587,6 +587,7 @@ def run_screening():
         loading_header.write("### 🔄 Mesin sedang memilah saham. Mohon tunggu...")
         status_text = st.empty()
         progress_bar = st.progress(0)
+        total_saham = len(saham_list)
         
         with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
             futures = {
