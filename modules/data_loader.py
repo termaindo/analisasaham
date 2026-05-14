@@ -160,11 +160,25 @@ def enrich_and_filter(pre_csv_path='pre_liquid_stocks.csv',
     total = len(df_pre)
 
     for i, row in df_pre.iterrows():
-        ticker_raw = str(row['Kode Saham']).strip()
+        ticker_raw = str(row[col_map['Kode Saham']]).strip()
         ticker = ticker_raw if ticker_raw.endswith('.JK') else ticker_raw + '.JK'
-        sektor  = row['Sektor']
-        syariah = row['Syariah']
-        mkt_cap = row['Mkt Cap']
+        sektor  = row[col_map['Sektor']]
+        syariah = row[col_map['Syariah']]
+        mkt_cap = row[col_map['Mkt Cap']]
+
+        # Ambil ROE, ROA, NPM dari file jika tersedia (tidak perlu fetch yfinance)
+        roe_from_file = None
+        roa_from_file = None
+        npm_from_file = None
+        if col_map['ROE'] and col_map['ROE'] in row.index:
+            try: roe_from_file = float(str(row[col_map['ROE']]).replace('%','').replace(',','.').strip())
+            except: pass
+        if col_map['ROA'] and col_map['ROA'] in row.index:
+            try: roa_from_file = float(str(row[col_map['ROA']]).replace('%','').replace(',','.').strip())
+            except: pass
+        if col_map['NPM'] and col_map['NPM'] in row.index:
+            try: npm_from_file = float(str(row[col_map['NPM']]).replace('%','').replace(',','.').strip())
+            except: pass
 
         if progress_callback:
             progress_callback(i, total, ticker)
@@ -175,11 +189,12 @@ def enrich_and_filter(pre_csv_path='pre_liquid_stocks.csv',
             'Syariah': syariah,
             'Mkt Cap': mkt_cap,
             'Value_MA20': None,
-            'ROE': None,
-            'ROA': None,
+            'ROE': roe_from_file,   # ✅ dari file, bukan fetch
+            'ROA': roa_from_file,   # ✅ dari file, bukan fetch
+            'NPM': npm_from_file,   # ✅ dari file, bukan fetch
             'CAR': None,
             'NPL': None,
-            '_PER_median_ticker': None,   # sementara, untuk agregasi sektoral
+            '_PER_median_ticker': None,
             '_PBV_median_ticker': None,
         }
 
@@ -196,41 +211,40 @@ def enrich_and_filter(pre_csv_path='pre_liquid_stocks.csv',
                 hist['Value'] = hist['Close'] * hist['Volume']
                 rec['Value_MA20'] = hist['Value'].tail(20).mean()
 
-            # ── ROE & ROA ────────────────────────────────────────────────
-            # ROE = Net Income / Total Equity
-            # ROA = Net Income / Total Assets
-            try:
-                net_income = None
-                total_equity = None
-                total_assets = None
+            # ── ROE & ROA: hanya fetch dari yfinance jika TIDAK ada di file ──
+            if rec['ROE'] is None or rec['ROA'] is None:
+                try:
+                    net_income   = None
+                    total_equity = None
+                    total_assets = None
 
-                if not fin.empty:
-                    ni_keys = ['Net Income', 'NetIncome', 'Net Income Common Stockholders']
-                    for k in ni_keys:
-                        if k in fin.index:
-                            net_income = fin.loc[k].iloc[0]
-                            break
+                    if not fin.empty:
+                        ni_keys = ['Net Income', 'NetIncome', 'Net Income Common Stockholders']
+                        for k in ni_keys:
+                            if k in fin.index:
+                                net_income = fin.loc[k].iloc[0]
+                                break
 
-                if not bs.empty:
-                    eq_keys = ['Stockholders Equity', 'Total Stockholders Equity',
-                               'Common Stock Equity', 'Total Equity Gross Minority Interest']
-                    for k in eq_keys:
-                        if k in bs.index:
-                            total_equity = bs.loc[k].iloc[0]
-                            break
+                    if not bs.empty:
+                        eq_keys = ['Stockholders Equity', 'Total Stockholders Equity',
+                                   'Common Stock Equity', 'Total Equity Gross Minority Interest']
+                        for k in eq_keys:
+                            if k in bs.index:
+                                total_equity = bs.loc[k].iloc[0]
+                                break
 
-                    asset_keys = ['Total Assets', 'TotalAssets']
-                    for k in asset_keys:
-                        if k in bs.index:
-                            total_assets = bs.loc[k].iloc[0]
-                            break
+                        asset_keys = ['Total Assets', 'TotalAssets']
+                        for k in asset_keys:
+                            if k in bs.index:
+                                total_assets = bs.loc[k].iloc[0]
+                                break
 
-                if net_income and total_equity and total_equity != 0:
-                    rec['ROE'] = round(float(net_income / total_equity) * 100, 2)
-                if net_income and total_assets and total_assets != 0:
-                    rec['ROA'] = round(float(net_income / total_assets) * 100, 2)
-            except:
-                pass
+                    if rec['ROE'] is None and net_income and total_equity and total_equity != 0:
+                        rec['ROE'] = round(float(net_income / total_equity) * 100, 2)
+                    if rec['ROA'] is None and net_income and total_assets and total_assets != 0:
+                        rec['ROA'] = round(float(net_income / total_assets) * 100, 2)
+                except:
+                    pass
 
             # ── CAR & NPL (Khusus Bank) ──────────────────────────────────
             industry = info.get('industry', '')
