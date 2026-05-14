@@ -440,15 +440,17 @@ def show_admin_data_panel():
 
     with col_a:
         st.markdown("**📥 Step 1: Tarik Data Sumber**")
-        if st.button("Ambil pre_liquid_stocks.csv\ndari Google Drive", use_container_width=True, key="btn_ambil"):
-            with st.spinner("Mengambil file dari Google Drive..."):
-                df_pre = ambil_csv_dari_gdrive("pre_liquid_stocks.csv")
-            if df_pre is not None:
+        if st.button("Ambil pre_liquid_stocks.csv\ndari repo lokal", use_container_width=True, key="btn_ambil"):
+            try:
+                df_pre = pd.read_csv("pre_liquid_stocks.csv", sep=None, engine='python')
                 st.session_state['df_pre_liquid'] = df_pre
                 st.success(f"✅ Berhasil! {len(df_pre)} baris, {len(df_pre.columns)} kolom dimuat.")
                 st.dataframe(df_pre.head(5), use_container_width=True)
-            else:
-                st.error("❌ Gagal mengambil file.")
+            except FileNotFoundError:
+                st.error("❌ File `pre_liquid_stocks.csv` tidak ditemukan di root repo. "
+                         "Pastikan file sudah di-upload sejajar dengan `app.py`.")
+            except Exception as e:
+                st.error(f"❌ Gagal membaca file: {e}")
 
     with col_b:
         st.markdown("**⚙️ Step 2: Proses Data**")
