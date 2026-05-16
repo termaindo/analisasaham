@@ -4,7 +4,7 @@ import os
 import base64
 from fpdf import FPDF
 from datetime import datetime
-from modules.data_loader import get_full_stock_data, hitung_div_yield_normal
+from utils.data_loader import get_full_stock_data, hitung_div_yield_normal
 
 # --- FUNGSI PDF MENGGUNAKAN FPDF ---
 def generate_pdf_fpdf(data, logo_path="logo_expert_stock_pro.png"):
@@ -39,7 +39,7 @@ def generate_pdf_fpdf(data, logo_path="logo_expert_stock_pro.png"):
     # --- 2. HYPERLINK SUMBER ---
     pdf.set_font("Arial", 'I', 10)
     pdf.set_text_color(0, 0, 255)  # Warna Biru
-    pdf.cell(0, 5, "Sumber: https://bit.ly/sahampintar", ln=True, align='C', link="https://bit.ly/sahampintar")
+    pdf.cell(0, 5, "Sumber: https://s.id/pintarsaham", ln=True, align='C', link="https://s.id/pintarsaham")
     pdf.ln(2)
     
     # --- 3. JUDUL PERBANDINGAN (CENTER) ---
