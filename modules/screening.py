@@ -12,8 +12,9 @@ Perbaikan vs versi sebelumnya:
 - Hapus import hitung_div_yield_normal (tidak ada di data_loader)
 - Fix nama kolom MktCap (sebelumnya salah jadi 'Mkt Cap')
 - Import data_loader dari utils.data_loader (sesuai struktur folder)
-- Fix path PRE_LIQUID_PATH & LIQUID_PATH: dihitung dari root repo (/data/),
-  bukan dari /utils/data/ seperti konstanta bawaan data_loader.py
+- Fix path PRE_LIQUID_PATH & LIQUID_PATH: koreksi di data_loader.py —
+  _BASE_DIR naik dua level (dirname dua kali) dari /utils/ ke root repo,
+  sehingga LIQUID_PATH = /data/liquid_stocks.csv yang benar
 """
 
 import streamlit as st
@@ -33,17 +34,9 @@ from utils.data_loader import (
     get_value_ma20,
     is_ticker_liquid,
     get_ticker_row,
+    PRE_LIQUID_PATH,
+    LIQUID_PATH,
 )
-
-# ── PATH DATA ─────────────────────────────────────────────────────────────────
-# Dihitung dari root repo (lokasi app.py), bukan dari lokasi file ini.
-# Sesuai ALUR_DATA.md: kedua file ada di /data/ relatif terhadap root repo.
-# data_loader.py ada di /utils/ sehingga PRE_LIQUID_PATH dari sana salah
-# (/utils/data/...). Screening.py menghitung sendiri dari __file__ naik 1 level.
-_MODULE_DIR     = os.path.dirname(os.path.abspath(__file__))   # /modules/
-_ROOT_DIR       = os.path.dirname(_MODULE_DIR)                  # root repo
-PRE_LIQUID_PATH = os.path.join(_ROOT_DIR, "data", "pre_liquid_stocks.csv")
-LIQUID_PATH     = os.path.join(_ROOT_DIR, "data", "liquid_stocks.csv")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
