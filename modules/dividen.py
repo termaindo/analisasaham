@@ -51,7 +51,7 @@ def generate_pdf_report(ticker, company, sector, syariah_status,
     # 2. HYPERLINK SUMBER
     pdf.set_font("Arial", 'I', 10)
     pdf.set_text_color(0, 0, 255)
-    pdf.cell(0, 5, "Sumber: https://s.id/sahampintar", ln=True, align='C', link="https://s.id/sahampintar")
+    pdf.cell(0, 5, "Sumber: https://s.id/pintarsaham", ln=True, align='C', link="https://s.id/pintarsaham")
     pdf.ln(2)
     
     # 3. NAMA SAHAM & PERUSAHAAN (CENTER)
