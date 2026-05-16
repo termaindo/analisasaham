@@ -110,7 +110,7 @@ def export_analisa_cepat_to_pdf(ticker, company_name, sector, f_score, roe, lbl_
     
     if t_score < 70:
         pdf.set_text_color(200, 0, 0) 
-        pdf.multi_cell(190, 6, "Tidak Disarankan untuk Melakukan Trading dulu, karena belum didukung oleh indikator teknikal yang memadai.")
+        pdf.multi_cell(190, 6, "Tidak Disarankan untuk Melakukan Trading dengan gaya Swing Trading dulu, karena belum didukung oleh indikator teknikal yang memadai.")
         pdf.set_text_color(0, 0, 0)
     else:
         pdf.cell(190, 6, f"- Modal Maksimal: Rp {modal_awal:,.0f} | Risiko Maksimal: Rp {maks_risiko:,.0f}", ln=True)
@@ -597,7 +597,7 @@ def run_analisa_cepat():
                 </li>"""
                 
             else:
-                rekomen   = "Dilarang Trading -> Tidak Disarankan untuk melakukan trading dulu, karena belum didukung oleh indikator teknikal yang memadai."
+                rekomen   = "Dilarang Trading -> Tidak Disarankan untuk melakukan trading dengan gaya Swing Trading dulu, karena belum didukung oleh indikator teknikal yang memadai."
                 color_rec = "#ff0000"
                 trading_plan_html = "<li><b>6. Trading Plan:</b><br><span style='color:#ff5252; font-weight:bold;'>Tidak Disarankan untuk Melakukan Trading dulu, karena belum didukung oleh indikator teknikal yang memadai.</span></li>"
 
