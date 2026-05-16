@@ -589,12 +589,12 @@ def main_app():
             st.markdown("---")
 
         m = st.session_state.current_menu
-        if m == "screening":     load_and_run_module("screening", "run_screening")
-        elif m == "analisa_cepat": load_and_run_module("analisa_cepat", "run_analisa_cepat")
-        elif m == "teknikal":    load_and_run_module("teknikal", "run_teknikal")
-        elif m == "fundamental": load_and_run_module("fundamental", "run_fundamental")
-        elif m == "dividen":     load_and_run_module("dividen", "run_dividen")
-        elif m == "perbandingan":load_and_run_module("perbandingan", "run_perbandingan")
+        if m == "screening":     load_and_run_module("screening.py", "run_screening")
+        elif m == "analisa_cepat": load_and_run_module("analisa_cepat.py", "run_analisa_cepat")
+        elif m == "teknikal":    load_and_run_module("teknikal.py", "run_teknikal")
+        elif m == "fundamental": load_and_run_module("fundamental.py", "run_fundamental")
+        elif m == "dividen":     load_and_run_module("dividen.py", "run_dividen")
+        elif m == "perbandingan":load_and_run_module("perbandingan.py", "run_perbandingan")
 
 if __name__ == "__main__":
     if st.session_state.logged_in:
