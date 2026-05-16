@@ -432,82 +432,103 @@ def run_analisa_cepat():
             if div_yield > 5: f_score += 10
             elif div_yield >= 2: f_score += 5
 
-            # --- SCORING TEKNIKAL ---
-            t_score = 0
-            alasan_tek = []
+            # ── PERSIAPAN VARIABEL BANDARMOLOGI ─────────────────────────────
+            # Identik dengan logika swing trading di screening.py
+            obv = [0]
+            for i in range(1, len(df)):
+                if df['Close'].iloc[i] > df['Close'].iloc[i - 1]:
+                    obv.append(obv[-1] + df['Volume'].iloc[i])
+                elif df['Close'].iloc[i] < df['Close'].iloc[i - 1]:
+                    obv.append(obv[-1] - df['Volume'].iloc[i])
+                else:
+                    obv.append(obv[-1])
+            df['OBV'] = obv
 
+            mfm = (
+                ((df['Close'] - df['Low']) - (df['High'] - df['Close']))
+                / (df['High'] - df['Low']).replace(0, np.nan)
+            )
+            df['CMF'] = (mfm * df['Volume']).rolling(20).sum() / df['Volume'].rolling(20).sum()
+            df['VPT'] = (df['Close'].pct_change() * df['Volume']).cumsum()
+
+            obv_trend_up = df['OBV'].iloc[-1]  > df['OBV'].iloc[-5]
+            cmf_positive = df['CMF'].iloc[-1]  > -0.1
+            vpt_trend_up = df['VPT'].iloc[-1]  > df['VPT'].iloc[-3]
+            vol_sma20    = df['Volume'].rolling(20).mean().iloc[-1]
+            rvol         = vol_curr / vol_sma20 if vol_sma20 > 0 else 0
+
+            # Supertrend: hitung candles_above (berapa hari di atas garis hijau)
             st_dir_series = df['ST_Dir'].dropna()
-            days_above_green = 0
+            candles_above = 0
             for d in reversed(st_dir_series.values[:-1]):
                 if d == 1:
-                    days_above_green += 1
+                    candles_above += 1
                 else:
                     break
-            st_just_crossed = (st_dir_curr == 1 and days_above_green == 0)
-            st_sustained    = (st_dir_curr == 1 and days_above_green >= 3)
 
-            if st_just_crossed:
-                t_score += 25
-                alasan_tek.append("Supertrend Fresh Cross (+25)")
-            elif st_sustained:
-                t_score += 20
-                alasan_tek.append(f"Supertrend Sustained {days_above_green}d (+20)")
+            # Nilai bar sebelumnya (prev) untuk perbandingan crossover
+            macd_prev    = df['MACD'].iloc[-2]     if len(df) >= 2 else macd_val
+            signal_prev  = df['Signal'].iloc[-2]   if len(df) >= 2 else signal_val
+            hist_prev    = df['MACD_Hist'].iloc[-2] if len(df) >= 2 else 0
+            st_dir_prev  = df['ST_Dir'].iloc[-2]   if len(df) >= 2 else st_dir_curr
 
+            # ── SCORING TEKNIKAL — SWING TRADING (identik screening.py) ─────
+            t_score    = 0
+            alasan_tek = []
+
+            # 1. Supertrend (10,3) — maks 20 poin
+            if st_dir_curr == 1 and st_dir_prev != 1:
+                t_score += 20; alasan_tek.append("Supertrend Baru Bullish (10,3) +20")
+            elif st_dir_curr == 1 and candles_above > 3:
+                t_score += 15; alasan_tek.append(f"Supertrend Bullish >{candles_above}h (10,3) +15")
+
+            # 2. MA Structure: Price > MA50 AND MA20 > MA50 — 15 poin
             if ma50_val > 0 and curr > ma50_val and ma20_val > ma50_val:
-                t_score += 20
-                alasan_tek.append("MA Structure Sehat (+20)")
+                t_score += 15; alasan_tek.append("MA Structure (Price>MA50, MA20>MA50) +15")
 
-            macd_prev   = df['MACD'].iloc[-2]  if len(df) >= 2 else macd_val
-            signal_prev = df['Signal'].iloc[-2] if len(df) >= 2 else signal_val
-            macd_golden_cross = (macd_val > signal_val) and (macd_prev <= signal_prev)
-            if macd_golden_cross:
-                t_score += 7.5
-                alasan_tek.append("MACD Golden Cross (+7.5)")
+            # 3. MACD Golden Cross — 7.5 poin
+            if macd_val > signal_val and macd_prev <= signal_prev:
+                t_score += 7.5; alasan_tek.append("MACD Golden Cross +7.5")
 
-            hist_series = df['MACD_Hist'].dropna()
-            hist_3d_rising = (
-                len(hist_series) >= 3 and
-                hist_series.iloc[-1] > hist_series.iloc[-2] > hist_series.iloc[-3]
-            )
-            if hist_3d_rising:
-                t_score += 7.5
-                alasan_tek.append("MACD Hist 3d Rising (+7.5)")
+            # 4. MACD Histogram Growing (bar terakhir > bar sebelumnya) — 7.5 poin
+            if macd_hist > hist_prev:
+                t_score += 7.5; alasan_tek.append("MACD Histogram Growing +7.5")
 
-            if vol_ma20 > 0 and vol_curr > 1.2 * vol_ma20:
-                t_score += 15
-                alasan_tek.append("Volume Spike >1.2x (+15)")
+            # 5. Volume Spike > 1.2x MA20 — 10 poin
+            if vol_sma20 > 0 and vol_curr > vol_sma20 * 1.2:
+                t_score += 10; alasan_tek.append("Volume Spike (>1.2x MA20) +10")
 
-            if 50 <= rsi_curr <= 70:
-                t_score += 10
-                alasan_tek.append(f"RSI Momentum {rsi_curr:.1f} (+10)")
+            # 6. RSI Momentum: 50–75 (zona sehat, belum overbought) — 7.5 poin
+            if 50 <= rsi_curr <= 75:
+                t_score += 7.5; alasan_tek.append(f"RSI Momentum {rsi_curr:.1f} +7.5")
 
-            rsi_series = df['RSI'].dropna()
-            rsi_slope_up = (
-                len(rsi_series) >= 3 and
-                rsi_series.iloc[-1] > rsi_series.iloc[-2] > rsi_series.iloc[-3]
-            )
-            if rsi_slope_up:
-                t_score += 10
-                alasan_tek.append("RSI Slope Mendaki (+10)")
+            # 7. RSI Rising (bar terakhir > bar sebelumnya) — 7.5 poin
+            if rsi_curr > rsi_prev:
+                t_score += 7.5; alasan_tek.append(f"RSI Rising ({rsi_prev:.1f}→{rsi_curr:.1f}) +7.5")
 
+            # 8. PSAR Bullish — 5 poin
             if psar_bull_curr:
-                t_score += 5
-                alasan_tek.append("PSAR di Bawah Harga (+5)")
+                t_score += 5; alasan_tek.append("PSAR Konfirmasi Tren Naik +5")
 
-            macd_early_recovery = (macd_val < 0) and hist_3d_rising
-            if macd_early_recovery:
-                t_score += 10
-                alasan_tek.append("MACD Early Recovery Bonus (+10)")
+            # 9. RVOL — maks 10 poin
+            if rvol >= 2.5:
+                t_score += 10; alasan_tek.append(f"RVOL Tinggi ({rvol:.1f}x) +10")
+            elif rvol >= 1.5:
+                t_score += 6;  alasan_tek.append(f"RVOL Moderat ({rvol:.1f}x) +6")
 
-            if "sector_scores" in st.session_state and sector in st.session_state["sector_scores"]:
-                if st.session_state["sector_scores"][sector] >= 60:
-                    t_score += 10
-                    alasan_tek.append(f"Sektor Hot: {sector.title()} (+10)")
+            # 10. VPT Akumulasi Naik — 10 poin
+            if vpt_trend_up:
+                t_score += 10; alasan_tek.append("VPT Akumulasi Naik +10")
 
+            # 11. MACD Early Recovery (MACD negatif tapi histogram naik) — 10 poin
+            if macd_val < 0 and macd_hist > hist_prev:
+                t_score += 10; alasan_tek.append("MACD Early Recovery +10")
+
+            # 12. Penalti RSI Overbought > 75 — minus 15 poin
             if rsi_curr > 75:
-                t_score -= 15
-                alasan_tek.append(f"RSI Overbought {rsi_curr:.1f} (-15)")
+                t_score -= 15; alasan_tek.append(f"RSI Overbought ({rsi_curr:.1f}) -15")
 
+            # Hard cap
             t_score = min(round(t_score), 100)
 
             teks_alasan = ", ".join(alasan_tek) if alasan_tek else "Tidak ada sinyal kuat"
