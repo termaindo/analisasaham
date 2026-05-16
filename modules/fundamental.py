@@ -7,8 +7,7 @@ import os
 from datetime import datetime
 from io import BytesIO
 from fpdf import FPDF
-from modules.data_loader import get_full_stock_data, hitung_div_yield_normal
-from modules.universe import is_syariah  
+from utils.data_loader import get_full_stock_data, hitung_div_yield_normal  
 
 def translate_sector(sector_en):
     mapping = {
@@ -222,7 +221,7 @@ def generate_pdf_report(data_dict, logo_path="logo_expert_stock_pro.png"):
     
     pdf.set_font("Arial", 'I', 10)
     pdf.set_text_color(0, 0, 255)
-    pdf.cell(0, 5, "Sumber: https://bit.ly/sahampintar", ln=True, align='C', link="https://bit.ly/sahampintar")
+    pdf.cell(0, 5, "Sumber: https://s.id/pintarsaham", ln=True, align='C', link="https://s.id/pintarsaham")
     pdf.ln(2)
     
     pdf.set_text_color(0, 0, 0)
