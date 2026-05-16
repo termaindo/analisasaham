@@ -20,7 +20,7 @@ import os
 from bs4 import BeautifulSoup
 
 # ── Path konstanta ────────────────────────────────────────────────────────────
-_BASE_DIR         = os.path.dirname(os.path.abspath(__file__))
+_BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PRE_LIQUID_PATH   = os.path.join(_BASE_DIR, "data", "pre_liquid_stocks.csv")
 LIQUID_PATH       = os.path.join(_BASE_DIR, "data", "liquid_stocks.csv")
 
