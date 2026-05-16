@@ -83,7 +83,7 @@ def export_analisa_cepat_to_pdf(ticker, company_name, sector, f_score, roe, lbl_
     pdf.set_font("Arial", '', 10)
     
     pdf.multi_cell(190, 6, f"- Fundamental Score: {f_score}/100 (ROE {roe:.1f}%, {safe_lbl_solv}, EPS Grw {eps_g:.1f}%, Rev Grw {rev_g:.1f}%)")
-    pdf.multi_cell(190, 6, f"- Technical Score: {t_score:g}/100 (Trigger: {safe_alasan})")
+    pdf.multi_cell(190, 6, f"- Technical Score-Swing Trading: {t_score:g}/100 (Trigger: {safe_alasan})")
     pdf.cell(190, 6, f"- Valuasi Dasar: PER {curr_per:.1f}x | Div. Yield {div_yield:.2f}%", ln=True)
     pdf.cell(190, 6, f"- Sentiment Pasar: {safe_sentiment}", ln=True)
     pdf.ln(4)
@@ -612,7 +612,7 @@ def run_analisa_cepat():
                 </p>
                 <ul style="line-height:1.8; padding-left:20px; font-size:16px;">
                     <li><b>1. Fundamental Score ({f_score}/100):</b> ROE {roe:.1f}%, {lbl_solv}, EPS Grw {eps_g:.1f}%, Arus Kas {'Positif' if ocf>0 else 'Negatif'}.</li>
-                    <li><b>2. Technical Score ({t_score:g}/100):</b> Trigger -> {teks_alasan}</li>
+                    <li><b>2. Technical Score-Swing Trading ({t_score:g}/100):</b> Trigger -> {teks_alasan}</li>
                     <li><b>3. Sentiment Pasar:</b> <b>{sentiment}</b></li>
                     <li><b>4. Rekomendasi Final:</b> <br><span style="color:{color_rec}; font-weight:bold; font-size:17px;">{rekomen}</span></li>
                     <li><b>5. Timeframe:</b> Swing Trading (Menengah)</li>
