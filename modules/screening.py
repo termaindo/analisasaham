@@ -820,7 +820,10 @@ def run_screening() -> None:
         st.stop()
 
     # Info sumber data di sidebar
-    liquid_aktif = os.path.exists(LIQUID_PATH)
+    # Sumber aktual ditentukan oleh load_universe() — bukan sekadar cek os.path.exists.
+    # get_liquid_stocks() bisa mengembalikan DataFrame kosong meski file ada
+    # (misal: file rusak atau kolom tidak terbaca). Kita cek df_universe langsung.
+    liquid_aktif = not get_liquid_stocks().empty
     if liquid_aktif:
         st.sidebar.success(
             f"📋 Universe: **{len(saham_list)} saham** dari `liquid_stocks.csv` ✅"
@@ -828,7 +831,7 @@ def run_screening() -> None:
     else:
         st.sidebar.warning(
             f"📋 Universe: **{len(saham_list)} saham** dari `pre_liquid_stocks.csv` "
-            f"⚠️ *(enrichment belum tersedia)*"
+            f"⚠️ *(liquid_stocks.csv tidak tersedia atau kosong)*"
         )
 
     # Filter sidebar
@@ -987,7 +990,7 @@ def run_screening() -> None:
             completed = 0
             for future in concurrent.futures.as_completed(futures):
                 completed += 1
-                status_text.text(f"Memeriksa {completed}/{total_saham} saham…")
+                status_text.text(f"Memeriksa {completed} saham…")
                 progress_bar.progress(completed / total_saham)
                 result = future.result()
                 if result is not None:
