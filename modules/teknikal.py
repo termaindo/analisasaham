@@ -8,15 +8,7 @@ from datetime import datetime
 import os
 import yfinance as yf
 from fpdf import FPDF
-
-# --- MENGGUNAKAN RELATIVE IMPORT SEBAGAI PENGAMAN ---
-try:
-    from modules.data_loader import get_full_stock_data
-    from modules.universe import is_syariah
-except ModuleNotFoundError:
-    # Fallback jika dipanggil dari internal folder
-    from .data_loader import get_full_stock_data
-    from .universe import is_syariah
+from utils.data_loader import get_full_stock_data, hitung_div_yield_normal
 
 def translate_sector(sector_en):
     mapping = {
@@ -133,7 +125,7 @@ def generate_pdf_fpdf(data, logo_path="logo_expert_stock_pro.png"):
     # --- 2. HYPERLINK SUMBER ---
     pdf.set_font("Arial", 'I', 10)
     pdf.set_text_color(0, 0, 255)  # Warna Biru
-    pdf.cell(0, 5, "Sumber: https://bit.ly/sahampintar", ln=True, align='C', link="https://bit.ly/sahampintar")
+    pdf.cell(0, 5, "Sumber: https://s.id/pintarsaham", ln=True, align='C', link="https://s.id/pintarsaham")
     pdf.ln(2)
     
     # --- 3. NAMA SAHAM & PERUSAHAAN (CENTER) ---
