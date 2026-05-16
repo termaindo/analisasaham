@@ -7,9 +7,8 @@ from datetime import datetime
 import os
 import base64
 
-# Import dari data_loader & universe
-from modules.data_loader import get_full_stock_data, hitung_div_yield_normal
-from modules.universe import is_syariah
+# KOREKSI: data_loader.py ada di /utils/, bukan /modules/
+from utils.data_loader import get_full_stock_data, hitung_div_yield_normal
 
 def clean_text(text):
     """Menghapus karakter non-latin untuk kompatibilitas FPDF"""
@@ -52,7 +51,7 @@ def generate_pdf_report(ticker, company, sector, syariah_status,
     # 2. HYPERLINK SUMBER
     pdf.set_font("Arial", 'I', 10)
     pdf.set_text_color(0, 0, 255)
-    pdf.cell(0, 5, "Sumber: https://bit.ly/sahampintar", ln=True, align='C', link="https://bit.ly/sahampintar")
+    pdf.cell(0, 5, "Sumber: https://s.id/sahampintar", ln=True, align='C', link="https://s.id/sahampintar")
     pdf.ln(2)
     
     # 3. NAMA SAHAM & PERUSAHAAN (CENTER)
