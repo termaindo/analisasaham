@@ -18,6 +18,86 @@ from utils.data_loader import (
 )
 
 # ─────────────────────────────────────────────────────────────────────────────
+# SANITIZER PDF — hapus semua karakter non-latin-1 sebelum masuk FPDF
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _sanitize_pdf(text: str) -> str:
+    """
+    Ganti karakter Unicode dan emoji ke teks ASCII setara
+    agar kompatibel dengan FPDF core fonts (latin-1).
+    """
+    if not isinstance(text, str):
+        text = str(text)
+
+    _MAP = {
+        # Dash & quotes
+        "\u2014": "-",    # em dash —
+        "\u2013": "-",    # en dash –
+        "\u2019": "'",    # right single quote
+        "\u2018": "'",    # left single quote
+        "\u201c": '"',    # left double quote
+        "\u201d": '"',    # right double quote
+        "\u2026": "...",  # ellipsis …
+        # Arrows
+        "\u2192": "->",   # →
+        "\u2190": "<-",   # ←
+        "\u2197": "(naik)",  # ↗
+        "\u2198": "(turun)", # ↘
+        "\ufe0f": "",     # variation selector (after emoji)
+        "\u20e3": "",     # combining enclosing keycap
+        # Status emoji
+        "\u2705": "[OK]",    # ✅
+        "\u274c": "[X]",     # ❌
+        "\u26a0": "[!]",     # ⚠
+        "\u2b50": "[*]",     # ⭐
+        # Colored circles
+        "\U0001f7e2": "[+]",  # 🟢
+        "\U0001f534": "[-]",  # 🔴
+        "\U0001f7e1": "[~]",  # 🟡
+        "\U0001f7e0": "[!]",  # 🟠
+        # Chart emoji
+        "\U0001f4c8": "[UP]",  # 📈
+        "\U0001f4c9": "[DN]",  # 📉
+        "\U0001f525": "[!!]",  # 🔥
+        "\U0001f3af": "[*]",   # 🎯
+        "\U0001f4e6": "[BOX]", # 📦
+        "\U0001f31f": "[*]",   # 🌟
+        "\U0001f528": "[~]",   # 🔨
+        "\U0001f4ca": "[=]",   # 📊
+        "\U0001f4cb": "[-]",   # 📋
+        "\U0001f4f0": "[>]",   # 📰
+        "\U0001f4c4": "[PDF]", # 📄
+        "\U0001f3e2": "[CO]",  # 🏢
+        "\U0001f50d": "[?]",   # 🔍
+        "\u26a1": "[!]",       # ⚡
+        "\U0001f4c5": "[D]",   # 📅
+        "\U0001f3c6": "[#]",   # 🏆
+        "\u2714": "[v]",       # ✔
+        "\u2718": "[x]",       # ✘
+        # Lines / decorative
+        "\u2500": "-",   # box drawing light horizontal ─
+        "\u2502": "|",   # │
+        "\u250c": "+",   # ┌
+        "\u2510": "+",   # ┐
+        "\u2514": "+",   # └
+        "\u2518": "+",   # ┘
+        # Math / misc
+        "\u00d7": "x",   # ×
+        "\u00f7": "/",   # ÷
+        "\u2212": "-",   # minus sign −
+        "\u00b1": "+/-", # ±
+        "\u00b2": "^2",  # ²
+        "\u00b3": "^3",  # ³
+    }
+
+    for char, repl in _MAP.items():
+        text = text.replace(char, repl)
+
+    # Fallback: hapus semua sisa karakter non-latin-1
+    return text.encode("latin-1", "replace").decode("latin-1")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # KONSTANTA
 # ─────────────────────────────────────────────────────────────────────────────
 RSI_OVERBOUGHT      = 70
@@ -107,6 +187,80 @@ def translate_sector(sector_en: str) -> str:
         "Utilities":              "Utilitas",
     }
     return mapping.get(sector_en, sector_en)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# STALENESS CHECK — pastikan data candle yang dipakai adalah yang terakhir valid
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _get_staleness_info(df: pd.DataFrame) -> dict:
+    """
+    Periksa apakah candle terakhir di DataFrame adalah data hari ini atau sudah stale.
+
+    Masalah: yfinance kadang mengembalikan candle 'kosong' (Volume=0, OHLC=NaN atau
+    sama semua) untuk hari ini jika pasar belum tutup atau hari libur. Ini menyebabkan
+    Vol_Ratio = 0.00x dan indikator lain tidak akurat.
+
+    Solusi:
+    - Temukan candle terakhir yang Volume-nya > 0 dan Close tidak NaN.
+    - Hitung selisih hari kalender antara candle valid terakhir vs hari ini.
+    - Return dict dengan candle valid idx, jumlah hari stale, dan label warning.
+    """
+    today = pd.Timestamp.now().normalize()
+
+    # Pastikan index bertipe datetime
+    try:
+        idx = pd.to_datetime(df.index).normalize()
+    except Exception:
+        idx = df.index
+
+    # Cari baris terakhir dengan Volume > 0 dan Close tidak NaN
+    valid_mask = (df['Volume'] > 0) & (df['Close'].notna()) & (df['Close'] > 0)
+    valid_rows = df[valid_mask]
+
+    if valid_rows.empty:
+        # Fallback absolut: pakai baris terakhir apapun kondisinya
+        last_valid_idx  = len(df) - 1
+        last_valid_date = today
+        stale_days      = 0
+    else:
+        last_valid_iloc = df.index.get_loc(valid_rows.index[-1])
+        # get_loc bisa return slice jika ada duplikat — ambil int terakhir
+        if isinstance(last_valid_iloc, slice):
+            last_valid_iloc = last_valid_iloc.stop - 1
+        elif hasattr(last_valid_iloc, '__len__'):
+            last_valid_iloc = int(np.where(last_valid_iloc)[0][-1])
+        last_valid_idx  = int(last_valid_iloc)
+        try:
+            last_valid_date = pd.to_datetime(valid_rows.index[-1]).normalize()
+        except Exception:
+            last_valid_date = today
+        delta           = today - last_valid_date
+        stale_days      = max(0, delta.days)
+
+    # Label warning
+    if stale_days == 0:
+        warning = None
+        label   = "Data terkini (hari ini)"
+    elif stale_days == 1:
+        warning = "⚠️ Data 1 hari lalu — pasar tutup kemarin (libur/weekend). Analisa berdasarkan candle terakhir yang valid."
+        label   = f"Candle terakhir: {last_valid_date.strftime('%d %b %Y')} (1 hari lalu)"
+    else:
+        warning = (
+            f"⚠️ Data {stale_days} hari lalu — pasar telah tutup selama {stale_days} hari "
+            f"(libur panjang/weekend). Semua indikator dihitung dari candle terakhir yang valid "
+            f"({last_valid_date.strftime('%d %b %Y')}). Volume Ratio dan sinyal intraday "
+            f"tidak mencerminkan kondisi pasar saat ini."
+        )
+        label   = f"Candle terakhir: {last_valid_date.strftime('%d %b %Y')} ({stale_days} hari lalu)"
+
+    return {
+        "last_valid_iloc": last_valid_idx,
+        "last_valid_date": last_valid_date,
+        "stale_days":      stale_days,
+        "warning":         warning,
+        "label":           label,
+    }
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -474,10 +628,17 @@ def compute_score(df: pd.DataFrame, timeframe: str = "swing") -> dict:
     Hitung skor teknikal berlapis (0–100) dan kembalikan dict berisi:
     - score, label, warna, go_nogo, detail per layer, simpulan SL/TP
     Timeframe: 'day' atau 'swing' (mempengaruhi parameter Supertrend).
+    Candle yang digunakan selalu candle terakhir yang VALID (Volume>0, Close tidak NaN),
+    bukan selalu iloc[-1] — untuk menghindari candle kosong hari libur/weekend.
     """
-    last  = df.iloc[-1]
-    prev1 = df.iloc[-2]
-    prev5 = df.iloc[-5] if len(df) >= 5 else df.iloc[0]
+    # ── Gunakan candle terakhir yang valid, bukan selalu iloc[-1] ────────────
+    staleness   = _get_staleness_info(df)
+    valid_iloc  = staleness["last_valid_iloc"]
+
+    # Pastikan ada minimal 2 candle valid sebelum valid_iloc untuk prev1 & prev5
+    last  = df.iloc[valid_iloc]
+    prev1 = df.iloc[max(0, valid_iloc - 1)]
+    prev5 = df.iloc[max(0, valid_iloc - 5)]
 
     result = {
         "layer1_filter": {},
@@ -486,8 +647,9 @@ def compute_score(df: pd.DataFrame, timeframe: str = "swing") -> dict:
         "layer4_entry":  {},
         "score_raw":     0,
         "score":         0,
-        "go_nogo":       True,   # False = STOP, jangan hitung skor
+        "go_nogo":       True,
         "nogo_reason":   [],
+        "staleness":     staleness,   # info candle stale untuk ditampilkan di UI
     }
 
     curr_price = last['Close']
@@ -895,14 +1057,17 @@ def compute_score(df: pd.DataFrame, timeframe: str = "swing") -> dict:
         "sar":           last['SAR'],
         "sar_bull":      sar_bull,
         "super_bull":    super_bull,
-        "super_line":    float(st_line.iloc[-1]),
+        "super_line":    float(st_line.iloc[valid_iloc]),
         "obv":           last['OBV'],
-        "obv_prev":      df['OBV'].iloc[-5],
+        "obv_prev":      df['OBV'].iloc[max(0, valid_iloc - 5)],
         "candle":        candle_pattern,
         "fib_high":      fib_high,
         "fib_low":       fib_low,
         "fib_levels":    fib_levels,
         "in_golden":     in_golden_zone,
+        "stale_days":    staleness["stale_days"],
+        "stale_label":   staleness["label"],
+        "stale_warning": staleness["warning"],
     }
 
     return result
@@ -912,166 +1077,126 @@ def compute_score(df: pd.DataFrame, timeframe: str = "swing") -> dict:
 # CHART BUILDER
 # ─────────────────────────────────────────────────────────────────────────────
 
+# ─────────────────────────────────────────────────────────────────────────────
+# CHART BUILDER — 2 panel: harga+EMA (atas) + Volume (bawah)
+# ─────────────────────────────────────────────────────────────────────────────
+
 def build_chart(df: pd.DataFrame, sc: dict, ticker: str, timeframe_label: str) -> go.Figure:
-    """Bangun candlestick chart Plotly dengan overlay semua indikator."""
-    info = sc["info"]
+    """
+    Bangun chart 2 panel:
+    - Row 1 (70%): Candlestick + EMA9/20/50/200
+    - Row 2 (30%): Volume bar + Vol MA20
+    Semua indikator lain (MACD, RSI, Stochastic, SAR, BB, Fibonacci)
+    tetap dihitung untuk panel tabel, tapi tidak ditampilkan di chart.
+    """
+    info        = sc["info"]
+    stale_days  = info.get("stale_days", 0)
+    stale_label = info.get("stale_label", "")
 
     fig = make_subplots(
-        rows=4, cols=1, shared_xaxes=True,
-        vertical_spacing=0.02,
-        row_heights=[0.50, 0.18, 0.16, 0.16],
+        rows=2, cols=1,
+        shared_xaxes=True,
+        vertical_spacing=0.03,
+        row_heights=[0.72, 0.28],
         subplot_titles=(
-            f"{ticker} — {timeframe_label}",
-            "MACD (12,26,9)",
-            "RSI (14) | Stochastic (14,3,3)",
-            "Volume | ADX",
+            f"{ticker} — {timeframe_label}"
+            + (f"  |  ⚠ {stale_label}" if stale_days > 0 else ""),
+            "Volume",
         ),
     )
 
-    # ── Row 1: Candlestick + overlay ─────────────────────────────────────────
+    # ── Row 1: Candlestick ────────────────────────────────────────────────────
     fig.add_trace(go.Candlestick(
-        x=df.index, open=df['Open'], high=df['High'],
-        low=df['Low'],  close=df['Close'], name="Harga",
-        increasing_line_color="#00C853", decreasing_line_color="#D50000",
+        x=df.index,
+        open=df['Open'], high=df['High'],
+        low=df['Low'],   close=df['Close'],
+        name="Harga",
+        increasing_line_color="#00C853",
+        decreasing_line_color="#D50000",
+        increasing_fillcolor="#00C853",
+        decreasing_fillcolor="#D50000",
     ), row=1, col=1)
 
-    for col, color, name in [
-        ('EMA9',   '#F9A825', 'EMA9'),
-        ('EMA20',  '#00BCD4', 'EMA20'),
-        ('EMA50',  '#FF7043', 'EMA50'),
-        ('EMA200', '#CE93D8', 'EMA200'),
-    ]:
+    # EMA 9 / 20 / 50 / 200
+    ema_styles = [
+        ('EMA9',   '#F9A825', 1.2, 'solid'),   # kuning
+        ('EMA20',  '#00BCD4', 1.5, 'solid'),   # cyan
+        ('EMA50',  '#FF7043', 1.5, 'solid'),   # oranye
+        ('EMA200', '#CE93D8', 2.0, 'solid'),   # ungu
+    ]
+    for col_name, color, width, dash in ema_styles:
+        if col_name in df.columns:
+            fig.add_trace(go.Scatter(
+                x=df.index, y=df[col_name],
+                line=dict(color=color, width=width, dash=dash),
+                name=col_name, opacity=0.95,
+            ), row=1, col=1)
+
+    # Tandai candle terakhir yang valid jika data stale
+    if stale_days > 0:
+        valid_iloc  = sc["staleness"]["last_valid_iloc"]
+        valid_date  = df.index[valid_iloc]
+        valid_close = df['Close'].iloc[valid_iloc]
         fig.add_trace(go.Scatter(
-            x=df.index, y=df[col],
-            line=dict(color=color, width=1.2),
-            name=name, opacity=0.9,
+            x=[valid_date],
+            y=[valid_close],
+            mode='markers',
+            marker=dict(color='#FFD600', size=10, symbol='diamond',
+                        line=dict(color='#FFFFFF', width=1.5)),
+            name=f'Candle Terakhir Valid ({stale_label})',
+            showlegend=True,
         ), row=1, col=1)
 
-    # Bollinger Bands
-    fig.add_trace(go.Scatter(
-        x=df.index, y=df['BB_Upper'],
-        line=dict(color='rgba(100,181,246,0.4)', width=1, dash='dot'),
-        name='BB Upper', showlegend=False,
-    ), row=1, col=1)
-    fig.add_trace(go.Scatter(
-        x=df.index, y=df['BB_Lower'],
-        line=dict(color='rgba(100,181,246,0.4)', width=1, dash='dot'),
-        fill='tonexty', fillcolor='rgba(100,181,246,0.05)',
-        name='BB Lower', showlegend=False,
-    ), row=1, col=1)
-    fig.add_trace(go.Scatter(
-        x=df.index, y=df['BB_Mid'],
-        line=dict(color='rgba(100,181,246,0.3)', width=1, dash='dash'),
-        name='BB Mid', showlegend=False,
-    ), row=1, col=1)
-
-    # VWAP
-    fig.add_trace(go.Scatter(
-        x=df.index, y=df['VWAP_20'],
-        line=dict(color='#FFEB3B', width=1.2, dash='dash'),
-        name='VWAP(20)', opacity=0.7,
-    ), row=1, col=1)
-
-    # Parabolic SAR
-    sar_colors = ['#00C853' if b else '#D50000' for b in df['SAR_Bull']]
-    fig.add_trace(go.Scatter(
-        x=df.index, y=df['SAR'],
-        mode='markers',
-        marker=dict(color=sar_colors, size=4, symbol='circle'),
-        name='Parabolic SAR',
-    ), row=1, col=1)
-
-    # Fibonacci levels (horizontal lines dari ujung kiri ke kanan)
-    fib_levels = info['fib_levels']
-    fib_colors_map = {
-        "0.0": "rgba(255,255,255,0.15)",
-        "0.236": "rgba(255,193,7,0.3)",
-        "0.382": "rgba(255,152,0,0.4)",
-        "0.5":   "rgba(244,67,54,0.3)",
-        "0.618": "rgba(76,175,80,0.7)",
-        "0.786": "rgba(76,175,80,0.7)",
-        "1.0":   "rgba(255,255,255,0.15)",
-    }
-    for lvl_key, lvl_price in fib_levels.items():
-        is_golden = lvl_key in ("0.618", "0.786")
-        fig.add_hline(
-            y=lvl_price, row=1, col=1,
-            line=dict(
-                color=fib_colors_map.get(lvl_key, "rgba(200,200,200,0.3)"),
-                width=1.5 if is_golden else 0.8,
-                dash="solid" if is_golden else "dot",
-            ),
-            annotation_text=f"Fib {lvl_key} ({lvl_price:,.0f})" if is_golden else f"Fib {lvl_key}",
-            annotation_position="right",
-            annotation_font_size=9,
-        )
-
-    # ── Row 2: MACD ───────────────────────────────────────────────────────────
-    colors_hist = ['#00C853' if v >= 0 else '#D50000' for v in df['MACD_Hist']]
-    fig.add_trace(go.Bar(
-        x=df.index, y=df['MACD_Hist'],
-        marker_color=colors_hist, name='MACD Hist', opacity=0.7,
-    ), row=2, col=1)
-    fig.add_trace(go.Scatter(
-        x=df.index, y=df['MACD'],
-        line=dict(color='#00BCD4', width=1.5), name='MACD',
-    ), row=2, col=1)
-    fig.add_trace(go.Scatter(
-        x=df.index, y=df['Signal_Line'],
-        line=dict(color='#FF7043', width=1.5), name='Signal',
-    ), row=2, col=1)
-    fig.add_hline(y=0, row=2, col=1, line=dict(color='rgba(255,255,255,0.2)', width=1))
-
-    # ── Row 3: RSI + Stochastic ───────────────────────────────────────────────
-    fig.add_trace(go.Scatter(
-        x=df.index, y=df['RSI'],
-        line=dict(color='#FFEB3B', width=1.5), name='RSI(14)',
-    ), row=3, col=1)
-    fig.add_trace(go.Scatter(
-        x=df.index, y=df['Stoch_K'],
-        line=dict(color='#E040FB', width=1.2, dash='dot'), name='%K(14,3)',
-    ), row=3, col=1)
-    fig.add_trace(go.Scatter(
-        x=df.index, y=df['Stoch_D'],
-        line=dict(color='#FF80AB', width=1.2, dash='dash'), name='%D(3)',
-    ), row=3, col=1)
-    for level, color in [(70, 'rgba(244,67,54,0.4)'), (30, 'rgba(76,175,80,0.4)'),
-                         (80, 'rgba(244,67,54,0.2)'), (20, 'rgba(76,175,80,0.2)')]:
-        fig.add_hline(y=level, row=3, col=1, line=dict(color=color, width=0.8, dash='dot'))
-
-    # ── Row 4: Volume + ADX ───────────────────────────────────────────────────
-    vol_colors = ['#00C853' if c >= o else '#D50000'
-                  for c, o in zip(df['Close'], df['Open'])]
+    # ── Row 2: Volume ─────────────────────────────────────────────────────────
+    vol_colors = [
+        '#00C853' if c >= o else '#D50000'
+        for c, o in zip(df['Close'], df['Open'])
+    ]
     fig.add_trace(go.Bar(
         x=df.index, y=df['Volume'],
-        marker_color=vol_colors, name='Volume', opacity=0.6,
-    ), row=4, col=1)
-    fig.add_trace(go.Scatter(
-        x=df.index, y=df['Vol_MA20'],
-        line=dict(color='#FFD600', width=1.2), name='Vol MA20',
-    ), row=4, col=1)
-    fig.add_trace(go.Scatter(
-        x=df.index, y=df['ADX'],
-        line=dict(color='#FF6D00', width=1.5), name='ADX(14)',
-        yaxis='y5',
-    ), row=4, col=1)
-    fig.add_hline(
-        y=ADX_TREND_STRONG, row=4, col=1,
-        line=dict(color='rgba(255,109,0,0.4)', width=0.8, dash='dot'),
-        annotation_text=f"ADX={ADX_TREND_STRONG}",
-        annotation_font_size=8,
-    )
+        marker_color=vol_colors,
+        name='Volume', opacity=0.65,
+    ), row=2, col=1)
 
+    if 'Vol_MA20' in df.columns:
+        fig.add_trace(go.Scatter(
+            x=df.index, y=df['Vol_MA20'],
+            line=dict(color='#FFD600', width=1.5),
+            name='Vol MA20',
+        ), row=2, col=1)
+
+    # Garis horizontal Vol MA20 saat ini (referensi visual)
+    last_vol_ma20 = df['Vol_MA20'].dropna().iloc[-1] if 'Vol_MA20' in df.columns else None
+    if last_vol_ma20:
+        fig.add_hline(
+            y=last_vol_ma20, row=2, col=1,
+            line=dict(color='rgba(255,214,0,0.3)', width=1, dash='dot'),
+        )
+
+    # ── Layout ────────────────────────────────────────────────────────────────
     fig.update_layout(
-        height=900,
+        height=620,
         template="plotly_dark",
         paper_bgcolor="#0D1117",
         plot_bgcolor="#0D1117",
         xaxis_rangeslider_visible=False,
-        legend=dict(orientation="h", yanchor="bottom", y=1.01, xanchor="right", x=1,
-                    font=dict(size=10)),
-        margin=dict(l=10, r=10, t=40, b=10),
+        legend=dict(
+            orientation="h",
+            yanchor="bottom", y=1.02,
+            xanchor="right", x=1,
+            font=dict(size=10),
+            bgcolor="rgba(13,17,23,0.7)",
+        ),
+        margin=dict(l=10, r=10, t=50, b=10),
+        hovermode="x unified",
     )
+
+    # Warna axis
+    for ax in ['xaxis', 'xaxis2', 'yaxis', 'yaxis2']:
+        fig.update_layout(**{ax: dict(
+            gridcolor='rgba(255,255,255,0.05)',
+            zerolinecolor='rgba(255,255,255,0.1)',
+        )})
 
     return fig
 
@@ -1107,6 +1232,27 @@ def render_indicator_panel(sc: dict, df: pd.DataFrame):
     curr = info['price']
 
     st.markdown("#### 📊 Panel Indikator Teknikal Lengkap")
+
+    # Info candle yang dipakai sebagai acuan
+    stale_days  = info.get("stale_days", 0)
+    stale_label = info.get("stale_label", "")
+    if stale_days > 0:
+        st.markdown(
+            f"<div style='background:#1A2A1A;border:1px solid #FFD600;border-radius:4px;"
+            f"padding:6px 10px;font-size:12px;color:#FFD600;margin-bottom:8px;'>"
+            f"⚠️ <b>Acuan analisa:</b> {stale_label} — "
+            f"semua indikator dihitung dari candle terakhir yang valid (Volume &gt; 0)."
+            f"</div>",
+            unsafe_allow_html=True,
+        )
+    else:
+        st.markdown(
+            f"<div style='background:#0D1B0D;border:1px solid #00C853;border-radius:4px;"
+            f"padding:6px 10px;font-size:12px;color:#00C853;margin-bottom:8px;'>"
+            f"✅ <b>Acuan analisa:</b> Data terkini hari ini."
+            f"</div>",
+            unsafe_allow_html=True,
+        )
     st.markdown(
         "<div style='display:grid;grid-template-columns:160px 140px 1fr;"
         "gap:8px;padding:4px;background:#0D1B2A;border-radius:4px;"
@@ -1360,11 +1506,67 @@ def render_trading_plan(sc: dict, total_modal: float, max_risiko: float):
 # ─────────────────────────────────────────────────────────────────────────────
 
 def generate_pdf_fpdf(data: dict, logo_path: str = "logo_expert_stock_pro.png") -> bytes:
-    """Bangun PDF laporan analisa teknikal menggunakan fpdf."""
+    """
+    Bangun PDF laporan analisa teknikal menggunakan fpdf2.
+    - Semua string dilewatkan _sanitize_pdf() agar bebas karakter non-latin-1.
+    - Layout tabel memakai set_xy() eksplisit per kolom (bukan chain cell_same)
+      untuk menghindari FPDFException 'Not enough horizontal space'.
+    - pdf.output() sudah return bytes di fpdf2 — tidak perlu .encode('latin1').
+    """
+    from fpdf.enums import XPos, YPos
+
+    # ── shortcut sanitizer ────────────────────────────────────────────────────
+    def s(text) -> str:
+        return _sanitize_pdf(str(text) if text is not None else "-")
+
+    # ── layout konstanta ──────────────────────────────────────────────────────
+    LM     = 10      # left margin mm
+    RM     = 10      # right margin mm
+    PW     = 210     # page width mm
+    C1     = 44      # kolom label mm
+    C2     = 48      # kolom nilai mm
+    C3     = PW - LM - RM - C1 - C2   # kolom simpulan (~98mm)
+    RH     = 5       # row height mm
+
+    # ── helper: satu baris tabel 3-kolom ─────────────────────────────────────
+    def row2(label_txt: str, val_txt, simpulan_txt):
+        """
+        Cetak baris: label | nilai | simpulan.
+        Gunakan set_xy() eksplisit agar multi_cell kolom-3 tidak crash
+        akibat cursor X yang salah setelah dua cell() font berbeda.
+        """
+        y0 = pdf.get_y()
+        pdf.set_font("Helvetica", 'B', 9)
+        pdf.set_xy(LM, y0)
+        pdf.cell(C1, RH, s(label_txt))
+        pdf.set_font("Helvetica", '', 9)
+        pdf.set_xy(LM + C1, y0)
+        pdf.cell(C2, RH, s(str(val_txt)))
+        pdf.set_xy(LM + C1 + C2, y0)
+        pdf.multi_cell(C3, RH, s(str(simpulan_txt)))
+
+    # ── helper: header section ────────────────────────────────────────────────
+    def section_header(title: str):
+        pdf.set_fill_color(30, 42, 58)
+        pdf.set_text_color(255, 255, 255)
+        pdf.set_font("Helvetica", 'B', 10)
+        pdf.cell(0, 7, s(title),
+                 new_x=XPos.LMARGIN, new_y=YPos.NEXT, fill=True)
+        pdf.set_text_color(0, 0, 0)
+        pdf.set_font("Helvetica", '', 9)
+
+    # ── helper: cell dengan newline ───────────────────────────────────────────
+    def cnl(w, h, txt, **kw):
+        pdf.cell(w, h, s(txt),
+                 new_x=XPos.LMARGIN, new_y=YPos.NEXT, **kw)
+
+    # ── init ──────────────────────────────────────────────────────────────────
     pdf = FPDF()
+    pdf.set_margins(LM, 10, RM)
     pdf.add_page()
 
-    status_syariah_teks = "Syariah" if "✅" in data.get('syariah', '') else "Non-Syariah"
+    syariah_raw = s(data.get('syariah', ''))
+    status_syariah_teks = "Syariah" if "Syariah" in syariah_raw and "Non" not in syariah_raw else "Non-Syariah"
 
     # ── HEADER ────────────────────────────────────────────────────────────────
     pdf.set_fill_color(13, 17, 23)
@@ -1378,161 +1580,146 @@ def generate_pdf_fpdf(data: dict, logo_path: str = "logo_expert_stock_pro.png") 
         pdf.image(logo_path, x=10.5, y=4.5, w=17, h=17)
 
     pdf.set_text_color(255, 255, 255)
-    pdf.set_font("Arial", 'B', 15)
-    pdf.set_xy(33, 9)
-    pdf.cell(0, 8, "Expert Stock Pro - Analisa Teknikal Pro", ln=True)
+    pdf.set_font("Helvetica", 'B', 14)
+    pdf.set_xy(33, 10)
+    pdf.cell(0, 8, "Expert Stock Pro - Analisa Teknikal Pro")
     pdf.set_y(30)
 
-    pdf.set_font("Arial", 'I', 9)
+    pdf.set_font("Helvetica", 'I', 9)
     pdf.set_text_color(0, 102, 204)
-    pdf.cell(0, 5, "Sumber: https://s.id/pintarsaham", ln=True, align='C',
-             link="https://s.id/pintarsaham")
+    cnl(0, 5, "Sumber: https://s.id/pintarsaham", align='C')
     pdf.ln(1)
 
     pdf.set_text_color(0, 0, 0)
-    pdf.set_font("Arial", 'B', 18)
-    aman_nama = data.get('nama_perusahaan', '').encode('latin-1', 'replace').decode('latin-1')
-    pdf.cell(0, 9, f"{data['ticker']} — {aman_nama}", ln=True, align='C')
+    pdf.set_font("Helvetica", 'B', 16)
+    cnl(0, 9, s(f"{data.get('ticker','?')} - {data.get('nama_perusahaan','')}"), align='C')
 
-    pdf.set_font("Arial", '', 10)
-    pdf.cell(0, 5, f"Sektor: {data.get('sektor','—')} | Status: {status_syariah_teks}", ln=True, align='C')
-    pdf.set_font("Arial", 'B', 9)
-    pdf.cell(0, 5,
-             f"Analisa: {data.get('waktu','—')} | Timeframe: {data.get('timeframe','—')} | "
-             f"Harga: Rp {data.get('harga', 0):,.0f}",
-             ln=True, align='R')
-    pdf.line(10, pdf.get_y() + 1, 200, pdf.get_y() + 1)
+    pdf.set_font("Helvetica", '', 10)
+    cnl(0, 5, s(f"Sektor: {data.get('sektor','-')} | Status: {status_syariah_teks}"), align='C')
+
+    pdf.set_font("Helvetica", 'B', 9)
+    cnl(0, 5,
+        s(f"Analisa: {data.get('waktu','-')} | TF: {data.get('timeframe','-')} | "
+          f"Harga: Rp {data.get('harga', 0):,.0f}"),
+        align='R')
+
+    pdf.line(LM, pdf.get_y() + 1, PW - RM, pdf.get_y() + 1)
     pdf.ln(4)
 
     # ── SKOR & SIMPULAN ───────────────────────────────────────────────────────
-    score  = data.get('score', 0)
-    label  = data.get('label', '—')
+    score = data.get('score', 0)
+    label = data.get('label', '-')
     warna_map = {
-        "STRONG BUY": (0, 200, 83),
-        "BUY": (105, 240, 174),
-        "WATCH": (255, 214, 0),
-        "NEUTRAL": (158, 158, 158),
-        "CAUTION": (255, 109, 0),
-        "SELL/AVOID": (213, 0, 0),
-        "STRONG SELL": (183, 28, 28),
+        "STRONG BUY":          (0, 200, 83),
+        "BUY":                 (105, 240, 174),
+        "WATCH":               (255, 214, 0),
+        "NEUTRAL":             (158, 158, 158),
+        "CAUTION":             (255, 109, 0),
+        "SELL/AVOID":          (213, 0, 0),
+        "STRONG SELL":         (183, 28, 28),
         "KONDISI TIDAK IDEAL": (100, 100, 100),
     }
     r, g, b = warna_map.get(label, (100, 100, 100))
 
     pdf.set_fill_color(r, g, b)
     pdf.set_text_color(0, 0, 0)
-    pdf.set_font("Arial", 'B', 14)
-    pdf.cell(0, 10, f"SKOR TEKNIKAL: {score}/100 — {label}", ln=True, fill=True, align='C')
-    pdf.set_font("Arial", 'I', 10)
+    pdf.set_font("Helvetica", 'B', 13)
+    cnl(0, 10, s(f"SKOR TEKNIKAL: {score}/100  |  {label}"), fill=True, align='C')
+
+    pdf.set_font("Helvetica", 'I', 9)
     pdf.set_text_color(50, 50, 50)
-    confidence_aman = data.get('confidence', '').encode('latin-1', 'replace').decode('latin-1')
-    pdf.multi_cell(0, 5, f"Catatan: {confidence_aman}")
+    pdf.multi_cell(0, 5, s(f"Catatan: {data.get('confidence','-')}"))
     pdf.ln(2)
-
-    def section_header(title):
-        pdf.set_fill_color(30, 42, 58)
-        pdf.set_text_color(255, 255, 255)
-        pdf.set_font("Arial", 'B', 10)
-        pdf.cell(0, 7, title, ln=True, fill=True)
-        pdf.set_text_color(0, 0, 0)
-        pdf.set_font("Arial", '', 9)
-
-    def row2(label_txt, val_txt, simpulan_txt):
-        label_safe    = label_txt.encode('latin-1', 'replace').decode('latin-1')
-        val_safe      = str(val_txt).encode('latin-1', 'replace').decode('latin-1')
-        simpulan_safe = str(simpulan_txt).encode('latin-1', 'replace').decode('latin-1')
-        pdf.set_font("Arial", 'B', 9)
-        pdf.cell(42, 5, label_safe)
-        pdf.set_font("Arial", '', 9)
-        pdf.cell(45, 5, val_safe)
-        pdf.multi_cell(0, 5, simpulan_safe)
 
     # ── LAYER 1 ───────────────────────────────────────────────────────────────
     section_header("1. FILTER (GO / NO-GO)")
     l1 = data.get('layer1', {})
-    row2("ADX/DMI (14)",   l1.get('adx_nilai', '—'), l1.get('adx_label', '—'))
-    row2("Volume Ratio",   l1.get('vol_nilai', '—'), l1.get('vol_label', '—'))
-    row2("Likuiditas",     l1.get('liq_nilai', '—'), l1.get('liq_label', '—'))
+    row2("ADX/DMI (14)",  l1.get('adx_nilai', '-'), l1.get('adx_label', '-'))
+    row2("Volume Ratio",  l1.get('vol_nilai', '-'),  l1.get('vol_label', '-'))
+    row2("Likuiditas",    l1.get('liq_nilai', '-'),  l1.get('liq_label', '-'))
     pdf.ln(2)
 
     # ── LAYER 2 ───────────────────────────────────────────────────────────────
     section_header("2. TREND CONFIRMATION")
     l2 = data.get('layer2', {})
-    row2("EMA Stack",          l2.get('ema_nilai', '—'),   l2.get('ema_label', '—'))
-    row2("Supertrend",         l2.get('super_nilai', '—'), l2.get('super_label', '—'))
-    row2("Parabolic SAR",      l2.get('sar_nilai', '—'),   l2.get('sar_label', '—'))
-    row2("Harga vs SMA20",     l2.get('sma_nilai', '—'),   l2.get('sma_label', '—'))
-    row2("VWAP (20)",          l2.get('vwap_nilai', '—'),  l2.get('vwap_label', '—'))
+    row2("EMA Stack",      l2.get('ema_nilai', '-'),   l2.get('ema_label', '-'))
+    row2("Supertrend",     l2.get('super_nilai', '-'), l2.get('super_label', '-'))
+    row2("Parabolic SAR",  l2.get('sar_nilai', '-'),   l2.get('sar_label', '-'))
+    row2("Harga vs SMA20", l2.get('sma_nilai', '-'),   l2.get('sma_label', '-'))
+    row2("VWAP (20)",      l2.get('vwap_nilai', '-'),  l2.get('vwap_label', '-'))
     pdf.ln(2)
 
     # ── LAYER 3 ───────────────────────────────────────────────────────────────
     section_header("3. MOMENTUM CONFIRMATION")
     l3 = data.get('layer3', {})
-    row2("MACD (12,26,9)",     l3.get('macd_nilai', '—'),   l3.get('macd_label', '—'))
-    row2("RSI (14)",           l3.get('rsi_nilai', '—'),    l3.get('rsi_label', '—'))
-    row2("Stochastic (14,3,3)",l3.get('stoch_nilai', '—'),  l3.get('stoch_label', '—'))
-    row2("OBV",                l3.get('obv_nilai', '—'),    l3.get('obv_label', '—'))
+    row2("MACD (12,26,9)",      l3.get('macd_nilai', '-'),  l3.get('macd_label', '-'))
+    row2("RSI (14)",            l3.get('rsi_nilai', '-'),   l3.get('rsi_label', '-'))
+    row2("Stochastic (14,3,3)", l3.get('stoch_nilai', '-'), l3.get('stoch_label', '-'))
+    row2("OBV",                 l3.get('obv_nilai', '-'),   l3.get('obv_label', '-'))
     pdf.ln(2)
 
     # ── LAYER 4 ───────────────────────────────────────────────────────────────
     section_header("4. ENTRY TRIGGER & KONTEKS")
     l4 = data.get('layer4', {})
-    row2("Bollinger Bands",    l4.get('bb_nilai', '—'),     l4.get('bb_label', '—'))
-    row2("Fibonacci",          l4.get('fib_nilai', '—'),    l4.get('fib_label', '—'))
-    row2("Candlestick",        '—',                          l4.get('candle_label', '—'))
-    row2("Volume Spike",       l1.get('vol_nilai', '—'),    l4.get('volspike_label', '—'))
-    row2("ATR%",               l4.get('atr_nilai', '—'),    l4.get('atr_label', '—'))
+    row2("Bollinger Bands", l4.get('bb_nilai', '-'),      l4.get('bb_label', '-'))
+    row2("Fibonacci",       l4.get('fib_nilai', '-'),     l4.get('fib_label', '-'))
+    row2("Candlestick",     "-",                           l4.get('candle_label', '-'))
+    row2("Volume Spike",    l1.get('vol_nilai', '-'),      l4.get('volspike_label', '-'))
+    row2("ATR%",            l4.get('atr_nilai', '-'),      l4.get('atr_label', '-'))
     pdf.ln(2)
 
     # ── TRADING PLAN ──────────────────────────────────────────────────────────
     section_header("5. TRADING PLAN & POSITION SIZING")
     plan = data.get('plan', {})
-    if score < 10:
-        pdf.set_font("Arial", 'I', 10)
-        pdf.set_text_color(180, 0, 0)
-        pdf.multi_cell(0, 6,
-                       "Trading plan di bawah adalah ILUSTRASI — tidak direkomendasikan "
-                       "untuk dieksekusi saat ini karena skor teknikal belum memadai.")
-        pdf.set_text_color(0, 0, 0)
-        pdf.set_font("Arial", '', 9)
 
-    pdf.set_font("Arial", '', 9)
-    row2("Harga Entry",    f"Rp {plan.get('entry', 0):,.0f}",  "—")
-    row2("Stop Loss",      f"Rp {plan.get('sl', 0):,.0f}",     f"-{plan.get('sl_pct', 0):.1f}% dari entry")
-    row2("Target 1 (TP1)", f"Rp {plan.get('tp1', 0):,.0f}",   f"+{plan.get('tp1_pct', 0):.1f}% | R:R 1:{plan.get('rr1', 0):.1f}")
-    row2("Target 2 (TP2)", f"Rp {plan.get('tp2', 0):,.0f}",   f"+{plan.get('tp2_pct', 0):.1f}% | R:R 1:{plan.get('rr2', 0):.1f}")
-    row2("ATR",            f"{plan.get('atr', 0):,.0f} ({plan.get('atr_pct', 0):.2f}%)", "—")
+    if score < 10:
+        pdf.set_font("Helvetica", 'I', 9)
+        pdf.set_text_color(180, 0, 0)
+        pdf.multi_cell(0, 5,
+            "Trading plan berikut adalah ILUSTRASI - tidak direkomendasikan "
+            "untuk dieksekusi karena skor teknikal belum memadai.")
+        pdf.set_text_color(0, 0, 0)
+
+    row2("Harga Entry",    f"Rp {plan.get('entry', 0):,.0f}", "-")
+    row2("Stop Loss",      f"Rp {plan.get('sl', 0):,.0f}",
+         f"-{plan.get('sl_pct', 0):.1f}% dari entry")
+    row2("Target 1 (TP1)", f"Rp {plan.get('tp1', 0):,.0f}",
+         f"+{plan.get('tp1_pct', 0):.1f}% | R:R 1:{plan.get('rr1', 0):.1f}")
+    row2("Target 2 (TP2)", f"Rp {plan.get('tp2', 0):,.0f}",
+         f"+{plan.get('tp2_pct', 0):.1f}% | R:R 1:{plan.get('rr2', 0):.1f}")
+    row2("ATR",
+         f"{plan.get('atr', 0):,.0f} ({plan.get('atr_pct', 0):.2f}%)",
+         "Dasar perhitungan SL dan TP")
     pdf.ln(2)
 
-    pdf.set_font("Arial", 'B', 9)
-    pdf.cell(0, 5, "POSITION SIZING", ln=True)
-    pdf.set_font("Arial", '', 9)
-    row2("Modal",                  f"Rp {data.get('total_modal', 0):,.0f}", "—")
-    row2("Maks Risiko",            f"Rp {data.get('max_risiko', 0):,.0f}",  "—")
-    row2("Risk-Based Limit",       f"{int(data.get('max_lembar_risk', 0)):,.0f} lembar", "—")
-    row2("Capital-Based (15%)",    f"{int(data.get('max_lembar_capital', 0)):,.0f} lembar", "—")
-    row2("FINAL MAX LOT",          f"{data.get('final_lot', 0)} LOT",
-         "Diambil angka paling konservatif")
+    pdf.set_font("Helvetica", 'B', 9)
+    cnl(0, 5, "POSITION SIZING")
+    row2("Modal",               f"Rp {data.get('total_modal', 0):,.0f}",                 "-")
+    row2("Maks Risiko",         f"Rp {data.get('max_risiko', 0):,.0f}",                  "-")
+    row2("Risk-Based Limit",    f"{int(data.get('max_lembar_risk', 0)):,.0f} lembar",    "-")
+    row2("Capital-Based (15%)", f"{int(data.get('max_lembar_capital', 0)):,.0f} lembar", "-")
+    row2("FINAL MAX LOT",       f"{data.get('final_lot', 0)} LOT",
+         "Angka paling konservatif")
     pdf.ln(2)
 
     # ── SENTIMEN ──────────────────────────────────────────────────────────────
     section_header("6. SENTIMEN BERITA")
-    pdf.cell(0, 5, f"Status: {data.get('sentiment', '—')}", ln=True)
-    aman_headline = data.get('headline', '').encode('latin-1', 'replace').decode('latin-1')
-    pdf.multi_cell(0, 5, f"Headline: {aman_headline}")
-    pdf.ln(10)
+    cnl(0, 5, s(f"Status: {data.get('sentiment', '-')}"))
+    pdf.multi_cell(0, 5, s(f"Headline: {data.get('headline', '-')}"))
+    pdf.ln(8)
 
     # ── DISCLAIMER ────────────────────────────────────────────────────────────
-    pdf.line(10, pdf.get_y(), 200, pdf.get_y())
-    pdf.set_font("Arial", 'I', 7)
+    pdf.line(LM, pdf.get_y(), PW - RM, pdf.get_y())
+    pdf.set_font("Helvetica", 'I', 7)
     pdf.set_text_color(100, 100, 100)
     pdf.multi_cell(0, 4,
-        "DISCLAIMER: Laporan ini dihasilkan secara otomatis menggunakan algoritma indikator "
-        "teknikal. Bukan merupakan ajakan, rekomendasi pasti, atau paksaan untuk membeli/menjual "
-        "saham. Keputusan investasi sepenuhnya menjadi tanggung jawab pribadi investor. "
-        "Selalu terapkan manajemen risiko dan Do Your Own Research (DYOR).")
+        "DISCLAIMER: Laporan ini dihasilkan secara otomatis menggunakan algoritma "
+        "indikator teknikal. Bukan merupakan ajakan, rekomendasi pasti, atau paksaan "
+        "untuk membeli/menjual saham. Keputusan investasi sepenuhnya menjadi tanggung "
+        "jawab pribadi investor. Selalu terapkan manajemen risiko dan DYOR.")
 
-    return bytes(pdf.output(dest='S').encode('latin1'))
+    # fpdf2: output() return bytes langsung
+    return pdf.output()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1647,6 +1834,11 @@ def run_teknikal():
     # ═══════════════════════════════════════════════════════════════
     with tab_swing:
         st.markdown("##### Timeframe: Daily | Parameter Supertrend (10,3)")
+
+        # Warning staleness — tampilkan sebelum chart jika data stale
+        stale_warn_sw = sc_swing["info"].get("stale_warning")
+        if stale_warn_sw:
+            st.warning(stale_warn_sw)
 
         # Chart
         fig_swing = build_chart(df_daily_calc, sc_swing, ticker_bersih, "Daily")
@@ -1764,6 +1956,11 @@ def run_teknikal():
                 "Gunakan tab Swing Trade sebagai alternatif."
             )
         else:
+            # Warning staleness M15
+            stale_warn_dy = sc_day["info"].get("stale_warning")
+            if stale_warn_dy:
+                st.warning(stale_warn_dy)
+
             # Chart
             fig_day = build_chart(df_m15_calc, sc_day, ticker_bersih, "M15")
             st.plotly_chart(fig_day, use_container_width=True)
