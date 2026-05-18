@@ -287,8 +287,8 @@ def export_to_pdf(
     pdf.set_y(28)
     pdf.set_font("Arial", "I", 10)
     pdf.set_text_color(0, 0, 255)
-    pdf.cell(0, 5, "Sumber: https://s.id/pintarsaham", ln=True, align="C",
-             link="https://s.id/pintarsaham")
+    pdf.cell(0, 5, "Sumber: https://bit.ly/sahampintar", ln=True, align="C",
+             link="https://bit.ly/sahampintar")
     pdf.ln(3)
     pdf.set_text_color(0, 0, 0)
     pdf.set_font("Arial", "B", 12)
@@ -562,13 +562,40 @@ def process_single_stock(
         if hist.empty or len(hist) < 55:
             return None
 
-        df   = calculate_indicators(hist, trade_mode)
-        last = df.iloc[-1]
-        prev = df.iloc[-2]
+        df = calculate_indicators(hist, trade_mode)
+
+        # ── DETEKSI CANDLE VALID TERAKHIR ────────────────────────────────────
+        # Scan mundur dari baris terakhir; cari candle pertama dengan
+        # Volume > 0 DAN Close > 0. Menghindari candle kosong saat libur panjang.
+        valid_iloc = None
+        for i in range(len(df) - 1, -1, -1):
+            row = df.iloc[i]
+            if (
+                not pd.isna(row["Close"])
+                and row["Close"] > 0
+                and not pd.isna(row["Volume"])
+                and row["Volume"] > 0
+            ):
+                valid_iloc = i
+                break
+
+        if valid_iloc is None:
+            return None
+
+        last      = df.iloc[valid_iloc]
+        prev      = df.iloc[max(valid_iloc - 1, 0)]
         curr_price = last["Close"]
 
         if curr_price <= 0:
             return None
+
+        # Hitung stale_days: jarak hari kalender candle valid → hari ini
+        try:
+            candle_ts  = df.index[valid_iloc]
+            today_ts   = pd.Timestamp.now(tz=candle_ts.tzinfo)
+            stale_days = (today_ts.normalize() - candle_ts.normalize()).days
+        except Exception:
+            stale_days = 0
 
         sektor_nama    = get_sector_from_universe(ticker_bersih, df_universe)
         syariah_status = "Ya" if is_syariah_from_universe(ticker_bersih, df_universe) else "Tidak"
@@ -630,10 +657,10 @@ def process_single_stock(
         df["CMF"] = (mfm * df["Volume"]).rolling(20).sum() / df["Volume"].rolling(20).sum()
         df["VPT"] = (df["Close"].pct_change() * df["Volume"]).cumsum()
 
-        obv_trend_up = df["OBV"].iloc[-1] > df["OBV"].iloc[-5]
-        cmf_positive = df["CMF"].iloc[-1] > -0.1
-        vpt_trend_up = df["VPT"].iloc[-1] > df["VPT"].iloc[-3]
-        vol_sma20    = df["Volume"].rolling(20).mean().iloc[-1]
+        obv_trend_up = df["OBV"].iloc[valid_iloc] > df["OBV"].iloc[max(valid_iloc - 5, 0)]
+        cmf_positive = df["CMF"].iloc[valid_iloc] > -0.1
+        vpt_trend_up = df["VPT"].iloc[valid_iloc] > df["VPT"].iloc[max(valid_iloc - 3, 0)]
+        vol_sma20    = df["Volume"].rolling(20).mean().iloc[valid_iloc]
         rvol         = last["Volume"] / vol_sma20 if vol_sma20 > 0 else 0
 
         # Minimal salah satu indikator bandarmologi harus positif
@@ -728,15 +755,16 @@ def process_single_stock(
 
         score = min(round(score), 100)
         return {
-            "Ticker":  ticker_bersih,
-            "Sektor":  sektor_nama,
-            "Syariah": syariah_status,
-            "Quality": quality_label,
-            "Skor":    score,
-            "Harga":   int(curr_price),
-            "ATR":     last["ATR"],
-            "Alasan":  alasan,
-            "RSI":     last["RSI"],
+            "Ticker":     ticker_bersih,
+            "Sektor":     sektor_nama,
+            "Syariah":    syariah_status,
+            "Quality":    quality_label,
+            "Skor":       score,
+            "Harga":      int(curr_price),
+            "ATR":        last["ATR"],
+            "Alasan":     alasan,
+            "RSI":        last["RSI"],
+            "StaleDays":  stale_days,
         }
 
     except Exception:
@@ -995,6 +1023,17 @@ def run_screening() -> None:
 
         df_all = pd.DataFrame(raw_results)
         sector_report, leading_sectors = analyze_sector_momentum(df_all)
+
+        # ── INFO STALE DATA ──────────────────────────────────────────────────
+        if not df_all.empty and "StaleDays" in df_all.columns:
+            max_stale = int(df_all["StaleDays"].max())
+            if max_stale >= 1:
+                st.warning(
+                    f"⚠️ **Data Stale: {max_stale} hari kalender** — "
+                    f"Bursa sedang libur atau belum buka. "
+                    f"Analisa menggunakan candle terakhir yang valid (Volume > 0). "
+                    f"Sinyal tetap bisa dibaca sebagai persiapan sesi berikutnya."
+                )
 
         final_picks = []
         sl_mult     = SL_MULT_DAY    if trade_mode == "Day Trading" else SL_MULT_SWING
