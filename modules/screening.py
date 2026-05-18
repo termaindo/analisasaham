@@ -15,6 +15,16 @@ Perbaikan vs versi sebelumnya:
 - Fix path PRE_LIQUID_PATH & LIQUID_PATH: koreksi di data_loader.py —
   _BASE_DIR naik dua level (dirname dua kali) dari /utils/ ke root repo,
   sehingga LIQUID_PATH = /data/liquid_stocks.csv yang benar
+
+Perbaikan stale-candle (v2):
+- Drop semua baris dengan Close <= 0 atau Volume <= 0 SEBELUM
+  calculate_indicators() — memastikan rolling/ewm tidak tercemari nol
+  akibat hari libur panjang (long holiday gap).
+- prev_iloc di-scan mundur dari valid_iloc (bukan hardcode valid_iloc-1)
+  sehingga selalu menunjuk candle valid sebelumnya, bukan candle libur.
+- Semua referensi sliding window (OBV, VPT, Supertrend_Dir, vol_sma20)
+  menggunakan valid_iloc / prev_iloc yang sudah tervalidasi.
+- stale_days dihitung dan ditampilkan sebagai peringatan UI.
 """
 
 import streamlit as st
@@ -519,6 +529,26 @@ def calculate_indicators(df: pd.DataFrame, trade_mode: str) -> pd.DataFrame:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# HELPER: BERSIHKAN CANDLE KOSONG (LIBUR)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def drop_empty_candles(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Hapus baris dengan Close <= 0, Volume <= 0, atau Close/Volume NaN.
+    Ini memastikan semua rolling/ewm di calculate_indicators() tidak
+    tercemari oleh gap hari libur yang diisi nilai nol oleh yfinance.
+
+    Catatan: yfinance kadang mengisi hari libur dengan baris Close=0,
+    Volume=0 alih-alih menghapusnya, terutama pada interval harian.
+    """
+    mask = (
+        df["Close"].notna() & (df["Close"] > 0) &
+        df["Volume"].notna() & (df["Volume"] > 0)
+    )
+    return df[mask].copy()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # MARKET SESSION
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -552,6 +582,13 @@ def process_single_stock(
     """
     Analisa satu ticker dan kembalikan dict hasil atau None jika tidak lolos filter.
     Dipanggil secara paralel via ThreadPoolExecutor.
+
+    Alur penanganan stale candle:
+      1. Drop semua baris dengan Close/Volume nol atau NaN (gap libur).
+      2. valid_iloc  = indeks baris terakhir yang tersisa (selalu valid setelah drop).
+      3. prev_iloc   = scan mundur dari valid_iloc-1 untuk candle valid sebelumnya.
+      4. stale_days  = jarak hari kalender antara candle valid terakhir dan hari ini.
+      5. Semua referensi sliding window pakai valid_iloc / prev_iloc.
     """
     ticker_bersih = ticker.replace(".JK", "")
     try:
@@ -559,22 +596,35 @@ def process_single_stock(
         data = get_full_stock_data(ticker, interval=interval)
 
         hist = data.get("history", pd.DataFrame())
-        if hist.empty or len(hist) < 55:
+        if hist.empty:
             return None
 
+        # ── LANGKAH 1: HAPUS CANDLE KOSONG (GAP LIBUR) ──────────────────────
+        # Sebelum menghitung indikator apapun, buang semua baris dengan
+        # Close=0 atau Volume=0. yfinance kadang menyelipkan baris nol
+        # untuk hari libur alih-alih menghapusnya dari series.
+        hist = drop_empty_candles(hist)
+
+        if len(hist) < 55:
+            return None
+
+        # ── LANGKAH 2: HITUNG INDIKATOR DI ATAS DATA BERSIH ─────────────────
+        # Karena baris libur sudah dibuang, semua rolling/ewm (ATR, MACD,
+        # RSI, MA20, MA50, VWAP, OBV, dll) bekerja pada data nyata.
         df = calculate_indicators(hist, trade_mode)
 
-        # ── DETEKSI CANDLE VALID TERAKHIR ────────────────────────────────────
-        # Scan mundur dari baris terakhir; cari candle pertama dengan
-        # Volume > 0 DAN Close > 0. Menghindari candle kosong saat libur panjang.
+        # ── LANGKAH 3: TENTUKAN valid_iloc (candle aktif terakhir) ───────────
+        # Setelah drop_empty_candles, setiap baris pasti valid.
+        # Tapi masih mungkin ada NaN di kolom indikator (belum cukup warmup).
+        # Cari dari belakang: baris dengan Close > 0 (sudah pasti) DAN
+        # indikator kunci tidak NaN.
         valid_iloc = None
         for i in range(len(df) - 1, -1, -1):
             row = df.iloc[i]
             if (
-                not pd.isna(row["Close"])
-                and row["Close"] > 0
-                and not pd.isna(row["Volume"])
-                and row["Volume"] > 0
+                not pd.isna(row.get("ATR", np.nan))
+                and not pd.isna(row.get("RSI", np.nan))
+                and not pd.isna(row.get("MACD", np.nan))
             ):
                 valid_iloc = i
                 break
@@ -582,14 +632,36 @@ def process_single_stock(
         if valid_iloc is None:
             return None
 
-        last      = df.iloc[valid_iloc]
-        prev      = df.iloc[max(valid_iloc - 1, 0)]
+        # ── LANGKAH 4: TENTUKAN prev_iloc (candle valid sebelumnya) ──────────
+        # Scan mundur dari valid_iloc-1; cari baris pertama yang tidak NaN
+        # pada indikator kunci. Ini menggantikan hardcode valid_iloc-1
+        # yang bisa menunjuk candle libur pada versi sebelumnya.
+        prev_iloc = None
+        for i in range(valid_iloc - 1, -1, -1):
+            row = df.iloc[i]
+            if (
+                not pd.isna(row.get("ATR", np.nan))
+                and not pd.isna(row.get("RSI", np.nan))
+                and not pd.isna(row.get("MACD", np.nan))
+            ):
+                prev_iloc = i
+                break
+
+        # Jika tidak ada prev (data terlalu pendek), gunakan valid_iloc sendiri
+        # agar tidak crash; efeknya: semua perbandingan curr vs prev = sama.
+        if prev_iloc is None:
+            prev_iloc = valid_iloc
+
+        last       = df.iloc[valid_iloc]
+        prev       = df.iloc[prev_iloc]
         curr_price = last["Close"]
 
         if curr_price <= 0:
             return None
 
-        # Hitung stale_days: jarak hari kalender candle valid → hari ini
+        # ── LANGKAH 5: HITUNG stale_days ─────────────────────────────────────
+        # Jarak hari kalender antara timestamp candle valid terakhir dan hari ini.
+        # Nilai > 0 berarti bursa sedang/baru saja libur.
         try:
             candle_ts  = df.index[valid_iloc]
             today_ts   = pd.Timestamp.now(tz=candle_ts.tzinfo)
@@ -617,7 +689,8 @@ def process_single_stock(
         # 1. Likuiditas: Value_MA20
         value_ma20 = fundamental.get("Value_MA20")
         if value_ma20 is None:
-            value_ma20 = (df["Close"] * df["Volume"]).rolling(20).mean().iloc[-1]
+            # Hitung dari data bersih (sudah tanpa baris nol)
+            value_ma20 = (df["Close"] * df["Volume"]).rolling(20).mean().iloc[valid_iloc]
         if pd.isna(value_ma20) or value_ma20 <= 0:
             return None
 
@@ -639,6 +712,8 @@ def process_single_stock(
         alasan = []
 
         # ── BANDARMOLOGI ────────────────────────────────────────────────────
+        # Semua iterasi di bawah bekerja pada df yang sudah bersih dari
+        # candle libur, sehingga OBV, CMF, VPT tidak terpengaruh gap nol.
         obv = [0]
         for i in range(1, len(df)):
             if df["Close"].iloc[i] > df["Close"].iloc[i - 1]:
@@ -657,17 +732,27 @@ def process_single_stock(
         df["CMF"] = (mfm * df["Volume"]).rolling(20).sum() / df["Volume"].rolling(20).sum()
         df["VPT"] = (df["Close"].pct_change() * df["Volume"]).cumsum()
 
-        obv_trend_up = df["OBV"].iloc[valid_iloc] > df["OBV"].iloc[max(valid_iloc - 5, 0)]
+        # Referensi sliding window menggunakan valid_iloc (bukan -1 dari ujung)
+        obv_lookback = max(valid_iloc - 5, 0)
+        vpt_lookback = max(valid_iloc - 3, 0)
+
+        obv_trend_up = df["OBV"].iloc[valid_iloc] > df["OBV"].iloc[obv_lookback]
         cmf_positive = df["CMF"].iloc[valid_iloc] > -0.1
-        vpt_trend_up = df["VPT"].iloc[valid_iloc] > df["VPT"].iloc[max(valid_iloc - 3, 0)]
-        vol_sma20    = df["Volume"].rolling(20).mean().iloc[valid_iloc]
-        rvol         = last["Volume"] / vol_sma20 if vol_sma20 > 0 else 0
+        vpt_trend_up = df["VPT"].iloc[valid_iloc] > df["VPT"].iloc[vpt_lookback]
+
+        vol_sma20 = df["Volume"].rolling(20).mean().iloc[valid_iloc]
+        rvol      = last["Volume"] / vol_sma20 if (vol_sma20 and vol_sma20 > 0) else 0
 
         # Minimal salah satu indikator bandarmologi harus positif
         if not obv_trend_up and not cmf_positive:
             return None
 
         # ── SCORING ─────────────────────────────────────────────────────────
+        # Supertrend_Dir window: ambil 5 candle sebelum dan termasuk valid_iloc
+        st_dir_start  = max(valid_iloc - 4, 0)
+        st_dir_series = df["Supertrend_Dir"].iloc[st_dir_start : valid_iloc + 1]
+        candles_above = (st_dir_series == 1).sum()
+
         if trade_mode == "Day Trading":
             if last["Volume"] > vol_sma20 * 1.2:
                 score += 15; alasan.append("Volume Spike Kuat (>1.2x SMA20)")
@@ -675,8 +760,6 @@ def process_single_stock(
                 score += 8;  alasan.append("Volume Spike (>SMA20)")
             if curr_price > last.get("VWAP", curr_price - 1):
                 score += 15; alasan.append("Price > VWAP")
-            st_dir_series = df["Supertrend_Dir"].iloc[-5:]
-            candles_above = (st_dir_series == 1).sum()
             if last["Supertrend_Dir"] == 1 and prev["Supertrend_Dir"] != 1:
                 score += 20; alasan.append("Supertrend Baru Bullish (10,2)")
             elif last["Supertrend_Dir"] == 1 and candles_above > 3:
@@ -701,6 +784,9 @@ def process_single_stock(
                 data_daily = get_full_stock_data(ticker, interval="1d")
                 df_daily   = data_daily.get("history", pd.DataFrame())
                 if not df_daily.empty:
+                    # Bersihkan candle kosong pada data daily juga
+                    df_daily = drop_empty_candles(df_daily)
+                if not df_daily.empty:
                     df_daily = df_daily.copy()
                     df_daily["MA50_D"] = df_daily["Close"].rolling(50).mean()
                     df_daily["MA20_D"] = df_daily["Close"].rolling(20).mean()
@@ -719,8 +805,6 @@ def process_single_stock(
                 return None
 
         else:  # Swing Trading
-            st_dir_series = df["Supertrend_Dir"].iloc[-5:]
-            candles_above = (st_dir_series == 1).sum()
             if last["Supertrend_Dir"] == 1 and prev["Supertrend_Dir"] != 1:
                 score += 20; alasan.append("Supertrend Baru Bullish (10,3)")
             elif last["Supertrend_Dir"] == 1 and candles_above > 3:
@@ -841,9 +925,6 @@ def run_screening() -> None:
         st.stop()
 
     # Info sumber data di sidebar
-    # Sumber aktual ditentukan oleh load_universe() — bukan sekadar cek os.path.exists.
-    # get_liquid_stocks() bisa mengembalikan DataFrame kosong meski file ada
-    # (misal: file rusak atau kolom tidak terbaca). Kita cek df_universe langsung.
     liquid_aktif = not get_liquid_stocks().empty
     if liquid_aktif:
         st.sidebar.success(
@@ -1025,6 +1106,8 @@ def run_screening() -> None:
         sector_report, leading_sectors = analyze_sector_momentum(df_all)
 
         # ── INFO STALE DATA ──────────────────────────────────────────────────
+        # Tampilkan peringatan jika candle terakhir bukan dari hari ini.
+        # stale_days > 0 berarti bursa sedang / baru saja libur.
         if not df_all.empty and "StaleDays" in df_all.columns:
             max_stale = int(df_all["StaleDays"].max())
             if max_stale >= 1:
