@@ -7,7 +7,7 @@ beautifulsoup4
 yfinance>=0.2.37
 fpdf
 holidays
-pytz
+pytz==2024.1
 gspread
 google-api-python-client
 google-auth
