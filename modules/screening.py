@@ -1155,7 +1155,7 @@ def run_screening() -> None:
         # ── INFO STALE DATA ──────────────────────────────────────────────────
         # Tampilkan peringatan jika candle terakhir bukan dari hari ini.
         # Untuk Day Trade (15m): stale_days = 0 jika candle hari ini ada,
-        #   meski ada gap 4 hari libur sebelumnya.
+        #   meski ada gap beberapa hari libur sebelumnya.
         # Untuk Swing Trade (1d): stale_days = hari kalender sejak candle
         #   terakhir, termasuk hari libur.
         if not df_all.empty and "StaleDays" in df_all.columns:
@@ -1163,10 +1163,9 @@ def run_screening() -> None:
             if max_stale >= 1:
                 interval_label = "15 menit" if trade_mode == "Day Trading" else "harian"
                 st.warning(
-                    f"⚠️ **Data Stale: {max_stale} hari kalender** — "
-                    f"Candle {interval_label} terakhir yang valid bukan dari hari ini. "
-                    f"Bursa mungkin sedang/baru saja libur. "
+                    f"⚠️ **PERINGATAN: {max_stale} hari kalender** — "
                     f"Data hari libur kosong sudah dihapus otomatis. "
+                    f"Analisis indikator berisiko tidak akurat selama libur bursa."
                     f"Sinyal tetap dapat dibaca sebagai persiapan sesi berikutnya."
                 )
 
