@@ -1563,10 +1563,10 @@ def generate_pdf_fpdf(data: dict, logo_path: str = "logo_expert_stock_pro.png") 
     pdf.cell(0, 8, "Expert Stock Pro - Analisa Teknikal Pro")
     pdf.set_y(30)
 
-    pdf.set_font("Helvetica", 'I', 9)
-    pdf.set_text_color(0, 102, 204)
-    cnl(0, 5, "Sumber: https://s.id/pintarsaham", align='C')
-    pdf.ln(1)
+    pdf.set_font("Arial", "I", 10)
+    pdf.set_text_color(0, 0, 255)
+    pdf.cell(0, 5, "Sumber: https://s.id/pintarsaham", ln=True, align="C",
+             link="https://s.id/pintarsaham")
 
     pdf.set_text_color(0, 0, 0)
     pdf.set_font("Helvetica", 'B', 16)
