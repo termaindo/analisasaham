@@ -1074,10 +1074,6 @@ def compute_score(df: pd.DataFrame, timeframe: str = "swing") -> dict:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# CHART BUILDER
-# ─────────────────────────────────────────────────────────────────────────────
-
-# ─────────────────────────────────────────────────────────────────────────────
 # CHART BUILDER — 2 panel: harga+EMA (atas) + Volume (bawah)
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -1086,8 +1082,6 @@ def build_chart(df: pd.DataFrame, sc: dict, ticker: str, timeframe_label: str) -
     Bangun chart 2 panel:
     - Row 1 (70%): Candlestick + EMA9/20/50/200
     - Row 2 (30%): Volume bar + Vol MA20
-    Semua indikator lain (MACD, RSI, Stochastic, SAR, BB, Fibonacci)
-    tetap dihitung untuk panel tabel, tapi tidak ditampilkan di chart.
     """
     info        = sc["info"]
     stale_days  = info.get("stale_days", 0)
@@ -1119,10 +1113,10 @@ def build_chart(df: pd.DataFrame, sc: dict, ticker: str, timeframe_label: str) -
 
     # EMA 9 / 20 / 50 / 200
     ema_styles = [
-        ('EMA9',   '#F9A825', 1.2, 'solid'),   # kuning
-        ('EMA20',  '#00BCD4', 1.5, 'solid'),   # cyan
-        ('EMA50',  '#FF7043', 1.5, 'solid'),   # oranye
-        ('EMA200', '#CE93D8', 2.0, 'solid'),   # ungu
+        ('EMA9',   '#F9A825', 1.2, 'solid'),
+        ('EMA20',  '#00BCD4', 1.5, 'solid'),
+        ('EMA50',  '#FF7043', 1.5, 'solid'),
+        ('EMA200', '#CE93D8', 2.0, 'solid'),
     ]
     for col_name, color, width, dash in ema_styles:
         if col_name in df.columns:
@@ -1165,7 +1159,6 @@ def build_chart(df: pd.DataFrame, sc: dict, ticker: str, timeframe_label: str) -
             name='Vol MA20',
         ), row=2, col=1)
 
-    # Garis horizontal Vol MA20 saat ini (referensi visual)
     last_vol_ma20 = df['Vol_MA20'].dropna().iloc[-1] if 'Vol_MA20' in df.columns else None
     if last_vol_ma20:
         fig.add_hline(
@@ -1191,7 +1184,6 @@ def build_chart(df: pd.DataFrame, sc: dict, ticker: str, timeframe_label: str) -
         hovermode="x unified",
     )
 
-    # Warna axis
     for ax in ['xaxis', 'xaxis2', 'yaxis', 'yaxis2']:
         fig.update_layout(**{ax: dict(
             gridcolor='rgba(255,255,255,0.05)',
@@ -1233,7 +1225,6 @@ def render_indicator_panel(sc: dict, df: pd.DataFrame):
 
     st.markdown("#### 📊 Panel Indikator Teknikal Lengkap")
 
-    # Info candle yang dipakai sebagai acuan
     stale_days  = info.get("stale_days", 0)
     stale_label = info.get("stale_label", "")
     if stale_days > 0:
@@ -1261,7 +1252,6 @@ def render_indicator_panel(sc: dict, df: pd.DataFrame):
         unsafe_allow_html=True,
     )
 
-    # ── FILTER ────────────────────────────────────────────────────────────────
     st.markdown("<div style='color:#607D8B;font-size:11px;padding:6px 4px 2px;font-weight:700;'>── FILTER (GO/NO-GO) ──</div>", unsafe_allow_html=True)
 
     adx_ok  = l1["ADX"]["ok"]
@@ -1285,7 +1275,6 @@ def render_indicator_panel(sc: dict, df: pd.DataFrame):
         "#00C853" if info['value_ma20'] > 1_000_000_000 else "#FFD600",
     )
 
-    # ── TREND ─────────────────────────────────────────────────────────────────
     st.markdown("<div style='color:#607D8B;font-size:11px;padding:6px 4px 2px;font-weight:700;'>── TREND CONFIRMATION ──</div>", unsafe_allow_html=True)
 
     ema_poin = l2["EMA_Stack"]["poin"]
@@ -1317,7 +1306,6 @@ def render_indicator_panel(sc: dict, df: pd.DataFrame):
         "#00C853" if bb_mid_poin > 0 else "#FF5252",
     )
 
-    # ── VWAP ──────────────────────────────────────────────────────────────────
     vwap_bull = curr > info['vwap']
     _row_indikator(
         "VWAP (20 periode)",
@@ -1326,7 +1314,6 @@ def render_indicator_panel(sc: dict, df: pd.DataFrame):
         "#00C853" if vwap_bull else "#FF6D00",
     )
 
-    # ── MOMENTUM ──────────────────────────────────────────────────────────────
     st.markdown("<div style='color:#607D8B;font-size:11px;padding:6px 4px 2px;font-weight:700;'>── MOMENTUM CONFIRMATION ──</div>", unsafe_allow_html=True)
 
     macd_poin = l3["MACD"]["poin"]
@@ -1351,7 +1338,6 @@ def render_indicator_panel(sc: dict, df: pd.DataFrame):
         "#00C853" if stoch_poin > 0 else ("#FF5252" if stoch_poin < 0 else "#9E9E9E"),
     )
 
-    # OBV (informatif)
     obv_up = info['obv'] > info['obv_prev']
     _row_indikator(
         "OBV (Volume Flow)",
@@ -1360,7 +1346,6 @@ def render_indicator_panel(sc: dict, df: pd.DataFrame):
         "#00C853" if obv_up else "#FF6D00",
     )
 
-    # ── ENTRY TRIGGER ──────────────────────────────────────────────────────────
     st.markdown("<div style='color:#607D8B;font-size:11px;padding:6px 4px 2px;font-weight:700;'>── ENTRY TRIGGER & KONTEKS ──</div>", unsafe_allow_html=True)
 
     bb_poin  = l4["Bollinger_Bands"]["poin"]
@@ -1392,7 +1377,6 @@ def render_indicator_panel(sc: dict, df: pd.DataFrame):
         "#00C853" if vol_poin > 0 else ("#FF5252" if vol_poin < 0 else "#9E9E9E"),
     )
 
-    # ATR%
     _row_indikator(
         "ATR% (Volatilitas)",
         f"ATR: {info['atr']:,.0f} ({info['atr_pct']:.2f}%)",
@@ -1421,7 +1405,6 @@ def render_trading_plan(sc: dict, total_modal: float, max_risiko: float):
     st.markdown("---")
     st.markdown("#### 📋 Trading Plan & Position Sizing")
 
-    # Skor besar
     st.markdown(
         f"""
         <div style='text-align:center;padding:16px;background:#0D1B2A;
@@ -1442,7 +1425,6 @@ def render_trading_plan(sc: dict, total_modal: float, max_risiko: float):
         )
         st.markdown("---")
 
-    # Trading plan tetap ditampilkan
     c1, c2, c3 = st.columns(3)
     with c1:
         st.metric("Entry (Harga Saat Ini)", f"Rp {plan['entry']:,.0f}")
@@ -1466,7 +1448,6 @@ def render_trading_plan(sc: dict, total_modal: float, max_risiko: float):
     with c6:
         st.metric("Risk/Reward", f"1:{plan['rr1']:.1f} / 1:{plan['rr2']:.1f}")
 
-    # Position sizing
     if plan['entry'] > 0 and plan['sl'] > 0:
         risk_per_share     = plan['entry'] - plan['sl']
         max_lembar_risk    = (max_risiko / risk_per_share) if risk_per_share > 0 else 0
@@ -1502,19 +1483,18 @@ def render_trading_plan(sc: dict, total_modal: float, max_risiko: float):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# GENERATOR PDF (DIPERBARUI)
+# GENERATOR PDF
+# PERBAIKAN: Hapus "from fpdf.enums import XPos, YPos" — tidak kompatibel
+# dengan fpdf v1.x yang mungkin terinstall di Streamlit Cloud lama.
+# Ganti XPos.LMARGIN → "LMARGIN" dan YPos.NEXT → "NEXT" (string enum
+# yang didukung fpdf2 >= 2.2 tanpa perlu import fpdf.enums).
 # ─────────────────────────────────────────────────────────────────────────────
 
 def generate_pdf_fpdf(data: dict, logo_path: str = "logo_expert_stock_pro.png") -> bytes:
     """
     Bangun PDF laporan analisa teknikal menggunakan fpdf2.
-    - Semua string dilewatkan _sanitize_pdf() agar bebas karakter non-latin-1.
-    - Layout tabel memakai set_xy() eksplisit per kolom (bukan chain cell_same)
-      untuk menghindari FPDFException 'Not enough horizontal space'.
-    - pdf.output() sudah return bytes di fpdf2 — tidak perlu .encode('latin1').
+    Kompatibel dengan fpdf2 >= 2.2 tanpa import fpdf.enums.
     """
-    from fpdf.enums import XPos, YPos
-
     # ── shortcut sanitizer ────────────────────────────────────────────────────
     def s(text) -> str:
         return _sanitize_pdf(str(text) if text is not None else "-")
@@ -1532,8 +1512,7 @@ def generate_pdf_fpdf(data: dict, logo_path: str = "logo_expert_stock_pro.png") 
     def row2(label_txt: str, val_txt, simpulan_txt):
         """
         Cetak baris: label | nilai | simpulan.
-        Gunakan set_xy() eksplisit agar multi_cell kolom-3 tidak crash
-        akibat cursor X yang salah setelah dua cell() font berbeda.
+        Gunakan set_xy() eksplisit agar multi_cell kolom-3 tidak crash.
         """
         y0 = pdf.get_y()
         pdf.set_font("Helvetica", 'B', 9)
@@ -1550,15 +1529,14 @@ def generate_pdf_fpdf(data: dict, logo_path: str = "logo_expert_stock_pro.png") 
         pdf.set_fill_color(30, 42, 58)
         pdf.set_text_color(255, 255, 255)
         pdf.set_font("Helvetica", 'B', 10)
-        pdf.cell(0, 7, s(title),
-                 new_x=XPos.LMARGIN, new_y=YPos.NEXT, fill=True)
+        # String enum "LMARGIN"/"NEXT" — bekerja di fpdf2 >= 2.2 tanpa import fpdf.enums
+        pdf.cell(0, 7, s(title), new_x="LMARGIN", new_y="NEXT", fill=True)
         pdf.set_text_color(0, 0, 0)
         pdf.set_font("Helvetica", '', 9)
 
     # ── helper: cell dengan newline ───────────────────────────────────────────
     def cnl(w, h, txt, **kw):
-        pdf.cell(w, h, s(txt),
-                 new_x=XPos.LMARGIN, new_y=YPos.NEXT, **kw)
+        pdf.cell(w, h, s(txt), new_x="LMARGIN", new_y="NEXT", **kw)
 
     # ── init ──────────────────────────────────────────────────────────────────
     pdf = FPDF()
@@ -1778,12 +1756,10 @@ def run_teknikal():
 
     # ── FETCH DATA ────────────────────────────────────────────────────────────
     with st.spinner("Mengambil data..."):
-        # Daily (swing trade)
         data_daily = get_full_stock_data(ticker_jk, interval="1d")
         df_daily   = data_daily.get('history', pd.DataFrame())
         info       = data_daily.get('info', {})
 
-        # M15 (day trade) — ambil 60 hari terakhir
         try:
             tk_obj  = yf.Ticker(ticker_jk)
             df_m15  = tk_obj.history(period="60d", interval="15m")
@@ -1835,19 +1811,15 @@ def run_teknikal():
     with tab_swing:
         st.markdown("##### Timeframe: Daily | Parameter Supertrend (10,3)")
 
-        # Warning staleness — tampilkan sebelum chart jika data stale
         stale_warn_sw = sc_swing["info"].get("stale_warning")
         if stale_warn_sw:
             st.warning(stale_warn_sw)
 
-        # Chart
         fig_swing = build_chart(df_daily_calc, sc_swing, ticker_bersih, "Daily")
         st.plotly_chart(fig_swing, use_container_width=True)
 
-        # Panel indikator (selalu tampil)
         render_indicator_panel(sc_swing, df_daily_calc)
 
-        # Sentimen
         st.markdown("#### 📰 Sentimen Berita")
         if sentimen_status == "Positif":
             st.success(f"**{sentimen_status}** — {sentimen_headline}")
@@ -1856,7 +1828,6 @@ def run_teknikal():
         else:
             st.info(f"**{sentimen_status}** — {sentimen_headline}")
 
-        # Trading plan
         ps_swing = render_trading_plan(sc_swing, total_modal_input, max_risiko_input)
 
         # ── PDF SWING ────────────────────────────────────────────────────────
@@ -1933,15 +1904,18 @@ def run_teknikal():
             },
         }
 
-        pdf_bytes_swing = generate_pdf_fpdf(pdf_data_swing)
-        if pdf_bytes_swing:
-            st.download_button(
-                label="📄 Unduh Laporan Swing Trade (PDF)",
-                data=pdf_bytes_swing,
-                file_name=f"ESP_Swing_{ticker_bersih}_{datetime.now().strftime('%Y%m%d')}.pdf",
-                mime="application/pdf",
-                use_container_width=True,
-            )
+        try:
+            pdf_bytes_swing = generate_pdf_fpdf(pdf_data_swing)
+            if pdf_bytes_swing:
+                st.download_button(
+                    label="📄 Unduh Laporan Swing Trade (PDF)",
+                    data=pdf_bytes_swing,
+                    file_name=f"ESP_Swing_{ticker_bersih}_{datetime.now().strftime('%Y%m%d')}.pdf",
+                    mime="application/pdf",
+                    use_container_width=True,
+                )
+        except Exception as e:
+            st.warning(f"⚠️ PDF tidak dapat dibuat: {e}")
 
     # ═══════════════════════════════════════════════════════════════
     # TAB DAY TRADE
@@ -1956,19 +1930,15 @@ def run_teknikal():
                 "Gunakan tab Swing Trade sebagai alternatif."
             )
         else:
-            # Warning staleness M15
             stale_warn_dy = sc_day["info"].get("stale_warning")
             if stale_warn_dy:
                 st.warning(stale_warn_dy)
 
-            # Chart
             fig_day = build_chart(df_m15_calc, sc_day, ticker_bersih, "M15")
             st.plotly_chart(fig_day, use_container_width=True)
 
-            # Panel indikator (selalu tampil)
             render_indicator_panel(sc_day, df_m15_calc)
 
-            # Sentimen (sama)
             st.markdown("#### 📰 Sentimen Berita")
             if sentimen_status == "Positif":
                 st.success(f"**{sentimen_status}** — {sentimen_headline}")
@@ -1977,7 +1947,6 @@ def run_teknikal():
             else:
                 st.info(f"**{sentimen_status}** — {sentimen_headline}")
 
-            # Trading plan
             ps_day = render_trading_plan(sc_day, total_modal_input, max_risiko_input)
 
             # ── PDF DAY ──────────────────────────────────────────────────────
@@ -2054,15 +2023,18 @@ def run_teknikal():
                 },
             }
 
-            pdf_bytes_day = generate_pdf_fpdf(pdf_data_day)
-            if pdf_bytes_day:
-                st.download_button(
-                    label="📄 Unduh Laporan Day Trade (PDF)",
-                    data=pdf_bytes_day,
-                    file_name=f"ESP_DayTrade_{ticker_bersih}_{datetime.now().strftime('%Y%m%d')}.pdf",
-                    mime="application/pdf",
-                    use_container_width=True,
-                )
+            try:
+                pdf_bytes_day = generate_pdf_fpdf(pdf_data_day)
+                if pdf_bytes_day:
+                    st.download_button(
+                        label="📄 Unduh Laporan Day Trade (PDF)",
+                        data=pdf_bytes_day,
+                        file_name=f"ESP_DayTrade_{ticker_bersih}_{datetime.now().strftime('%Y%m%d')}.pdf",
+                        mime="application/pdf",
+                        use_container_width=True,
+                    )
+            except Exception as e:
+                st.warning(f"⚠️ PDF tidak dapat dibuat: {e}")
 
     # ── DISCLAIMER ────────────────────────────────────────────────────────────
     st.markdown("---")
