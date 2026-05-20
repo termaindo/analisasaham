@@ -10,8 +10,7 @@ import plotly.express as px
 import concurrent.futures
 from datetime import datetime
 from fpdf import FPDF 
-from modules.data_loader import get_full_stock_data 
-from modules.universe import UNIVERSE_SAHAM, is_syariah, get_sector_data 
+from utils.data_loader import get_full_stock_data 
 
 # --- FUNGSI FORMAT RUPIAH ---
 def format_rp(angka):
