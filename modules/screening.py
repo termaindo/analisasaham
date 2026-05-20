@@ -17,14 +17,21 @@ Perbaikan stale-candle (v3) — perubahan dari v2:
 
 3. stale_days untuk interval "15m" (Day Trade) sekarang dihitung dari
    tanggal HARI TERAKHIR candle, bukan jam-ke-jam. Jika candle terakhir
-   adalah hari ini (≥ 09:00 WIB) maka stale_days = 0 meski ada gap 4 hari
-   libur sebelumnya — ini perilaku yang benar untuk Day Trade.
+   adalah hari ini (>= 09:00 WIB) maka stale_days = 0 meski ada gap 4 hari
+   libur sebelumnya -- ini perilaku yang benar untuk Day Trade.
 
 4. MTF daily block (di Day Trade) sekarang memakai find_valid_last_iloc()
    helper yang sama, bukan langsung iloc[-1], agar konsisten.
 
 5. Helper find_valid_last_iloc() diekstrak agar bisa dipanggil di semua blok
    yang butuh "candle terakhir yang valid", tanpa duplikasi kode.
+
+Perbaikan v4:
+─────────────────────────────────────────────────
+1. Fix PDF encode error: helper _safe_latin1() membersihkan karakter
+   non-latin-1 (en-dash, em-dash, arrow, emoji, dll) dari semua string
+   sebelum diserahkan ke FPDF -- bukan di encode() akhir.
+2. Stale warning threshold diubah dari >= 1 menjadi >= 2.
 """
 
 import streamlit as st
@@ -48,9 +55,9 @@ from utils.data_loader import (
     LIQUID_PATH,
 )
 
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # KONSTANTA
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 
 RSI_PERIOD          = 14
 RSI_OVERBOUGHT      = 75
@@ -82,9 +89,9 @@ RRR_MIN_ENTRY       = 1.4
 _TZ_WIB = pytz.timezone("Asia/Jakarta")
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # LOAD UNIVERSE
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 
 @st.cache_data(ttl=60 * 60 * 24, show_spinner=False)
 def load_universe() -> tuple[list[str], pd.DataFrame]:
@@ -110,16 +117,16 @@ def load_universe() -> tuple[list[str], pd.DataFrame]:
             for t in df["Kode Saham"].astype(str).str.strip().tolist()
         ]
         st.sidebar.warning(
-            "⚠️ `liquid_stocks.csv` belum tersedia. "
-            "Menggunakan `pre_liquid_stocks.csv` sebagai fallback — "
+            "liquid_stocks.csv belum tersedia. "
+            "Menggunakan pre_liquid_stocks.csv sebagai fallback -- "
             "data enrichment (Value_MA20, ROE, dll) tidak tersedia."
         )
         return saham_list, df
     except FileNotFoundError:
-        st.error(f"❌ File universe tidak ditemukan: {PRE_LIQUID_PATH}")
+        st.error(f"File universe tidak ditemukan: {PRE_LIQUID_PATH}")
         return [], pd.DataFrame()
     except Exception as e:
-        st.error(f"❌ Gagal membaca universe saham: {e}")
+        st.error(f"Gagal membaca universe saham: {e}")
         return [], pd.DataFrame()
 
 
@@ -158,9 +165,9 @@ def _normalize_universe_columns(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # LOOKUP HELPERS
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 
 def get_sector_from_universe(ticker_bersih: str, df_universe: pd.DataFrame) -> str:
     """Ambil nama sektor ticker dari df_universe."""
@@ -211,9 +218,9 @@ def get_fundamental_from_universe(ticker_bersih: str, df_universe: pd.DataFrame)
     return result
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # FORMAT RUPIAH
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 
 def format_rp(angka) -> str:
     """Format angka ke string Rupiah dengan pemisah ribuan titik."""
@@ -225,9 +232,50 @@ def format_rp(angka) -> str:
         return str(angka)
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
+# HELPER PDF: SANITASI STRING NON-LATIN-1
+# -----------------------------------------------------------------------------
+
+# Tabel transliterasi karakter Unicode yang umum muncul di data saham/trading
+# ke padanan ASCII latin-1 yang aman untuk FPDF.
+_LATIN1_MAP = {
+    "\u2013": "-",    # en-dash (–)  ← penyebab error utama di field Entry
+    "\u2014": "-",    # em-dash (—)
+    "\u2192": "->",   # arrow kanan (→)  muncul di label RSI Rising
+    "\u2190": "<-",   # arrow kiri (←)
+    "\u2191": "^",    # arrow atas (↑)
+    "\u2193": "v",    # arrow bawah (↓)
+    "\u2018": "'",    # left single quote
+    "\u2019": "'",    # right single quote
+    "\u201c": '"',    # left double quote
+    "\u201d": '"',    # right double quote
+    "\u2026": "...",  # ellipsis
+    "\u00d7": "x",    # multiplication sign
+    "\u00b0": " deg", # degree sign
+}
+
+def _safe_latin1(text: str) -> str:
+    """
+    Sanitasi string agar aman untuk FPDF (latin-1).
+
+    Langkah:
+    1. Ganti karakter Unicode yang punya padanan ASCII (tabel _LATIN1_MAP).
+    2. Strip emoji dan karakter non-latin-1 lainnya dengan encode/decode
+       'ignore' hanya sebagai safety net terakhir -- bukan sebagai
+       mekanisme utama.
+
+    Dipanggil pada SETIAP string yang masuk ke pdf.cell() / pdf.multi_cell()
+    agar FPDF tidak menemukan karakter di luar range latin-1 saat rendering.
+    """
+    for char, repl in _LATIN1_MAP.items():
+        text = text.replace(char, repl)
+    # Safety net: hapus sisa karakter yang tetap tidak bisa di-encode latin-1
+    return text.encode("latin-1", "ignore").decode("latin-1")
+
+
+# -----------------------------------------------------------------------------
 # AUDIO ALERT
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 
 def play_alert_sound() -> None:
     """Putar suara notifikasi saat ada sinyal kuat (skor >= 85)."""
@@ -240,9 +288,9 @@ def play_alert_sound() -> None:
     st.components.v1.html(audio_html, height=0)
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # ANALISA ROTASI SEKTOR
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 
 def analyze_sector_momentum(full_results_df: pd.DataFrame) -> tuple[pd.DataFrame, list]:
     """Hitung rata-rata skor per sektor dan identifikasi sektor terkuat (>= 70)."""
@@ -258,9 +306,9 @@ def analyze_sector_momentum(full_results_df: pd.DataFrame) -> tuple[pd.DataFrame
     return sector_summary, leading_sectors
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # GENERATOR PDF
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 
 def export_to_pdf(
     hasil_lolos: list,
@@ -280,7 +328,7 @@ def export_to_pdf(
     pdf.set_text_color(255, 255, 255)
     pdf.set_font("Arial", "B", 16)
     pdf.set_xy(35, 8)
-    pdf.cell(0, 10, "Expert Stock Pro - Ultimate Alpha Report", ln=True)
+    pdf.cell(0, 10, _safe_latin1("Expert Stock Pro - Ultimate Alpha Report"), ln=True)
     pdf.set_y(28)
     pdf.set_font("Arial", "I", 10)
     pdf.set_text_color(0, 0, 255)
@@ -289,10 +337,10 @@ def export_to_pdf(
     pdf.ln(3)
     pdf.set_text_color(0, 0, 0)
     pdf.set_font("Arial", "B", 12)
-    pdf.cell(190, 8, f"Strategi: {trade_mode} | Sesi: {session}", ln=True, align="C")
+    pdf.cell(190, 8, _safe_latin1(f"Strategi: {trade_mode} | Sesi: {session}"), ln=True, align="C")
     waktu_cetak = datetime.now(_TZ_WIB).strftime("%d-%m-%Y %H:%M WIB")
     pdf.set_font("Arial", "I", 8)
-    pdf.cell(0, 5, f"Dicetak: {waktu_cetak}", ln=True, align="R")
+    pdf.cell(0, 5, _safe_latin1(f"Dicetak: {waktu_cetak}"), ln=True, align="R")
     pdf.ln(2)
 
     if not sector_report.empty:
@@ -301,7 +349,7 @@ def export_to_pdf(
         pdf.cell(190, 7, "  MARKET OVERVIEW (SEKTOR TERKUAT HARI INI)", 0, ln=True, fill=True)
         pdf.set_font("Arial", "", 9)
         top_sectors = ", ".join(sector_report.index[:3].tolist())
-        pdf.multi_cell(190, 6, f" Aliran dana terbesar: {top_sectors}")
+        pdf.multi_cell(190, 6, _safe_latin1(f" Aliran dana terbesar: {top_sectors}"))
         pdf.ln(3)
 
     pdf.set_fill_color(240, 240, 240)
@@ -313,22 +361,25 @@ def export_to_pdf(
         pdf.set_font("Arial", "B", 10)
         pdf.cell(
             190, 6,
-            f"{item['Ticker']} - {item['Sektor']} | Syariah: {item['Syariah']} | "
-            f"Quality: {item['Quality']} | Score: {item['Skor']}/100",
+            _safe_latin1(
+                f"{item['Ticker']} - {item['Sektor']} | Syariah: {item['Syariah']} | "
+                f"Quality: {item['Quality']} | Score: {item['Skor']}/100"
+            ),
             ln=True,
         )
         pdf.set_font("Arial", "", 9)
-        pdf.cell(60, 5, f"Entry: {item['Entry']}", 0)
+        pdf.cell(60, 5, _safe_latin1(f"Entry: {item['Entry']}"), 0)
         pdf.set_text_color(0, 128, 0)
-        pdf.cell(65, 5, f"TP Target: Rp {format_rp(item['TP'])} ({item['Pct_Reward']})", 0)
+        pdf.cell(65, 5, _safe_latin1(f"TP Target: Rp {format_rp(item['TP'])} ({item['Pct_Reward']})"), 0)
         pdf.set_text_color(200, 0, 0)
-        pdf.cell(65, 5, f"Stop Loss: Rp {format_rp(item['SL'])} ({item['Pct_Risk']})", ln=True)
+        pdf.cell(65, 5, _safe_latin1(f"Stop Loss: Rp {format_rp(item['SL'])} ({item['Pct_Risk']})"), ln=True)
         pdf.set_text_color(0, 0, 0)
-        status_pdf = item["Status"].replace("🔥", "").replace("🎯", "").strip()
+        # Hapus emoji dari Status sebelum masuk PDF
+        status_pdf = _safe_latin1(item["Status"].replace("\U0001f525", "").replace("\U0001f3af", "").strip())
         pdf.set_font("Arial", "B", 8)
-        pdf.cell(190, 5, f"Batas Alokasi Maksimal: {item['Lot_Maks']} ({status_pdf})", ln=True)
+        pdf.cell(190, 5, _safe_latin1(f"Batas Alokasi Maksimal: {item['Lot_Maks']} ({status_pdf})"), ln=True)
         pdf.set_font("Arial", "I", 8)
-        pdf.multi_cell(190, 4, f"Logic: {item['Logic']}")
+        pdf.multi_cell(190, 4, _safe_latin1(f"Logic: {item['Logic']}"))
         pdf.ln(2)
         pdf.line(10, pdf.get_y(), 200, pdf.get_y())
         pdf.ln(2)
@@ -343,20 +394,22 @@ def export_to_pdf(
             pdf.set_font("Arial", "B", 9)
             pdf.cell(
                 190, 5,
-                f"{w['Ticker']} ({w['Sektor'][:20]}) | Syariah: {w['Syariah']} | "
-                f"Quality: {w['Quality']} | Skor: {w['Skor']}",
+                _safe_latin1(
+                    f"{w['Ticker']} ({w['Sektor'][:20]}) | Syariah: {w['Syariah']} | "
+                    f"Quality: {w['Quality']} | Skor: {w['Skor']}"
+                ),
                 ln=True,
             )
             pdf.set_font("Arial", "", 8)
-            pdf.cell(40, 5, f"Entry: {w['Entry']}", 0)
+            pdf.cell(40, 5, _safe_latin1(f"Entry: {w['Entry']}"), 0)
             pdf.set_text_color(0, 128, 0)
-            pdf.cell(50, 5, f"TP: Rp {format_rp(w['TP'])} ({w['Pct_Reward']})", 0)
+            pdf.cell(50, 5, _safe_latin1(f"TP: Rp {format_rp(w['TP'])} ({w['Pct_Reward']})"), 0)
             pdf.set_text_color(200, 0, 0)
-            pdf.cell(50, 5, f"SL: Rp {format_rp(w['SL'])} ({w['Pct_Risk']})", 0)
+            pdf.cell(50, 5, _safe_latin1(f"SL: Rp {format_rp(w['SL'])} ({w['Pct_Risk']})"), 0)
             pdf.set_text_color(0, 0, 0)
-            pdf.cell(50, 5, f"Maks: {w['Lot_Maks']}", ln=True)
+            pdf.cell(50, 5, _safe_latin1(f"Maks: {w['Lot_Maks']}"), ln=True)
             pdf.set_font("Arial", "I", 7)
-            pdf.multi_cell(190, 4, f"Logic: {w['Logic']}")
+            pdf.multi_cell(190, 4, _safe_latin1(f"Logic: {w['Logic']}"))
             pdf.line(10, pdf.get_y(), 200, pdf.get_y())
             pdf.ln(2)
 
@@ -374,20 +427,15 @@ def export_to_pdf(
     return pdf.output(dest="S").encode("latin-1", "ignore")
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # HELPER: HAPUS CANDLE KOSONG (GAP LIBUR / SESI TUTUP)
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 
 def drop_empty_candles(df: pd.DataFrame) -> pd.DataFrame:
     """
     Hapus baris dengan Close <= 0, Volume <= 0, atau salah satunya NaN.
 
     Dipanggil untuk semua interval (15m dan 1d) SEBELUM calculate_indicators().
-
-    Mengapa 15m juga perlu:
-      yfinance kadang menyisipkan slot 15m dengan Volume=0 pada gap intraday
-      (mis. sesi tengah hari, atau hari pertama setelah libur panjang jika
-      data di-pad). Drop awal mencegah rolling/ewm terkontaminasi nol palsu.
     """
     mask = (
         df["Close"].notna() & (df["Close"] > 0) &
@@ -396,23 +444,15 @@ def drop_empty_candles(df: pd.DataFrame) -> pd.DataFrame:
     return df[mask].copy()
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# HELPER: CARI valid_iloc — CANDLE TERAKHIR YANG BENAR-BENAR VALID
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
+# HELPER: CARI valid_iloc
+# -----------------------------------------------------------------------------
 
 def find_valid_last_iloc(
     df: pd.DataFrame,
     indicator_cols: list[str] | None = None,
 ) -> int | None:
-    """
-    Scan mundur dari baris terakhir; kembalikan iloc candle terakhir yang:
-      - Close > 0, Volume > 0 (sudah dijamin oleh drop_empty_candles, tapi
-        dicek ulang sebagai guard)
-      - Semua kolom di indicator_cols tidak NaN (indikator sudah warm-up)
-
-    Jika indicator_cols tidak diisi, hanya cek Close dan Volume.
-    Return None jika tidak ada candle yang memenuhi syarat.
-    """
+    """Scan mundur; kembalikan iloc candle terakhir yang valid dan sudah warm-up."""
     if indicator_cols is None:
         indicator_cols = []
     for i in range(len(df) - 1, -1, -1):
@@ -430,10 +470,7 @@ def find_valid_prev_iloc(
     from_iloc: int,
     indicator_cols: list[str] | None = None,
 ) -> int:
-    """
-    Scan mundur dari from_iloc - 1; kembalikan iloc candle valid sebelumnya.
-    Jika tidak ditemukan, kembalikan from_iloc sendiri (agar tidak crash).
-    """
+    """Scan mundur dari from_iloc - 1; kembalikan iloc candle valid sebelumnya."""
     if indicator_cols is None:
         indicator_cols = []
     for i in range(from_iloc - 1, -1, -1):
@@ -446,54 +483,28 @@ def find_valid_prev_iloc(
     return from_iloc
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# HELPER: HITUNG stale_days DENGAN BENAR PER INTERVAL
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
+# HELPER: HITUNG stale_days
+# -----------------------------------------------------------------------------
 
 def compute_stale_days(df: pd.DataFrame, valid_iloc: int, interval: str) -> int:
-    """
-    Hitung berapa hari kalender candle valid terakhir tertinggal dari hari ini.
-
-    Logika berbeda per interval:
-
-    interval "1d":
-      Bandingkan TANGGAL candle (normalize ke midnight) vs TANGGAL hari ini
-      di WIB. Jika bursa belum buka hari ini (libur / sebelum jam 09:00),
-      stale_days akan > 0. Ini yang diinginkan untuk Swing Trade.
-
-    interval "15m":
-      Bandingkan TANGGAL candle vs TANGGAL hari ini di WIB.
-      Jika candle terakhir adalah hari ini (bursa sudah buka), stale_days = 0
-      meski ada 4 hari libur sebelumnya — candle harinya tetap fresh.
-      Tidak perlu membandingkan jam, karena drop_empty_candles sudah
-      memastikan candle terakhir adalah slot 15m yang aktif.
-
-    Dalam kedua kasus, timezone index di-normalize ke WIB sebelum .normalize()
-    untuk menghindari bug jika index tidak punya tzinfo (naive index dari
-    yfinance pada interval "1d").
-    """
+    """Hitung berapa hari kalender candle valid terakhir tertinggal dari hari ini."""
     try:
         candle_ts = df.index[valid_iloc]
-
-        # Normalisasi timezone candle ke WIB
         if candle_ts.tzinfo is None:
-            # naive timestamp — asumsikan UTC (yfinance default untuk "1d")
             candle_ts = candle_ts.tz_localize("UTC").tz_convert(_TZ_WIB)
         else:
             candle_ts = candle_ts.tz_convert(_TZ_WIB)
-
-        today_wib = pd.Timestamp.now(tz=_TZ_WIB)
-
-        # Untuk kedua interval, bandingkan tanggal (bukan jam)
+        today_wib  = pd.Timestamp.now(tz=_TZ_WIB)
         delta_days = (today_wib.normalize() - candle_ts.normalize()).days
         return max(delta_days, 0)
     except Exception:
         return 0
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # KALKULASI INDIKATOR TEKNIKAL
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 
 def calculate_supertrend(
     df: pd.DataFrame, period: int = 10, multiplier: float = 2.0
@@ -584,13 +595,10 @@ def calculate_psar(
 def calculate_indicators(df: pd.DataFrame, trade_mode: str) -> pd.DataFrame:
     """
     Hitung semua indikator teknikal sesuai mode trading.
-
-    PENTING: df yang masuk harus sudah melalui drop_empty_candles() terlebih
-    dahulu. Fungsi ini tidak melakukan cleaning sendiri.
+    df harus sudah melalui drop_empty_candles() terlebih dahulu.
     """
     df = df.copy()
 
-    # ATR
     high_low   = df["High"] - df["Low"]
     high_close = np.abs(df["High"] - df["Close"].shift())
     low_close  = np.abs(df["Low"]  - df["Close"].shift())
@@ -601,7 +609,6 @@ def calculate_indicators(df: pd.DataFrame, trade_mode: str) -> pd.DataFrame:
         .mean()
     )
 
-    # MACD
     ema12             = df["Close"].ewm(span=MACD_FAST,          adjust=False).mean()
     ema26             = df["Close"].ewm(span=MACD_SLOW,          adjust=False).mean()
     df["MACD"]        = ema12 - ema26
@@ -619,7 +626,7 @@ def calculate_indicators(df: pd.DataFrame, trade_mode: str) -> pd.DataFrame:
         loss      = (-delta.where(delta < 0, 0)).rolling(9).mean()
         df["RSI"] = 100 - (100 / (1 + (gain / loss)))
         df = calculate_psar(df)
-    else:  # Swing Trading
+    else:
         df = calculate_supertrend(df, period=10, multiplier=3.0)
         df["MA20"] = df["Close"].rolling(EMA_SHORT).mean()
         df["MA50"] = df["Close"].rolling(EMA_MID).mean()
@@ -632,9 +639,9 @@ def calculate_indicators(df: pd.DataFrame, trade_mode: str) -> pd.DataFrame:
     return df
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # MARKET SESSION
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 
 def get_market_session() -> tuple[str, str]:
     """Return (label_sesi, deskripsi_status) berdasarkan waktu WIB saat ini."""
@@ -652,11 +659,10 @@ def get_market_session() -> tuple[str, str]:
         return "PASCA-PASAR", "Analysis."
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # WORKER MULTITHREADING
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 
-# Kolom indikator yang harus sudah warm-up agar valid_iloc diterima
 _INDICATOR_COLS_DAY   = ["ATR", "RSI", "MACD", "Supertrend_Dir", "VWAP"]
 _INDICATOR_COLS_SWING = ["ATR", "RSI", "MACD", "Supertrend_Dir", "MA20", "MA50"]
 _INDICATOR_COLS_DAILY = ["MA20_D", "MA50_D"]
@@ -668,24 +674,7 @@ def process_single_stock(
     mtf_filter: bool,
     df_universe: pd.DataFrame,
 ) -> dict | None:
-    """
-    Analisa satu ticker; kembalikan dict hasil atau None jika tidak lolos.
-    Dipanggil paralel via ThreadPoolExecutor.
-
-    Alur penanganan stale candle (v3):
-      1. Fetch history (15m untuk Day Trade, 1d untuk Swing Trade).
-      2. drop_empty_candles() — buang semua baris Close/Volume = 0 atau NaN,
-         termasuk gap hari libur panjang dan slot 15m kosong.
-      3. calculate_indicators() — indikator dihitung dari data bersih.
-      4. find_valid_last_iloc() — scan mundur cari candle terakhir dengan
-         semua indikator kunci sudah warm-up (tidak NaN).
-      5. find_valid_prev_iloc() — scan mundur dari valid_iloc-1 untuk candle
-         valid sebelumnya.
-      6. compute_stale_days() — hitung jarak hari kalender antara candle valid
-         terakhir dan hari ini, dengan handling timezone yang benar.
-      7. Semua referensi sliding window (OBV, VPT, vol_sma20, Supertrend_Dir)
-         memakai valid_iloc / prev_iloc, bukan -1 atau -2.
-    """
+    """Analisa satu ticker; kembalikan dict hasil atau None jika tidak lolos."""
     ticker_bersih = ticker.replace(".JK", "")
     try:
         interval = "15m" if trade_mode == "Day Trading" else "1d"
@@ -695,30 +684,17 @@ def process_single_stock(
         if hist.empty:
             return None
 
-        # ── LANGKAH 1: BERSIHKAN CANDLE KOSONG ───────────────────────────────
-        # Wajib untuk semua interval SEBELUM calculate_indicators().
-        # Untuk "15m": menghapus slot intraday dengan Volume=0 (gap sesi).
-        # Untuk "1d":  menghapus baris hari libur yang di-inject yfinance.
         hist = drop_empty_candles(hist)
-
-        # Minimal butuh 55 candle bersih untuk warm-up indikator (EMA50 = 50,
-        # ditambah buffer RSI=14 dan ATR=14 yang berjalan bersamaan).
         if len(hist) < 55:
             return None
 
-        # ── LANGKAH 2: HITUNG INDIKATOR ───────────────────────────────────────
-        ind_cols = _INDICATOR_COLS_DAY if trade_mode == "Day Trading" else _INDICATOR_COLS_SWING
-        df = calculate_indicators(hist, trade_mode)
-
-        # ── LANGKAH 3: CARI valid_iloc ────────────────────────────────────────
+        ind_cols   = _INDICATOR_COLS_DAY if trade_mode == "Day Trading" else _INDICATOR_COLS_SWING
+        df         = calculate_indicators(hist, trade_mode)
         valid_iloc = find_valid_last_iloc(df, indicator_cols=ind_cols)
         if valid_iloc is None:
             return None
 
-        # ── LANGKAH 4: CARI prev_iloc ─────────────────────────────────────────
-        prev_iloc = find_valid_prev_iloc(df, valid_iloc, indicator_cols=ind_cols)
-
-        # ── LANGKAH 5: HITUNG stale_days ──────────────────────────────────────
+        prev_iloc  = find_valid_prev_iloc(df, valid_iloc, indicator_cols=ind_cols)
         stale_days = compute_stale_days(df, valid_iloc, interval)
 
         last       = df.iloc[valid_iloc]
@@ -728,7 +704,6 @@ def process_single_stock(
         if curr_price <= 0:
             return None
 
-        # ── DATA PENDUKUNG ────────────────────────────────────────────────────
         sektor_nama    = get_sector_from_universe(ticker_bersih, df_universe)
         syariah_status = "Ya" if is_syariah_from_universe(ticker_bersih, df_universe) else "Tidak"
         fundamental    = get_fundamental_from_universe(ticker_bersih, df_universe)
@@ -742,22 +717,16 @@ def process_single_stock(
             roa_raw = data.get("info", {}).get("returnOnAssets")
             roa = roa_raw * 100 if roa_raw is not None else None
 
-        # ── PRE-FILTER WAJIB ─────────────────────────────────────────────────
-
-        # 1. Likuiditas: Value_MA20
         value_ma20 = fundamental.get("Value_MA20")
         if value_ma20 is None:
-            # Hitung dari df yang sudah bersih — rolling 20 hanya candle nyata
             value_ma20 = (df["Close"] * df["Volume"]).rolling(20).mean().iloc[valid_iloc]
         if pd.isna(value_ma20) or value_ma20 <= 0:
             return None
 
-        # 2. Market Cap > Rp 500 Miliar
         market_cap_usd = data.get("info", {}).get("marketCap")
         if market_cap_usd is None or pd.isna(market_cap_usd) or market_cap_usd <= MC_MIN_USD:
             return None
 
-        # 3. Kesehatan (Quality)
         roe_valid = roe is not None and not pd.isna(roe)
         roa_valid = roa is not None and not pd.isna(roa)
         if roe_valid and roe <= 0:
@@ -769,9 +738,6 @@ def process_single_stock(
         score  = 0
         alasan = []
 
-        # ── BANDARMOLOGI ──────────────────────────────────────────────────────
-        # Dihitung dari df yang sudah bersih — tidak ada baris nol yang
-        # akan menggelembungkan OBV atau mengecilkan CMF secara palsu.
         obv = [0]
         for i in range(1, len(df)):
             if df["Close"].iloc[i] > df["Close"].iloc[i - 1]:
@@ -790,7 +756,6 @@ def process_single_stock(
         df["CMF"] = (mfm * df["Volume"]).rolling(20).sum() / df["Volume"].rolling(20).sum()
         df["VPT"] = (df["Close"].pct_change() * df["Volume"]).cumsum()
 
-        # Semua referensi sliding window memakai valid_iloc, bukan -1
         obv_lookback = max(valid_iloc - 5, 0)
         vpt_lookback = max(valid_iloc - 3, 0)
 
@@ -798,15 +763,12 @@ def process_single_stock(
         cmf_positive = df["CMF"].iloc[valid_iloc] > -0.1
         vpt_trend_up = df["VPT"].iloc[valid_iloc] > df["VPT"].iloc[vpt_lookback]
 
-        # vol_sma20: rolling dari df bersih, diambil pada valid_iloc
         vol_sma20 = df["Volume"].rolling(20).mean().iloc[valid_iloc]
         rvol      = last["Volume"] / vol_sma20 if (vol_sma20 and vol_sma20 > 0) else 0
 
         if not obv_trend_up and not cmf_positive:
             return None
 
-        # ── SCORING ───────────────────────────────────────────────────────────
-        # Supertrend_Dir window 5 candle — semua dari df bersih
         st_dir_start  = max(valid_iloc - 4, 0)
         st_dir_series = df["Supertrend_Dir"].iloc[st_dir_start : valid_iloc + 1]
         candles_above = (st_dir_series == 1).sum()
@@ -827,7 +789,7 @@ def process_single_stock(
             if RSI_DAYTRADE_LOW <= last["RSI"] <= RSI_DAYTRADE_HIGH:
                 score += 7.5; alasan.append(f"RSI Momentum ({last['RSI']:.1f})")
             if last["RSI"] > prev["RSI"]:
-                score += 7.5; alasan.append(f"RSI Rising ({prev['RSI']:.1f}→{last['RSI']:.1f})")
+                score += 7.5; alasan.append(f"RSI Rising ({prev['RSI']:.1f}->{last['RSI']:.1f})")
             if last.get("PSAR_Bull", False):
                 score += 5; alasan.append("PSAR Bullish")
             if rvol >= 2.5:
@@ -837,20 +799,15 @@ def process_single_stock(
             if vpt_trend_up:
                 score += 10; alasan.append("VPT Akumulasi Naik")
 
-            # ── MTF KONFIRMASI DAILY ────────────────────────────────────────
-            # Menggunakan find_valid_last_iloc() — konsisten dengan blok utama.
             try:
                 data_daily = get_full_stock_data(ticker, interval="1d")
                 df_daily   = data_daily.get("history", pd.DataFrame())
                 if not df_daily.empty:
-                    # Bersihkan candle kosong pada data daily juga
                     df_daily = drop_empty_candles(df_daily)
                 if not df_daily.empty and len(df_daily) >= 55:
                     df_daily = df_daily.copy()
                     df_daily["MA50_D"] = df_daily["Close"].rolling(50).mean()
                     df_daily["MA20_D"] = df_daily["Close"].rolling(20).mean()
-
-                    # Cari candle valid terakhir dari data daily
                     vi_d = find_valid_last_iloc(df_daily, indicator_cols=_INDICATOR_COLS_DAILY)
                     if vi_d is not None:
                         last_d = df_daily.iloc[vi_d]
@@ -882,7 +839,7 @@ def process_single_stock(
             if 50 <= last["RSI"] <= RSI_OVERBOUGHT:
                 score += 7.5; alasan.append(f"RSI Momentum ({last['RSI']:.1f})")
             if last["RSI"] > prev["RSI"]:
-                score += 7.5; alasan.append(f"RSI Rising ({prev['RSI']:.1f}→{last['RSI']:.1f})")
+                score += 7.5; alasan.append(f"RSI Rising ({prev['RSI']:.1f}->{last['RSI']:.1f})")
             if last.get("PSAR_Bull", False):
                 score += 5; alasan.append("PSAR Konfirmasi Tren Naik")
             if rvol >= 2.5:
@@ -918,9 +875,9 @@ def process_single_stock(
         return None
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # SIDEBAR FILTER UNIVERSE
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 
 def apply_sidebar_filters(
     saham_list: list[str],
@@ -967,12 +924,12 @@ def apply_sidebar_filters(
     return filtered
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # ENTRY POINT
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 
 def run_screening() -> None:
-    """Entry point modul screening — dipanggil dari app.py."""
+    """Entry point modul screening -- dipanggil dari app.py."""
     saham_list, df_universe = load_universe()
     if not saham_list:
         st.stop()
@@ -980,23 +937,23 @@ def run_screening() -> None:
     liquid_aktif = not get_liquid_stocks().empty
     if liquid_aktif:
         st.sidebar.success(
-            f"📋 Universe: **{len(saham_list)} saham** dari `liquid_stocks.csv` ✅"
+            f"Universe: **{len(saham_list)} saham** dari `liquid_stocks.csv`"
         )
     else:
         st.sidebar.warning(
-            f"📋 Universe: **{len(saham_list)} saham** dari `pre_liquid_stocks.csv` "
-            f"⚠️ *(liquid_stocks.csv tidak tersedia atau kosong)*"
+            f"Universe: **{len(saham_list)} saham** dari `pre_liquid_stocks.csv` "
+            f"(liquid_stocks.csv tidak tersedia atau kosong)"
         )
 
     saham_list = apply_sidebar_filters(saham_list, df_universe)
     if not saham_list:
-        st.warning("⚠️ Tidak ada saham yang cocok dengan filter yang dipilih.")
+        st.warning("Tidak ada saham yang cocok dengan filter yang dipilih.")
         st.stop()
 
     st.markdown("<h4 style='text-align: center;'>Pilih Mode Aplikasi</h4>",
                 unsafe_allow_html=True)
     ui_mode = st.radio(
-        "👁️ Tampilan Aplikasi:",
+        "Tampilan Aplikasi:",
         ["🌱 Mode Praktis (Untuk Pemula)", "💼 Mode Pro (Indikator Lengkap)"],
         horizontal=True,
         label_visibility="collapsed",
@@ -1028,8 +985,8 @@ def run_screening() -> None:
         * **SL (Stop Loss):** Batas toleransi kerugian.
         * **ATR:** Indikator volatilitas harga.
         * **Maks Lot:** Rekomendasi porsi maksimal pembelian yang aman.
-        * **RVOL:** Relative Volume — seberapa ramai dibanding rata-rata 20 hari.
-        * **PSAR:** Parabolic SAR — konfirmasi arah tren.
+        * **RVOL:** Relative Volume -- seberapa ramai dibanding rata-rata 20 hari.
+        * **PSAR:** Parabolic SAR -- konfirmasi arah tren.
         * **Supertrend:** Indikator tren berbasis ATR.
         """)
 
@@ -1124,7 +1081,7 @@ def run_screening() -> None:
     if st.button(tombol_cari, use_container_width=True):
         raw_results    = []
         loading_header = st.empty()
-        loading_header.write("### 🔄 Mesin sedang memilah saham. Mohon tunggu…")
+        loading_header.write("### 🔄 Mesin sedang memilah saham. Mohon tunggu...")
         status_text  = st.empty()
         progress_bar = st.progress(0)
         total_saham  = len(saham_list)
@@ -1139,7 +1096,7 @@ def run_screening() -> None:
             completed = 0
             for future in concurrent.futures.as_completed(futures):
                 completed += 1
-                status_text.text(f"Memeriksa {completed} saham…")
+                status_text.text(f"Memeriksa {completed} saham...")
                 progress_bar.progress(completed / total_saham)
                 result = future.result()
                 if result is not None:
@@ -1152,20 +1109,14 @@ def run_screening() -> None:
         df_all = pd.DataFrame(raw_results)
         sector_report, leading_sectors = analyze_sector_momentum(df_all)
 
-        # ── INFO STALE DATA ──────────────────────────────────────────────────
-        # Tampilkan peringatan jika candle terakhir bukan dari hari ini.
-        # Untuk Day Trade (15m): stale_days = 0 jika candle hari ini ada,
-        #   meski ada gap beberapa hari libur sebelumnya.
-        # Untuk Swing Trade (1d): stale_days = hari kalender sejak candle
-        #   terakhir, termasuk hari libur.
+        # Stale warning: muncul hanya jika bursa libur >= 2 hari
         if not df_all.empty and "StaleDays" in df_all.columns:
             max_stale = int(df_all["StaleDays"].max())
-            if max_stale >= 1:
-                interval_label = "15 menit" if trade_mode == "Day Trading" else "harian"
+            if max_stale >= 2:
                 st.warning(
-                    f"⚠️ **PERINGATAN: {max_stale} hari kalender** — "
-                    f"Data hari libur kosong sudah dihapus otomatis. "
-                    f"Analisis indikator berisiko tidak akurat selama libur bursa."
+                    f"⚠️ **PERINGATAN: {max_stale} hari bursa libur.** — "
+                    f"Data hari libur kosong sudah dihapus otomatis, "
+                    f"tapi analisis indikator berisiko tidak akurat selama libur bursa. "
                     f"Sinyal tetap dapat dibaca sebagai persiapan sesi berikutnya."
                 )
 
@@ -1211,11 +1162,12 @@ def run_screening() -> None:
                     "Harga_Saat_Ini": int(stock["Harga"]),
                     "Syariah":        stock["Syariah"],
                     "Quality":        stock["Quality"],
-                    "Entry":          f"Rp {format_rp(int(stock['Harga'] * 0.99))} – {format_rp(stock['Harga'])}",
+                    # En-dash diganti strip biasa agar tidak ada U+2013 di PDF
+                    "Entry":          f"Rp {format_rp(int(stock['Harga'] * 0.99))} - {format_rp(stock['Harga'])}",
                     "SL":             sl,
                     "TP":             tp,
                     "RRR":            f"{rrr:.1f}x",
-                    "Status":         "🔥 FULL SIZING" if f_score >= 85 else "🎯 CICIL SEBAGIAN",
+                    "Status":         "FULL SIZING" if f_score >= 85 else "CICIL SEBAGIAN",
                     "Logic":          " | ".join(stock["Alasan"]),
                     "Lot_Maks":       f"{format_rp(lot_maksimal)} Lot",
                     "Pct_Risk":       f"-{pct_risk:.1f}%",
@@ -1231,7 +1183,7 @@ def run_screening() -> None:
         if any(p["Skor"] >= 85 for p in st.session_state["final_picks"]):
             play_alert_sound()
 
-    # ── Tampilkan Hasil ───────────────────────────────────────────────────────
+    # -- Tampilkan Hasil
     if st.session_state.get("analysis_done", False):
         res       = st.session_state.get("final_picks", [])
         top_3     = res[:3]
@@ -1284,7 +1236,7 @@ def run_screening() -> None:
                         st.caption(f"💡 {item['Logic']}")
         else:
             st.warning(
-                "⚠️ Mesin belum menemukan saham yang benar-benar memenuhi kriteria saat ini. "
+                "Mesin belum menemukan saham yang benar-benar memenuhi kriteria saat ini. "
                 "Coba jalankan ulang setelah jam 09.30 WIB atau ubah filter strategi."
             )
 
@@ -1320,7 +1272,7 @@ def run_screening() -> None:
 
         st.markdown("<br><hr>", unsafe_allow_html=True)
         st.caption(
-            "⚠️ **DISCLAIMER:** Laporan ini dihasilkan otomatis oleh algoritma. "
+            "DISCLAIMER: Laporan ini dihasilkan otomatis oleh algoritma. "
             "Bukan rekomendasi beli/jual. Keputusan investasi adalah tanggung jawab Anda. "
             "Selalu DYOR dan terapkan manajemen risiko."
         )
