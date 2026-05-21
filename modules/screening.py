@@ -9,13 +9,14 @@ pre_liquid_stocks.csv (fallback) via get_liquid_stocks().
 Versi ini disesuaikan penuh dengan MODUL_SCREENING.md:
 ─────────────────────────────────────────────────────────
 Pre-filter:
-- OBV Divergence negatif = gugur mandiri (OBV[-1] <= OBV[-6])
-- CMF(20) <= -0.1 = gugur mandiri (bukan OR dengan OBV)
+- OBV Divergence negatif = gugur mandiri
+  (OBV[-1] <= rata-rata OBV 5 candle sebelumnya — lebih robust dari titik tunggal)
+- CMF(20) <= -0.15 = gugur mandiri (diperlunak dari -0.1)
 
 Day Trade scoring (interval 15m):
 1. RVOL tier: >=2.5 -> 20 poin; >=1.2 -> 10 poin; <1.2 -> 0
 2. Harga vs VWAP: Close > VWAP DAN VWAP[i] > VWAP[i-1] -> 20 poin
-3. Supertrend (10,2) tier: fresh cross -> 20; sustained >3 -> 15; bearish -> 0
+3. Supertrend (10,2) tier: fresh cross -> 20; sustained >3 (window 10 candle) -> 15; bearish -> 0
 4. MACD Golden Cross (dalam 3 candle) -> 5 poin
 5. MACD Histogram naik -> 5 poin
 6. RSI(9) Momentum range 45-70 -> 7.5 poin
@@ -26,7 +27,7 @@ MTF Bonus: daily MA check (+10/+5/-15)
 Bonus Sektor Hot: +10 (post-processing)
 
 Swing Trade scoring (interval 1d):
-1. Supertrend (10,3) tier: fresh cross -> 20; sustained >3 -> 15; bearish -> 0
+1. Supertrend (10,3) tier: fresh cross -> 20; sustained >3 (window 10 candle) -> 15; bearish -> 0
 2. MA Structure: Close>EMA20>EMA50>EMA200 -> 20; Close>EMA50 & EMA20>EMA50 -> 10; else -> 0
 3. MACD Golden Cross (dalam 5 candle) -> 7.5 poin
 4. MACD Histogram naik -> 7.5 poin
@@ -88,6 +89,10 @@ MC_MIN_IDR          = 500_000_000_000
 USD_TO_IDR          = 16_000
 MC_MIN_USD          = MC_MIN_IDR / USD_TO_IDR
 
+# Pre-filter thresholds (diperlunak agar tidak terlalu agresif saat pasar koreksi)
+CMF_THRESHOLD       = -0.15   # semula -0.1
+OBV_LOOKBACK        = 5       # jumlah candle untuk rata-rata OBV referensi
+
 SL_MULT_DAY         = 1.8
 SL_MULT_SWING       = 2.5
 MAX_LOSS_PCT_DAY    = 0.03
@@ -99,6 +104,9 @@ MAX_ALLOC_PCT       = 0.15
 SCORE_MIN_ENTRY     = 70
 RRR_MIN_ENTRY       = 1.4
 SECTOR_HOT_THRESHOLD = 70
+
+# Window untuk deteksi candles_above Supertrend (Sustained vs Fresh Cross)
+ST_SUSTAINED_WINDOW = 10   # semula 4 (sama dengan window fresh-cross), sekarang dipisah
 
 _TZ_WIB = pytz.timezone("Asia/Jakarta")
 
@@ -555,6 +563,49 @@ def compute_rsi_trend_3(df: pd.DataFrame, rsi_col: str, valid_iloc: int) -> bool
 
 
 # -----------------------------------------------------------------------------
+# HELPER: SUPERTREND TIER
+# -----------------------------------------------------------------------------
+
+def compute_supertrend_score(
+    df: pd.DataFrame,
+    valid_iloc: int,
+    score_fresh: float,
+    score_sustained: float,
+) -> tuple[float, str]:
+    """
+    Hitung skor Supertrend tier dan alasan teksnya.
+
+    Logika:
+    - Fresh cross: window 4 candle (valid_iloc-3 s.d. valid_iloc).
+      Bullish saat ini DAN ada candle bearish di window tersebut -> fresh cross.
+    - Sustained bullish: window ST_SUSTAINED_WINDOW candle.
+      Bullish saat ini, tidak ada fresh cross, dan candles_above > 3 di window lebar.
+    - Bearish / tidak memenuhi: 0 poin.
+
+    Return: (poin, alasan_string)
+    """
+    if int(df["Supertrend_Dir"].iloc[valid_iloc]) != 1:
+        return 0.0, ""
+
+    # Deteksi fresh cross: window sempit 4 candle
+    fc_start  = max(valid_iloc - 3, 0)
+    fc_series = df["Supertrend_Dir"].iloc[fc_start : valid_iloc + 1]
+    is_fresh  = bool((fc_series == -1).any())
+
+    if is_fresh:
+        return score_fresh, f"Supertrend Fresh Cross Bullish +{int(score_fresh)}"
+
+    # Deteksi sustained: window lebar ST_SUSTAINED_WINDOW candle
+    sw_start      = max(valid_iloc - (ST_SUSTAINED_WINDOW - 1), 0)
+    sw_series     = df["Supertrend_Dir"].iloc[sw_start : valid_iloc + 1]
+    candles_above = int((sw_series == 1).sum())
+    if candles_above > 3:
+        return score_sustained, f"Supertrend Sustained Bullish +{int(score_sustained)}"
+
+    return 0.0, ""
+
+
+# -----------------------------------------------------------------------------
 # KALKULASI SUPERTREND
 # -----------------------------------------------------------------------------
 
@@ -767,7 +818,10 @@ def process_single_stock(
         if len(hist_pf) < 30:
             return None
 
-        # --- OBV ---
+        # --- OBV Divergence ---
+        # Gugur jika OBV candle terakhir <= rata-rata OBV 5 candle sebelumnya.
+        # Menggunakan rata-rata (bukan titik tunggal) agar lebih robust terhadap
+        # fluktuasi harian dan kondisi pasar koreksi sementara.
         obv_vals = [0.0]
         for i in range(1, len(hist_pf)):
             c_now  = hist_pf["Close"].iloc[i]
@@ -779,14 +833,15 @@ def process_single_stock(
                 obv_vals.append(obv_vals[-1] - v_now)
             else:
                 obv_vals.append(obv_vals[-1])
-        obv_series = pd.Series(obv_vals, index=hist_pf.index)
 
-        # OBV Divergence negatif: OBV candle terakhir <= OBV 5 candle sebelumnya
-        if len(obv_vals) >= 6:
-            if obv_vals[-1] <= obv_vals[-6]:
+        if len(obv_vals) > OBV_LOOKBACK:
+            obv_ref_avg = float(np.mean(obv_vals[-(OBV_LOOKBACK + 1):-1]))
+            if obv_vals[-1] <= obv_ref_avg:
                 return None
 
         # --- CMF(20) ---
+        # Threshold diperlunak ke CMF_THRESHOLD (-0.15) agar tidak terlalu agresif
+        # saat pasar sedang koreksi ringan.
         hl   = hist_pf["High"] - hist_pf["Low"]
         mfm  = (
             ((hist_pf["Close"] - hist_pf["Low"]) - (hist_pf["High"] - hist_pf["Close"]))
@@ -794,7 +849,7 @@ def process_single_stock(
         )
         cmf  = (mfm * hist_pf["Volume"]).rolling(20).sum() / hist_pf["Volume"].rolling(20).sum()
         cmf_last = cmf.dropna()
-        if cmf_last.empty or float(cmf_last.iloc[-1]) <= -0.1:
+        if cmf_last.empty or float(cmf_last.iloc[-1]) <= CMF_THRESHOLD:
             return None
 
         # --- Value_MA20 ---
@@ -870,7 +925,7 @@ def process_single_stock(
         vol_sma20 = df["Volume"].rolling(20).mean().iloc[valid_iloc]
         rvol      = float(last["Volume"]) / float(vol_sma20) if (vol_sma20 and vol_sma20 > 0) else 0.0
 
-        score  = 0
+        score  = 0.0
         alasan = []
 
         # ── SCORING: DAY TRADING ─────────────────────────────────────────────
@@ -898,18 +953,10 @@ def process_single_stock(
                 score += 20; alasan.append("Price > VWAP & VWAP Naik +20")
 
             # 3. Supertrend (10,2) tier
-            st_start  = max(valid_iloc - 3, 0)
-            st_series = df["Supertrend_Dir"].iloc[st_start : valid_iloc + 1]
-            # fresh cross: berubah menjadi bullish dalam <= 3 candle terakhir
-            # = ada minimal satu candle bearish dalam window 4 candle terakhir
-            # sebelum candle saat ini bullish
-            if int(last["Supertrend_Dir"]) == 1:
-                bearish_in_window = (st_series == -1).any()
-                candles_above = int((st_series == 1).sum())
-                if bearish_in_window:
-                    score += 20; alasan.append("Supertrend Fresh Cross Bullish (10,2) +20")
-                elif candles_above > 3:
-                    score += 15; alasan.append("Supertrend Sustained Bullish (10,2) +15")
+            st_pts, st_label = compute_supertrend_score(df, valid_iloc, 20.0, 15.0)
+            if st_pts > 0:
+                score += st_pts
+                alasan.append(f"{st_label} (10,2)")
 
             # 4. MACD Golden Cross (dalam 3 candle terakhir)
             macd_gc_window = max(valid_iloc - 2, 0)
@@ -982,15 +1029,10 @@ def process_single_stock(
                     return None
 
             # 1. Supertrend (10,3) tier
-            st_start  = max(valid_iloc - 3, 0)
-            st_series = df["Supertrend_Dir"].iloc[st_start : valid_iloc + 1]
-            if int(last["Supertrend_Dir"]) == 1:
-                bearish_in_window = (st_series == -1).any()
-                candles_above = int((st_series == 1).sum())
-                if bearish_in_window:
-                    score += 20; alasan.append("Supertrend Fresh Cross Bullish (10,3) +20")
-                elif candles_above > 3:
-                    score += 15; alasan.append("Supertrend Sustained Bullish (10,3) +15")
+            st_pts, st_label = compute_supertrend_score(df, valid_iloc, 20.0, 15.0)
+            if st_pts > 0:
+                score += st_pts
+                alasan.append(f"{st_label} (10,3)")
 
             # 2. MA Structure tier
             ema20  = float(last["EMA20"])
@@ -1059,7 +1101,8 @@ def process_single_stock(
             if rsi_val > RSI_OVERBOUGHT:
                 score -= 15; alasan.append(f"RSI Overbought ({rsi_val:.1f}) -15")
 
-        score = min(round(score), 100)
+        # Floor 0 dan cap 100 diterapkan di sini — mencegah skor negatif masuk raw_results
+        score = min(max(round(score), 0), 100)
         return {
             "Ticker":    ticker_bersih,
             "Sektor":    sektor_nama,
@@ -1335,7 +1378,8 @@ def run_screening() -> None:
             if sector_boost and stock["Sektor"] in leading_sectors:
                 f_score += 10
                 stock["Alasan"].append(f"Sector Hot: {stock['Sektor']} +10")
-            f_score = min(round(f_score), 100)
+            # Floor dan cap setelah bonus sektor
+            f_score = min(max(round(f_score), 0), 100)
 
             # Kalkulasi SL, TP, RRR
             atr_sl      = int(stock["Harga"] - (sl_mult * stock["ATR"]))
