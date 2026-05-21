@@ -904,8 +904,10 @@ def process_single_stock(
             return None
 
         hist = drop_empty_candles(hist)
-        # Kebutuhan warm-up minimum: EMA200 butuh 200 candle
-        min_candles = 210 if trade_mode == "Swing Trading" else 55
+        # Kebutuhan warm-up minimum: EMA200 dengan ewm(adjust=False) stabil di ~150 candle.
+        # 210 terlalu konservatif dan menggugurkan saham liquid yang candle bersihnya
+        # sedikit di bawah 210 akibat suspend atau libur bursa.
+        min_candles = 150 if trade_mode == "Swing Trading" else 55
         if len(hist) < min_candles:
             return None
 
@@ -1015,8 +1017,9 @@ def process_single_stock(
                             score += 10; alasan.append("Daily Uptrend (>MA50 & MA20>MA50) +10")
                         elif ld["Close"] > ld["MA50_D"]:
                             score += 5;  alasan.append("Daily Sideways (>MA50) +5")
-                        else:
-                            score -= 15; alasan.append("Daily Downtrend (<MA50) -15")
+                        # Downtrend harian: tidak beri bonus, tapi tidak aktif menghukum.
+                        # Pre-filter OBV+CMF sudah menyaring tren — penalti -15 di sini
+                        # adalah double punishment yang membunuh skor di pasar bearish.
             except Exception:
                 pass
 
