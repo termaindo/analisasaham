@@ -328,7 +328,7 @@ def export_to_pdf(
     pdf.set_text_color(255, 255, 255)
     pdf.set_font("Arial", "B", 16)
     pdf.set_xy(35, 8)
-    pdf.cell(0, 10, _safe_latin1("Expert Stock Pro - Ultimate Alpha Report"), ln=True)
+    pdf.cell(0, 10, _safe_latin1("Expert Stock Pro - Screening Saham Harian Pro"), ln=True)
     pdf.set_y(28)
     pdf.set_font("Arial", "I", 10)
     pdf.set_text_color(0, 0, 255)
