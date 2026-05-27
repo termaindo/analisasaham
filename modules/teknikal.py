@@ -22,78 +22,32 @@ from utils.data_loader import (
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _sanitize_pdf(text: str) -> str:
-    """
-    Ganti karakter Unicode dan emoji ke teks ASCII setara
-    agar kompatibel dengan FPDF core fonts (latin-1).
-    """
+    """Ganti karakter Unicode dan emoji ke teks ASCII setara agar kompatibel dengan FPDF core fonts (latin-1)."""
     if not isinstance(text, str):
         text = str(text)
 
     _MAP = {
-        # Dash & quotes
-        "\u2014": "-",    # em dash —
-        "\u2013": "-",    # en dash –
-        "\u2019": "'",    # right single quote
-        "\u2018": "'",    # left single quote
-        "\u201c": '"',    # left double quote
-        "\u201d": '"',    # right double quote
-        "\u2026": "...",  # ellipsis …
-        # Arrows
-        "\u2192": "->",   # →
-        "\u2190": "<-",   # ←
-        "\u2197": "(naik)",  # ↗
-        "\u2198": "(turun)", # ↘
-        "\ufe0f": "",     # variation selector (after emoji)
-        "\u20e3": "",     # combining enclosing keycap
-        # Status emoji
-        "\u2705": "[OK]",    # ✅
-        "\u274c": "[X]",     # ❌
-        "\u26a0": "[!]",     # ⚠
-        "\u2b50": "[*]",     # ⭐
-        # Colored circles
-        "\U0001f7e2": "[+]",  # 🟢
-        "\U0001f534": "[-]",  # 🔴
-        "\U0001f7e1": "[~]",  # 🟡
-        "\U0001f7e0": "[!]",  # 🟠
-        # Chart emoji
-        "\U0001f4c8": "[UP]",  # 📈
-        "\U0001f4c9": "[DN]",  # 📉
-        "\U0001f525": "[!!]",  # 🔥
-        "\U0001f3af": "[*]",   # 🎯
-        "\U0001f4e6": "[BOX]", # 📦
-        "\U0001f31f": "[*]",   # 🌟
-        "\U0001f528": "[~]",   # 🔨
-        "\U0001f4ca": "[=]",   # 📊
-        "\U0001f4cb": "[-]",   # 📋
-        "\U0001f4f0": "[>]",   # 📰
-        "\U0001f4c4": "[PDF]", # 📄
-        "\U0001f3e2": "[CO]",  # 🏢
-        "\U0001f50d": "[?]",   # 🔍
-        "\u26a1": "[!]",       # ⚡
-        "\U0001f4c5": "[D]",   # 📅
-        "\U0001f3c6": "[#]",   # 🏆
-        "\u2714": "[v]",       # ✔
-        "\u2718": "[x]",       # ✘
-        # Lines / decorative
-        "\u2500": "-",   # box drawing light horizontal ─
-        "\u2502": "|",   # │
-        "\u250c": "+",   # ┌
-        "\u2510": "+",   # ┐
-        "\u2514": "+",   # └
-        "\u2518": "+",   # ┘
-        # Math / misc
-        "\u00d7": "x",   # ×
-        "\u00f7": "/",   # ÷
-        "\u2212": "-",   # minus sign −
-        "\u00b1": "+/-", # ±
-        "\u00b2": "^2",  # ²
-        "\u00b3": "^3",  # ³
+        "\u2014": "-", "\u2013": "-", "\u2019": "'", "\u2018": "'",
+        "\u201c": '"', "\u201d": '"', "\u2026": "...", "\u2192": "->",
+        "\u2190": "<-", "\u2197": "(naik)", "\u2198": "(turun)",
+        "\ufe0f": "", "\u20e3": "",
+        "\u2705": "[OK]", "\u274c": "[X]", "\u26a0": "[!]", "\u2b50": "[*]",
+        "\U0001f7e2": "[+]", "\U0001f534": "[-]", "\U0001f7e1": "[~]", "\U0001f7e0": "[!]",
+        "\U0001f4c8": "[UP]", "\U0001f4c9": "[DN]", "\U0001f525": "[!!]",
+        "\U0001f3af": "[*]", "\U0001f4e6": "[BOX]", "\U0001f31f": "[*]",
+        "\U0001f528": "[~]", "\U0001f4ca": "[=]", "\U0001f4cb": "[-]",
+        "\U0001f4f0": "[>]", "\U0001f4c4": "[PDF]", "\U0001f3e2": "[CO]",
+        "\U0001f50d": "[?]", "\u26a1": "[!]", "\U0001f4c5": "[D]",
+        "\U0001f3c6": "[#]", "\u2714": "[v]", "\u2718": "[x]",
+        "\u2500": "-", "\u2502": "|", "\u250c": "+", "\u2510": "+",
+        "\u2514": "+", "\u2518": "+",
+        "\u00d7": "x", "\u00f7": "/", "\u2212": "-", "\u00b1": "+/-",
+        "\u00b2": "^2", "\u00b3": "^3",
     }
 
     for char, repl in _MAP.items():
         text = text.replace(char, repl)
 
-    # Fallback: hapus semua sisa karakter non-latin-1
     return text.encode("latin-1", "replace").decode("latin-1")
 
 
@@ -118,14 +72,13 @@ STOCH_D             = 3
 STOCH_SMOOTH        = 3
 ADX_PERIOD          = 14
 ATR_PERIOD          = 14
-SUPERTREND_DAY_P    = 7     # day trade
+SUPERTREND_DAY_P    = 7
 SUPERTREND_DAY_M    = 3.0
-SUPERTREND_SWING_P  = 10    # swing trade
+SUPERTREND_SWING_P  = 10
 SUPERTREND_SWING_M  = 3.0
 FIB_GOLDEN_LOW      = 0.618
 FIB_GOLDEN_HIGH     = 0.786
 
-# Bobot scoring (harus total 100)
 W_TREND_EMA         = 15
 W_TREND_SUPER       = 10
 W_TREND_BB_MID      = 5
@@ -139,8 +92,7 @@ W_ENTRY_VOL         = 10
 W_ENTRY_FIB         = 8
 W_ENTRY_BB          = 7
 W_ENTRY_CANDLE      = 7
-# Penalti (dikurangkan jika kondisi buruk)
-PEN_ADX_WEAK        = 20   # seluruh sinyal trend diabaikan
+PEN_ADX_WEAK        = 20
 PEN_VOL_SEPI        = 10
 PEN_RSI_OB          = 5
 PEN_BB_UPPER        = 5
@@ -168,6 +120,44 @@ def get_syariah_status(ticker_bersih: str) -> str:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# HELPER: LOOKUP SEKTOR
+# FIX: Prioritaskan liquid_stocks.csv → pre_liquid_stocks.csv → yfinance info
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _get_sektor(ticker_bersih: str, yf_info: dict) -> str:
+    """
+    Ambil sektor dari liquid_stocks.csv atau pre_liquid_stocks.csv (prioritas utama).
+    Fallback ke yfinance info jika tidak ditemukan di kedua file.
+    Return string sektor dalam Bahasa Indonesia.
+    """
+    # Coba liquid_stocks.csv dulu
+    liquid_df = get_liquid_stocks()
+    row = get_ticker_row(ticker_bersih, liquid_df)
+    if row is not None and "Sektor" in row.index:
+        sektor_val = str(row["Sektor"]).strip()
+        if sektor_val and sektor_val.lower() not in ("nan", "none", ""):
+            return sektor_val  # Data dari liquid_stocks sudah dalam Bahasa Indonesia
+
+    # Coba pre_liquid_stocks.csv
+    try:
+        df_pre = pd.read_csv(PRE_LIQUID_PATH, sep=None, engine="python")
+        row_pre = get_ticker_row(ticker_bersih, df_pre)
+        if row_pre is not None and "Sektor" in row_pre.index:
+            sektor_val = str(row_pre["Sektor"]).strip()
+            if sektor_val and sektor_val.lower() not in ("nan", "none", ""):
+                return sektor_val
+    except Exception:
+        pass
+
+    # Fallback ke yfinance (perlu translate karena dalam Bahasa Inggris)
+    sektor_en = yf_info.get("sector", "")
+    if sektor_en:
+        return translate_sector(sektor_en)
+
+    return "Sektor Tidak Diketahui"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # HELPER: TERJEMAHAN SEKTOR
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -190,42 +180,27 @@ def translate_sector(sector_en: str) -> str:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# STALENESS CHECK — pastikan data candle yang dipakai adalah yang terakhir valid
+# STALENESS CHECK
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _get_staleness_info(df: pd.DataFrame) -> dict:
-    """
-    Periksa apakah candle terakhir di DataFrame adalah data hari ini atau sudah stale.
-
-    Masalah: yfinance kadang mengembalikan candle 'kosong' (Volume=0, OHLC=NaN atau
-    sama semua) untuk hari ini jika pasar belum tutup atau hari libur. Ini menyebabkan
-    Vol_Ratio = 0.00x dan indikator lain tidak akurat.
-
-    Solusi:
-    - Temukan candle terakhir yang Volume-nya > 0 dan Close tidak NaN.
-    - Hitung selisih hari kalender antara candle valid terakhir vs hari ini.
-    - Return dict dengan candle valid idx, jumlah hari stale, dan label warning.
-    """
+    """Periksa apakah candle terakhir di DataFrame adalah data hari ini atau sudah stale."""
     today = pd.Timestamp.now().normalize()
 
-    # Pastikan index bertipe datetime
     try:
         idx = pd.to_datetime(df.index).normalize()
     except Exception:
         idx = df.index
 
-    # Cari baris terakhir dengan Volume > 0 dan Close tidak NaN
     valid_mask = (df['Volume'] > 0) & (df['Close'].notna()) & (df['Close'] > 0)
     valid_rows = df[valid_mask]
 
     if valid_rows.empty:
-        # Fallback absolut: pakai baris terakhir apapun kondisinya
         last_valid_idx  = len(df) - 1
         last_valid_date = today
         stale_days      = 0
     else:
         last_valid_iloc = df.index.get_loc(valid_rows.index[-1])
-        # get_loc bisa return slice jika ada duplikat — ambil int terakhir
         if isinstance(last_valid_iloc, slice):
             last_valid_iloc = last_valid_iloc.stop - 1
         elif hasattr(last_valid_iloc, '__len__'):
@@ -235,10 +210,9 @@ def _get_staleness_info(df: pd.DataFrame) -> dict:
             last_valid_date = pd.to_datetime(valid_rows.index[-1]).normalize()
         except Exception:
             last_valid_date = today
-        delta           = today - last_valid_date
-        stale_days      = max(0, delta.days)
+        delta      = today - last_valid_date
+        stale_days = max(0, delta.days)
 
-    # Label warning
     if stale_days == 0:
         warning = None
         label   = "Data terkini (hari ini)"
@@ -318,7 +292,6 @@ def _calc_supertrend(df: pd.DataFrame, period: int, multiplier: float) -> pd.Ser
     low    = df['Low']
     close  = df['Close']
 
-    # ATR
     hl  = high - low
     hc  = (high - close.shift()).abs()
     lc  = (low  - close.shift()).abs()
@@ -330,7 +303,7 @@ def _calc_supertrend(df: pd.DataFrame, period: int, multiplier: float) -> pd.Ser
     lower_b  = hl2 - multiplier * atr
 
     supertrend = pd.Series(index=df.index, dtype=float)
-    direction  = pd.Series(index=df.index, dtype=bool)   # True = bullish
+    direction  = pd.Series(index=df.index, dtype=bool)
 
     for i in range(1, len(df)):
         prev_up = upper_b.iloc[i - 1]
@@ -372,35 +345,25 @@ def _detect_candlestick(df: pd.DataFrame) -> str:
     o, h, l, c = last['Open'], last['High'], last['Low'], last['Close']
     po, ph, pl, pc = prev['Open'], prev['High'], prev['Low'], prev['Close']
 
-    body     = abs(c - o)
-    rng      = h - l
+    body         = abs(c - o)
+    rng          = h - l
     upper_shadow = h - max(o, c)
     lower_shadow = min(o, c) - l
 
     if rng == 0:
         return "Normal"
 
-    # Doji
     if body <= rng * 0.1:
         return "Doji ⚠️"
-
-    # Hammer (bullish)
     if (lower_shadow >= body * 2) and (upper_shadow <= body * 0.3) and (c > o):
         return "Hammer 🔨 (Bullish Reversal)"
-
-    # Shooting Star (bearish)
     if (upper_shadow >= body * 2) and (lower_shadow <= body * 0.3) and (c < o):
         return "Shooting Star ⭐ (Bearish Reversal)"
-
-    # Bullish Engulfing
     if (pc < po) and (c > o) and (c > po) and (o < pc):
         return "Bullish Engulfing 🟢 (Kuat Bullish)"
-
-    # Bearish Engulfing
     if (pc > po) and (c < o) and (c < po) and (o > pc):
         return "Bearish Engulfing 🔴 (Kuat Bearish)"
 
-    # Morning Star (butuh 3 candle)
     if len(df) >= 3:
         prev2 = df.iloc[-3]
         if (prev2['Close'] < prev2['Open']
@@ -408,10 +371,8 @@ def _detect_candlestick(df: pd.DataFrame) -> str:
                 and c > o and c > (prev2['Open'] + prev2['Close']) / 2):
             return "Morning Star 🌟 (Bullish Reversal Kuat)"
 
-    # Inside Bar
     if (h < ph) and (l > pl):
         return "Inside Bar 📦 (Konsolidasi / Breakout Siap)"
-
     if c > o:
         return "Bullish Candle 🟢"
     elif c < o:
@@ -428,19 +389,13 @@ def _detect_macd_divergence(df: pd.DataFrame, lookback: int = 20) -> str:
     price_now = sub['Close'].iloc[-1]
     macd_now  = sub['MACD'].iloc[-1]
     price_low = sub['Close'].min()
-    macd_low  = sub['MACD'].min()
 
-    # Bullish divergence: harga buat lower low, MACD tidak
-    price_idx_low = sub['Close'].idxmin()
-    macd_idx_low  = sub['MACD'].idxmin()
     if (price_now < sub['Close'].iloc[0]
             and macd_now > sub['MACD'].iloc[0]
             and price_now < price_low * 1.01):
         return "Divergensi Bullish 📈 (Potensi Reversal Naik)"
 
-    # Bearish divergence: harga buat higher high, MACD tidak
     price_high = sub['Close'].max()
-    macd_high  = sub['MACD'].max()
     if (price_now > sub['Close'].iloc[0]
             and macd_now < sub['MACD'].iloc[0]
             and price_now > price_high * 0.99):
@@ -467,10 +422,10 @@ def _detect_rsi_divergence(df: pd.DataFrame, lookback: int = 20) -> str:
 
 def _calc_fibonacci(df: pd.DataFrame, lookback: int = 60) -> dict:
     """Hitung level Fibonacci dari swing high/low N candle terakhir."""
-    sub       = df.tail(lookback)
+    sub        = df.tail(lookback)
     swing_high = sub['High'].max()
     swing_low  = sub['Low'].min()
-    diff      = swing_high - swing_low
+    diff       = swing_high - swing_low
 
     levels = {
         "0.0":   swing_high,
@@ -485,56 +440,44 @@ def _calc_fibonacci(df: pd.DataFrame, lookback: int = 60) -> dict:
 
 
 def calculate_technical_indicators(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Hitung semua indikator teknikal untuk satu DataFrame (daily atau intraday).
-    Return DataFrame dengan kolom-kolom indikator ditambahkan.
-    """
+    """Hitung semua indikator teknikal untuk satu DataFrame (daily atau intraday)."""
     df = df.copy()
 
-    # ── EMA ──────────────────────────────────────────────────────────────────
     df['EMA9']   = df['Close'].ewm(span=9,   adjust=False).mean()
     df['EMA20']  = df['Close'].ewm(span=20,  adjust=False).mean()
     df['EMA50']  = df['Close'].ewm(span=50,  adjust=False).mean()
     df['EMA200'] = df['Close'].ewm(span=200, adjust=False).mean()
-
-    # ── MA (SMA) ─────────────────────────────────────────────────────────────
     df['MA20']   = df['Close'].rolling(20).mean()
 
-    # ── BOLLINGER BANDS ───────────────────────────────────────────────────────
     df['BB_Mid']   = df['MA20']
     df['BB_Std']   = df['Close'].rolling(BB_PERIOD).std()
     df['BB_Upper'] = df['BB_Mid'] + BB_STD * df['BB_Std']
     df['BB_Lower'] = df['BB_Mid'] - BB_STD * df['BB_Std']
     df['BB_Width'] = (df['BB_Upper'] - df['BB_Lower']) / df['BB_Mid']
 
-    # ── RSI ───────────────────────────────────────────────────────────────────
     delta = df['Close'].diff()
     gain  = delta.where(delta > 0, 0).rolling(RSI_PERIOD).mean()
     loss  = (-delta.where(delta < 0, 0)).rolling(RSI_PERIOD).mean()
     rs    = gain / loss.replace(0, np.nan)
     df['RSI'] = 100 - (100 / (1 + rs))
 
-    # ── MACD ──────────────────────────────────────────────────────────────────
-    exp1           = df['Close'].ewm(span=MACD_FAST,   adjust=False).mean()
-    exp2           = df['Close'].ewm(span=MACD_SLOW,   adjust=False).mean()
+    exp1              = df['Close'].ewm(span=MACD_FAST,   adjust=False).mean()
+    exp2              = df['Close'].ewm(span=MACD_SLOW,   adjust=False).mean()
     df['MACD']        = exp1 - exp2
     df['Signal_Line'] = df['MACD'].ewm(span=MACD_SIGNAL, adjust=False).mean()
     df['MACD_Hist']   = df['MACD'] - df['Signal_Line']
 
-    # ── STOCHASTIC (14,3,3) ───────────────────────────────────────────────────
     lo14       = df['Low'].rolling(STOCH_K).min()
     hi14       = df['High'].rolling(STOCH_K).max()
     raw_k      = 100 * (df['Close'] - lo14) / (hi14 - lo14).replace(0, np.nan)
     df['Stoch_K'] = raw_k.rolling(STOCH_SMOOTH).mean()
     df['Stoch_D'] = df['Stoch_K'].rolling(STOCH_D).mean()
 
-    # ── ATR ───────────────────────────────────────────────────────────────────
     hl  = df['High'] - df['Low']
     hc  = (df['High'] - df['Close'].shift()).abs()
     lc  = (df['Low']  - df['Close'].shift()).abs()
     df['ATR'] = pd.concat([hl, hc, lc], axis=1).max(axis=1).rolling(ATR_PERIOD).mean()
 
-    # ── ADX / DMI ─────────────────────────────────────────────────────────────
     up_move   = df['High'].diff()
     down_move = -df['Low'].diff()
     plus_dm   = np.where((up_move > down_move) & (up_move > 0), up_move, 0)
@@ -549,26 +492,21 @@ def calculate_technical_indicators(df: pd.DataFrame) -> pd.DataFrame:
     df['Plus_DI']  = plus_di
     df['Minus_DI'] = minus_di
 
-    # ── OBV ───────────────────────────────────────────────────────────────────
     direction_obv = np.sign(df['Close'].diff()).fillna(0)
     df['OBV']     = (direction_obv * df['Volume']).cumsum()
 
-    # ── VWAP (rolling 20 periode — proxy untuk daily/intraday) ────────────────
     typical        = (df['High'] + df['Low'] + df['Close']) / 3
     df['VWAP_20']  = (
         (typical * df['Volume']).rolling(20).sum()
         / df['Volume'].rolling(20).sum()
     )
 
-    # ── VOLUME ────────────────────────────────────────────────────────────────
-    df['Vol_MA20']     = df['Volume'].rolling(20).mean()
-    df['Vol_Ratio']    = df['Volume'] / df['Vol_MA20'].replace(0, np.nan)
+    df['Vol_MA20']   = df['Volume'].rolling(20).mean()
+    df['Vol_Ratio']  = df['Volume'] / df['Vol_MA20'].replace(0, np.nan)
+    df['Value']      = df['Close'] * df['Volume']
+    df['Value_MA20'] = df['Value'].rolling(20).mean()
 
-    # ── VALUE (Close × Volume) untuk likuiditas ───────────────────────────────
-    df['Value']        = df['Close'] * df['Volume']
-    df['Value_MA20']   = df['Value'].rolling(20).mean()
-
-    # ── PARABOLIC SAR (implementasi manual) ───────────────────────────────────
+    # Parabolic SAR
     af_start = 0.02
     af_max   = 0.20
     sar      = [df['Low'].iloc[0]]
@@ -614,7 +552,7 @@ def calculate_technical_indicators(df: pd.DataFrame) -> pd.DataFrame:
                 af.append(min(prev_af + af_start if new_ep < prev_ep else prev_af, af_max))
 
     df['SAR']      = sar
-    df['SAR_Bull'] = bull   # True = harga di atas SAR (bullish)
+    df['SAR_Bull'] = bull
 
     return df
 
@@ -626,38 +564,31 @@ def calculate_technical_indicators(df: pd.DataFrame) -> pd.DataFrame:
 def compute_score(df: pd.DataFrame, timeframe: str = "swing") -> dict:
     """
     Hitung skor teknikal berlapis (0–100) dan kembalikan dict berisi:
-    - score, label, warna, go_nogo, detail per layer, simpulan SL/TP
-    Timeframe: 'day' atau 'swing' (mempengaruhi parameter Supertrend).
-    Candle yang digunakan selalu candle terakhir yang VALID (Volume>0, Close tidak NaN),
-    bukan selalu iloc[-1] — untuk menghindari candle kosong hari libur/weekend.
+    score, label, warna, go_nogo, detail per layer, simpulan SL/TP.
+    Timeframe: 'day' atau 'swing'.
     """
-    # ── Gunakan candle terakhir yang valid, bukan selalu iloc[-1] ────────────
     staleness   = _get_staleness_info(df)
     valid_iloc  = staleness["last_valid_iloc"]
 
-    # Pastikan ada minimal 2 candle valid sebelum valid_iloc untuk prev1 & prev5
     last  = df.iloc[valid_iloc]
     prev1 = df.iloc[max(0, valid_iloc - 1)]
     prev5 = df.iloc[max(0, valid_iloc - 5)]
 
     result = {
-        "layer1_filter": {},
-        "layer2_trend":  {},
-        "layer3_momentum": {},
-        "layer4_entry":  {},
-        "score_raw":     0,
-        "score":         0,
-        "go_nogo":       True,
-        "nogo_reason":   [],
-        "staleness":     staleness,   # info candle stale untuk ditampilkan di UI
+        "layer1_filter":    {},
+        "layer2_trend":     {},
+        "layer3_momentum":  {},
+        "layer4_entry":     {},
+        "score_raw":        0,
+        "score":            0,
+        "go_nogo":          True,
+        "nogo_reason":      [],
+        "staleness":        staleness,
     }
 
     curr_price = last['Close']
     atr_val    = last['ATR']
 
-    # ─────────────────────────────────────────────────────────────────────
-    # SUPERTREND (hitung per call karena parameter beda per timeframe)
-    # ─────────────────────────────────────────────────────────────────────
     st_period = SUPERTREND_DAY_P if timeframe == "day" else SUPERTREND_SWING_P
     st_mult   = SUPERTREND_DAY_M if timeframe == "day" else SUPERTREND_SWING_M
     st_dir, st_line = _calc_supertrend(df, st_period, st_mult)
@@ -672,22 +603,16 @@ def compute_score(df: pd.DataFrame, timeframe: str = "swing") -> dict:
     else:
         super_label = "Bearish 🔴"
 
-    # ─────────────────────────────────────────────────────────────────────
-    # FIBONACCI
-    # ─────────────────────────────────────────────────────────────────────
     fib_levels, fib_high, fib_low = _calc_fibonacci(df)
     fib_618 = fib_levels["0.618"]
     fib_786 = fib_levels["0.786"]
     in_golden_zone = fib_786 <= curr_price <= fib_618
 
-    # ─────────────────────────────────────────────────────────────────────
-    # LAYER 1 — FILTER (GO / NO-GO)
-    # ─────────────────────────────────────────────────────────────────────
+    # LAYER 1 — FILTER
     adx_val   = last['ADX']
     vol_ratio = last['Vol_Ratio']
-
-    adx_ok  = adx_val >= ADX_SIDEWAYS
-    vol_ok  = vol_ratio >= 0.8
+    adx_ok    = adx_val >= ADX_SIDEWAYS
+    vol_ok    = vol_ratio >= 0.8
 
     result["layer1_filter"]["ADX"] = {
         "nilai": f"{adx_val:.1f}",
@@ -710,22 +635,19 @@ def compute_score(df: pd.DataFrame, timeframe: str = "swing") -> dict:
     }
 
     if not adx_ok:
-        result["go_nogo"]  = False
+        result["go_nogo"] = False
         result["nogo_reason"].append(
             f"ADX {adx_val:.1f} < {ADX_SIDEWAYS} — pasar sedang sideways, sinyal trend tidak valid."
         )
     if not vol_ok:
-        result["go_nogo"]  = False
+        result["go_nogo"] = False
         result["nogo_reason"].append(
             f"Volume ratio {vol_ratio:.2f}x terlalu sepi — sinyal tidak terkonfirmasi volume."
         )
 
-    # ─────────────────────────────────────────────────────────────────────
-    # LAYER 2 — TREND CONFIRMATION (35 poin)
-    # ─────────────────────────────────────────────────────────────────────
+    # LAYER 2 — TREND CONFIRMATION
     score_trend = 0
 
-    # EMA Stack (gradasi)
     ema_full_bull  = curr_price > last['EMA9'] > last['EMA20'] > last['EMA50'] > last['EMA200']
     ema_part_bull1 = curr_price > last['EMA20'] > last['EMA50']
     ema_part_bull2 = curr_price > last['EMA50']
@@ -748,7 +670,6 @@ def compute_score(df: pd.DataFrame, timeframe: str = "swing") -> dict:
     score_trend += ema_pts
     result["layer2_trend"]["EMA_Stack"] = {"poin": ema_pts, "label": ema_label}
 
-    # Supertrend
     st_pts = W_TREND_SUPER if super_bull else -W_TREND_SUPER
     score_trend += st_pts
     result["layer2_trend"]["Supertrend"] = {
@@ -757,7 +678,6 @@ def compute_score(df: pd.DataFrame, timeframe: str = "swing") -> dict:
         "param": f"({st_period},{st_mult})",
     }
 
-    # Harga vs BB Mid (SMA20)
     bb_mid_bull = curr_price > last['BB_Mid']
     bb_mid_pts  = W_TREND_BB_MID if bb_mid_bull else -W_TREND_BB_MID
     score_trend += bb_mid_pts
@@ -766,7 +686,6 @@ def compute_score(df: pd.DataFrame, timeframe: str = "swing") -> dict:
         "label": f"{'Di atas' if bb_mid_bull else 'Di bawah'} SMA20 ({last['BB_Mid']:,.0f})",
     }
 
-    # Parabolic SAR
     sar_bull = bool(last['SAR_Bull'])
     sar_prev = bool(df.iloc[-2]['SAR_Bull'])
     if sar_bull and not sar_prev:
@@ -780,21 +699,17 @@ def compute_score(df: pd.DataFrame, timeframe: str = "swing") -> dict:
     sar_pts = W_TREND_SAR if sar_bull else -W_TREND_SAR
     score_trend += sar_pts
     result["layer2_trend"]["Parabolic_SAR"] = {"poin": sar_pts, "label": sar_label}
-
     result["layer2_trend"]["_total"] = score_trend
 
-    # ─────────────────────────────────────────────────────────────────────
-    # LAYER 3 — MOMENTUM (40 poin)
-    # ─────────────────────────────────────────────────────────────────────
+    # LAYER 3 — MOMENTUM
     score_mom = 0
 
-    # MACD
-    macd_cross_bull  = (last['MACD'] > last['Signal_Line']) and (prev1['MACD'] <= prev1['Signal_Line'])
-    macd_cross_bear  = (last['MACD'] < last['Signal_Line']) and (prev1['MACD'] >= prev1['Signal_Line'])
-    macd_bull        = last['MACD'] > last['Signal_Line']
-    macd_div         = _detect_macd_divergence(df)
-    macd_div_bull    = "Bullish" in macd_div
-    macd_div_bear    = "Bearish" in macd_div
+    macd_cross_bull = (last['MACD'] > last['Signal_Line']) and (prev1['MACD'] <= prev1['Signal_Line'])
+    macd_cross_bear = (last['MACD'] < last['Signal_Line']) and (prev1['MACD'] >= prev1['Signal_Line'])
+    macd_bull       = last['MACD'] > last['Signal_Line']
+    macd_div        = _detect_macd_divergence(df)
+    macd_div_bull   = "Bullish" in macd_div
+    macd_div_bear   = "Bearish" in macd_div
 
     if macd_cross_bull:
         macd_pts, macd_label = W_MOM_MACD_CROSS, "Bullish Crossover Baru 🟢"
@@ -815,7 +730,6 @@ def compute_score(df: pd.DataFrame, timeframe: str = "swing") -> dict:
         "nilai": f"MACD:{last['MACD']:.3f} | Signal:{last['Signal_Line']:.3f} | Hist:{last['MACD_Hist']:.3f}",
     }
 
-    # RSI
     rsi_val  = last['RSI']
     rsi_prev = prev1['RSI']
     rsi_div  = _detect_rsi_divergence(df)
@@ -838,7 +752,6 @@ def compute_score(df: pd.DataFrame, timeframe: str = "swing") -> dict:
     score_mom += rsi_pts
     result["layer3_momentum"]["RSI"] = {"poin": rsi_pts, "label": rsi_label}
 
-    # Stochastic
     k_val    = last['Stoch_K']
     d_val    = last['Stoch_D']
     k_prev   = prev1['Stoch_K']
@@ -863,15 +776,11 @@ def compute_score(df: pd.DataFrame, timeframe: str = "swing") -> dict:
 
     score_mom += stoch_pts
     result["layer3_momentum"]["Stochastic"] = {"poin": stoch_pts, "label": stoch_label}
-
     result["layer3_momentum"]["_total"] = score_mom
 
-    # ─────────────────────────────────────────────────────────────────────
-    # LAYER 4 — ENTRY TRIGGER & KONTEKS (25 poin)
-    # ─────────────────────────────────────────────────────────────────────
+    # LAYER 4 — ENTRY TRIGGER & KONTEKS
     score_entry = 0
 
-    # Volume spike searah trend
     vol_spike = vol_ratio >= VOLUME_SPIKE_RATIO
     if vol_spike and (curr_price > prev1['Close']):
         vol_pts, vol_label = W_ENTRY_VOL, f"Volume Spike Bullish 🔥 ({vol_ratio:.1f}x)"
@@ -882,7 +791,6 @@ def compute_score(df: pd.DataFrame, timeframe: str = "swing") -> dict:
     score_entry += vol_pts
     result["layer4_entry"]["Volume_Spike"] = {"poin": vol_pts, "label": vol_label}
 
-    # Fibonacci Golden Zone
     if in_golden_zone:
         fib_pts, fib_label = W_ENTRY_FIB, f"Di Golden Zone 0.618–0.786 🎯 ({fib_786:,.0f}–{fib_618:,.0f})"
     elif curr_price < fib_786:
@@ -897,7 +805,6 @@ def compute_score(df: pd.DataFrame, timeframe: str = "swing") -> dict:
         "levels": fib_levels,
     }
 
-    # Bollinger Bands
     bb_width_curr = last['BB_Width']
     bb_width_avg  = df['BB_Width'].mean()
     squeeze       = bb_width_curr < bb_width_avg * 0.7
@@ -919,94 +826,77 @@ def compute_score(df: pd.DataFrame, timeframe: str = "swing") -> dict:
         "upper": last['BB_Upper'], "lower": last['BB_Lower'], "mid": last['BB_Mid'],
     }
 
-    # Candlestick pattern
     candle_pattern = _detect_candlestick(df)
     bullish_patterns = ["Hammer", "Bullish Engulfing", "Morning Star", "Bullish Candle"]
     bearish_patterns = ["Shooting Star", "Bearish Engulfing", "Bearish Candle"]
     is_bull_candle = any(p in candle_pattern for p in bullish_patterns)
     is_bear_candle = any(p in candle_pattern for p in bearish_patterns)
 
-    if is_bull_candle:
-        candle_pts = W_ENTRY_CANDLE
-    elif is_bear_candle:
-        candle_pts = -W_ENTRY_CANDLE
-    else:
-        candle_pts = 0
+    candle_pts = W_ENTRY_CANDLE if is_bull_candle else (-W_ENTRY_CANDLE if is_bear_candle else 0)
     score_entry += candle_pts
     result["layer4_entry"]["Candlestick"] = {"poin": candle_pts, "label": candle_pattern}
-
     result["layer4_entry"]["_total"] = score_entry
 
-    # ─────────────────────────────────────────────────────────────────────
-    # TOTAL SKOR (clamp ke -100 … +100)
-    # ─────────────────────────────────────────────────────────────────────
+    # TOTAL SKOR
     raw = score_trend + score_mom + score_entry
     result["score_raw"] = raw
 
-    # Jika filter gagal, skor tidak dihitung penuh
     if not result["go_nogo"]:
-        # Tetap hitung tapi beri penalti besar
         raw = min(raw - PEN_ADX_WEAK, 0) if not adx_ok else raw
         raw = raw - PEN_VOL_SEPI if not vol_ok else raw
 
     score_final = max(-100, min(100, raw))
     result["score"] = score_final
 
-    # ─────────────────────────────────────────────────────────────────────
-    # SIMPULAN & LABEL
-    # ─────────────────────────────────────────────────────────────────────
     if not result["go_nogo"]:
-        result["label"]  = "KONDISI TIDAK IDEAL"
-        result["warna"]  = "#9E9E9E"
-        result["signal"] = "TUNGGU — Kondisi Pasar Belum Mendukung"
+        result["label"]      = "KONDISI TIDAK IDEAL"
+        result["warna"]      = "#9E9E9E"
+        result["signal"]     = "TUNGGU — Kondisi Pasar Belum Mendukung"
         result["confidence"] = " | ".join(result["nogo_reason"])
     elif score_final >= 65:
-        result["label"]  = "STRONG BUY"
-        result["warna"]  = "#00C853"
-        result["signal"] = "STRONG BUY — Konfirmasi Tinggi"
+        result["label"]      = "STRONG BUY"
+        result["warna"]      = "#00C853"
+        result["signal"]     = "STRONG BUY — Konfirmasi Tinggi"
         result["confidence"] = "Mayoritas indikator selaras bullish. Entry dapat dipertimbangkan sesuai trading plan."
     elif score_final >= 35:
-        result["label"]  = "BUY"
-        result["warna"]  = "#69F0AE"
-        result["signal"] = "BUY — Konfirmasi Cukup"
+        result["label"]      = "BUY"
+        result["warna"]      = "#69F0AE"
+        result["signal"]     = "BUY — Konfirmasi Cukup"
         result["confidence"] = "Sinyal beli dengan konfirmasi memadai. Tetap gunakan stop loss ketat."
     elif score_final >= 10:
-        result["label"]  = "WATCH"
-        result["warna"]  = "#FFD600"
-        result["signal"] = "WATCH — Bias Bullish Lemah"
+        result["label"]      = "WATCH"
+        result["warna"]      = "#FFD600"
+        result["signal"]     = "WATCH — Bias Bullish Lemah"
         result["confidence"] = "Belum ideal untuk entry. Pantau konfirmasi tambahan sebelum masuk."
     elif score_final >= -9:
-        result["label"]  = "NEUTRAL"
-        result["warna"]  = "#9E9E9E"
-        result["signal"] = "NEUTRAL — Tidak Ada Sinyal Jelas"
+        result["label"]      = "NEUTRAL"
+        result["warna"]      = "#9E9E9E"
+        result["signal"]     = "NEUTRAL — Tidak Ada Sinyal Jelas"
         result["confidence"] = "Indikator saling bertentangan. Tunggu kejelasan arah."
     elif score_final >= -34:
-        result["label"]  = "CAUTION"
-        result["warna"]  = "#FF6D00"
-        result["signal"] = "CAUTION — Bias Bearish"
+        result["label"]      = "CAUTION"
+        result["warna"]      = "#FF6D00"
+        result["signal"]     = "CAUTION — Bias Bearish"
         result["confidence"] = "Tekanan jual mendominasi. Hindari entry beli baru."
     elif score_final >= -64:
-        result["label"]  = "SELL/AVOID"
-        result["warna"]  = "#D50000"
-        result["signal"] = "SELL / AVOID"
+        result["label"]      = "SELL/AVOID"
+        result["warna"]      = "#D50000"
+        result["signal"]     = "SELL / AVOID"
         result["confidence"] = "Sinyal bearish kuat. Jika pegang posisi, pertimbangkan exit."
     else:
-        result["label"]  = "STRONG SELL"
-        result["warna"]  = "#B71C1C"
-        result["signal"] = "STRONG SELL — Konfirmasi Tinggi"
+        result["label"]      = "STRONG SELL"
+        result["warna"]      = "#B71C1C"
+        result["signal"]     = "STRONG SELL — Konfirmasi Tinggi"
         result["confidence"] = "Tekanan jual sangat dominan. Exit posisi dan hindari buy."
 
-    # ─────────────────────────────────────────────────────────────────────
-    # PARAMETER SL & TP (berbasis ATR)
-    # ─────────────────────────────────────────────────────────────────────
     if timeframe == "day":
-        sl_mult_buy  = 1.5
-        tp1_mult     = 1.5
-        tp2_mult     = 3.0
+        sl_mult_buy = 1.5
+        tp1_mult    = 1.5
+        tp2_mult    = 3.0
     else:
-        sl_mult_buy  = 2.0
-        tp1_mult     = 2.0
-        tp2_mult     = 4.0
+        sl_mult_buy = 2.0
+        tp1_mult    = 2.0
+        tp2_mult    = 4.0
 
     entry_price = curr_price
     sl  = entry_price - sl_mult_buy * atr_val
@@ -1014,22 +904,19 @@ def compute_score(df: pd.DataFrame, timeframe: str = "swing") -> dict:
     tp2 = entry_price + tp2_mult    * atr_val
 
     result["trading_plan"] = {
-        "entry":  entry_price,
-        "sl":     sl,
-        "tp1":    tp1,
-        "tp2":    tp2,
-        "atr":    atr_val,
+        "entry":   entry_price,
+        "sl":      sl,
+        "tp1":     tp1,
+        "tp2":     tp2,
+        "atr":     atr_val,
         "atr_pct": (atr_val / entry_price * 100) if entry_price > 0 else 0,
-        "sl_pct": ((entry_price - sl) / entry_price * 100) if entry_price > 0 else 0,
+        "sl_pct":  ((entry_price - sl) / entry_price * 100) if entry_price > 0 else 0,
         "tp1_pct": ((tp1 - entry_price) / entry_price * 100) if entry_price > 0 else 0,
         "tp2_pct": ((tp2 - entry_price) / entry_price * 100) if entry_price > 0 else 0,
-        "rr1":    tp1_mult / sl_mult_buy,
-        "rr2":    tp2_mult / sl_mult_buy,
+        "rr1":     tp1_mult / sl_mult_buy,
+        "rr2":     tp2_mult / sl_mult_buy,
     }
 
-    # ─────────────────────────────────────────────────────────────────────
-    # INFO TAMBAHAN (untuk tabel panel)
-    # ─────────────────────────────────────────────────────────────────────
     result["info"] = {
         "price":         curr_price,
         "vwap":          last.get('VWAP_20', curr_price),
@@ -1074,15 +961,11 @@ def compute_score(df: pd.DataFrame, timeframe: str = "swing") -> dict:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# CHART BUILDER — 2 panel: harga+EMA (atas) + Volume (bawah)
+# CHART BUILDER
 # ─────────────────────────────────────────────────────────────────────────────
 
 def build_chart(df: pd.DataFrame, sc: dict, ticker: str, timeframe_label: str) -> go.Figure:
-    """
-    Bangun chart 2 panel:
-    - Row 1 (70%): Candlestick + EMA9/20/50/200
-    - Row 2 (30%): Volume bar + Vol MA20
-    """
+    """Bangun chart 2 panel: Candlestick+EMA (atas) + Volume (bawah)."""
     info        = sc["info"]
     stale_days  = info.get("stale_days", 0)
     stale_label = info.get("stale_label", "")
@@ -1099,7 +982,6 @@ def build_chart(df: pd.DataFrame, sc: dict, ticker: str, timeframe_label: str) -
         ),
     )
 
-    # ── Row 1: Candlestick ────────────────────────────────────────────────────
     fig.add_trace(go.Candlestick(
         x=df.index,
         open=df['Open'], high=df['High'],
@@ -1111,7 +993,6 @@ def build_chart(df: pd.DataFrame, sc: dict, ticker: str, timeframe_label: str) -
         decreasing_fillcolor="#D50000",
     ), row=1, col=1)
 
-    # EMA 9 / 20 / 50 / 200
     ema_styles = [
         ('EMA9',   '#F9A825', 1.2, 'solid'),
         ('EMA20',  '#00BCD4', 1.5, 'solid'),
@@ -1126,14 +1007,12 @@ def build_chart(df: pd.DataFrame, sc: dict, ticker: str, timeframe_label: str) -
                 name=col_name, opacity=0.95,
             ), row=1, col=1)
 
-    # Tandai candle terakhir yang valid jika data stale
     if stale_days > 0:
         valid_iloc  = sc["staleness"]["last_valid_iloc"]
         valid_date  = df.index[valid_iloc]
         valid_close = df['Close'].iloc[valid_iloc]
         fig.add_trace(go.Scatter(
-            x=[valid_date],
-            y=[valid_close],
+            x=[valid_date], y=[valid_close],
             mode='markers',
             marker=dict(color='#FFD600', size=10, symbol='diamond',
                         line=dict(color='#FFFFFF', width=1.5)),
@@ -1141,7 +1020,6 @@ def build_chart(df: pd.DataFrame, sc: dict, ticker: str, timeframe_label: str) -
             showlegend=True,
         ), row=1, col=1)
 
-    # ── Row 2: Volume ─────────────────────────────────────────────────────────
     vol_colors = [
         '#00C853' if c >= o else '#D50000'
         for c, o in zip(df['Close'], df['Open'])
@@ -1166,7 +1044,6 @@ def build_chart(df: pd.DataFrame, sc: dict, ticker: str, timeframe_label: str) -
             line=dict(color='rgba(255,214,0,0.3)', width=1, dash='dot'),
         )
 
-    # ── Layout ────────────────────────────────────────────────────────────────
     fig.update_layout(
         height=620,
         template="plotly_dark",
@@ -1174,8 +1051,7 @@ def build_chart(df: pd.DataFrame, sc: dict, ticker: str, timeframe_label: str) -
         plot_bgcolor="#0D1117",
         xaxis_rangeslider_visible=False,
         legend=dict(
-            orientation="h",
-            yanchor="bottom", y=1.02,
+            orientation="h", yanchor="bottom", y=1.02,
             xanchor="right", x=1,
             font=dict(size=10),
             bgcolor="rgba(13,17,23,0.7)",
@@ -1194,7 +1070,7 @@ def build_chart(df: pd.DataFrame, sc: dict, ticker: str, timeframe_label: str) -
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# TAMPILAN PANEL INDIKATOR (tabel ringkas)
+# TAMPILAN PANEL INDIKATOR
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _row_indikator(label: str, nilai: str, simpulan: str, warna_simpulan: str = "#FFFFFF"):
@@ -1214,7 +1090,7 @@ def _row_indikator(label: str, nilai: str, simpulan: str, warna_simpulan: str = 
 
 
 def render_indicator_panel(sc: dict, df: pd.DataFrame):
-    """Render seluruh panel indikator teknikal (selalu tampil, apapun skornya)."""
+    """Render seluruh panel indikator teknikal."""
     info = sc["info"]
     l2   = sc["layer2_trend"]
     l3   = sc["layer3_momentum"]
@@ -1253,140 +1129,43 @@ def render_indicator_panel(sc: dict, df: pd.DataFrame):
     )
 
     st.markdown("<div style='color:#607D8B;font-size:11px;padding:6px 4px 2px;font-weight:700;'>── FILTER (GO/NO-GO) ──</div>", unsafe_allow_html=True)
-
     adx_ok  = l1["ADX"]["ok"]
     vol_ok  = l1["Volume"]["ok"]
-    _row_indikator(
-        "ADX/DMI (14)",
-        f"{info['adx']:.1f} | +DI:{info['plus_di']:.1f} | -DI:{info['minus_di']:.1f}",
-        l1["ADX"]["label"],
-        "#00C853" if adx_ok else "#FF5252",
-    )
-    _row_indikator(
-        "Volume Ratio",
-        l1["Volume"]["nilai"],
-        l1["Volume"]["label"],
-        "#00C853" if vol_ok else "#FF5252",
-    )
-    _row_indikator(
-        "Likuiditas",
-        f"Rp {info['value_ma20']:,.0f}",
-        f"{'✅ Likuid' if info['value_ma20'] > 0 else '⚠️ Cek Manual'}",
-        "#00C853" if info['value_ma20'] > 1_000_000_000 else "#FFD600",
-    )
+    _row_indikator("ADX/DMI (14)", f"{info['adx']:.1f} | +DI:{info['plus_di']:.1f} | -DI:{info['minus_di']:.1f}", l1["ADX"]["label"], "#00C853" if adx_ok else "#FF5252")
+    _row_indikator("Volume Ratio", l1["Volume"]["nilai"], l1["Volume"]["label"], "#00C853" if vol_ok else "#FF5252")
+    _row_indikator("Likuiditas", f"Rp {info['value_ma20']:,.0f}", f"{'✅ Likuid' if info['value_ma20'] > 0 else '⚠️ Cek Manual'}", "#00C853" if info['value_ma20'] > 1_000_000_000 else "#FFD600")
 
     st.markdown("<div style='color:#607D8B;font-size:11px;padding:6px 4px 2px;font-weight:700;'>── TREND CONFIRMATION ──</div>", unsafe_allow_html=True)
-
     ema_poin = l2["EMA_Stack"]["poin"]
-    _row_indikator(
-        "EMA 9/20/50/200",
-        f"9:{info['ema9']:,.0f} | 20:{info['ema20']:,.0f} | 50:{info['ema50']:,.0f} | 200:{info['ema200']:,.0f}",
-        l2["EMA_Stack"]["label"],
-        "#00C853" if ema_poin > 0 else ("#FF5252" if ema_poin < 0 else "#9E9E9E"),
-    )
+    _row_indikator("EMA 9/20/50/200", f"9:{info['ema9']:,.0f} | 20:{info['ema20']:,.0f} | 50:{info['ema50']:,.0f} | 200:{info['ema200']:,.0f}", l2["EMA_Stack"]["label"], "#00C853" if ema_poin > 0 else ("#FF5252" if ema_poin < 0 else "#9E9E9E"))
     st_poin = l2["Supertrend"]["poin"]
-    _row_indikator(
-        f"Supertrend {l2['Supertrend']['param']}",
-        f"{info['super_line']:,.0f}",
-        l2["Supertrend"]["label"],
-        "#00C853" if st_poin > 0 else "#FF5252",
-    )
+    _row_indikator(f"Supertrend {l2['Supertrend']['param']}", f"{info['super_line']:,.0f}", l2["Supertrend"]["label"], "#00C853" if st_poin > 0 else "#FF5252")
     sar_poin = l2["Parabolic_SAR"]["poin"]
-    _row_indikator(
-        "Parabolic SAR",
-        f"{info['sar']:,.0f}",
-        l2["Parabolic_SAR"]["label"],
-        "#00C853" if sar_poin > 0 else "#FF5252",
-    )
+    _row_indikator("Parabolic SAR", f"{info['sar']:,.0f}", l2["Parabolic_SAR"]["label"], "#00C853" if sar_poin > 0 else "#FF5252")
     bb_mid_poin = l2["BB_Mid"]["poin"]
-    _row_indikator(
-        "Harga vs SMA20",
-        f"Harga:{curr:,.0f} | SMA20:{info['bb_mid']:,.0f}",
-        l2["BB_Mid"]["label"],
-        "#00C853" if bb_mid_poin > 0 else "#FF5252",
-    )
-
+    _row_indikator("Harga vs SMA20", f"Harga:{curr:,.0f} | SMA20:{info['bb_mid']:,.0f}", l2["BB_Mid"]["label"], "#00C853" if bb_mid_poin > 0 else "#FF5252")
     vwap_bull = curr > info['vwap']
-    _row_indikator(
-        "VWAP (20 periode)",
-        f"{info['vwap']:,.0f}",
-        f"{'Di Atas VWAP ✅' if vwap_bull else 'Di Bawah VWAP ⚠️'}",
-        "#00C853" if vwap_bull else "#FF6D00",
-    )
+    _row_indikator("VWAP (20 periode)", f"{info['vwap']:,.0f}", f"{'Di Atas VWAP ✅' if vwap_bull else 'Di Bawah VWAP ⚠️'}", "#00C853" if vwap_bull else "#FF6D00")
 
     st.markdown("<div style='color:#607D8B;font-size:11px;padding:6px 4px 2px;font-weight:700;'>── MOMENTUM CONFIRMATION ──</div>", unsafe_allow_html=True)
-
     macd_poin = l3["MACD"]["poin"]
-    _row_indikator(
-        "MACD (12,26,9)",
-        l3["MACD"]["nilai"],
-        l3["MACD"]["label"],
-        "#00C853" if macd_poin > 0 else ("#FF5252" if macd_poin < 0 else "#9E9E9E"),
-    )
+    _row_indikator("MACD (12,26,9)", l3["MACD"]["nilai"], l3["MACD"]["label"], "#00C853" if macd_poin > 0 else ("#FF5252" if macd_poin < 0 else "#9E9E9E"))
     rsi_poin = l3["RSI"]["poin"]
-    _row_indikator(
-        "RSI (14)",
-        f"{info['rsi']:.1f}",
-        l3["RSI"]["label"],
-        "#00C853" if rsi_poin > 0 else ("#FF5252" if rsi_poin < 0 else "#9E9E9E"),
-    )
+    _row_indikator("RSI (14)", f"{info['rsi']:.1f}", l3["RSI"]["label"], "#00C853" if rsi_poin > 0 else ("#FF5252" if rsi_poin < 0 else "#9E9E9E"))
     stoch_poin = l3["Stochastic"]["poin"]
-    _row_indikator(
-        "Stochastic (14,3,3)",
-        f"%K:{info['stoch_k']:.1f} | %D:{info['stoch_d']:.1f}",
-        l3["Stochastic"]["label"],
-        "#00C853" if stoch_poin > 0 else ("#FF5252" if stoch_poin < 0 else "#9E9E9E"),
-    )
-
+    _row_indikator("Stochastic (14,3,3)", f"%K:{info['stoch_k']:.1f} | %D:{info['stoch_d']:.1f}", l3["Stochastic"]["label"], "#00C853" if stoch_poin > 0 else ("#FF5252" if stoch_poin < 0 else "#9E9E9E"))
     obv_up = info['obv'] > info['obv_prev']
-    _row_indikator(
-        "OBV (Volume Flow)",
-        f"{info['obv']:,.0f}",
-        f"{'OBV Naik — Akumulasi ✅' if obv_up else 'OBV Turun — Distribusi ⚠️'}",
-        "#00C853" if obv_up else "#FF6D00",
-    )
+    _row_indikator("OBV (Volume Flow)", f"{info['obv']:,.0f}", f"{'OBV Naik — Akumulasi ✅' if obv_up else 'OBV Turun — Distribusi ⚠️'}", "#00C853" if obv_up else "#FF6D00")
 
     st.markdown("<div style='color:#607D8B;font-size:11px;padding:6px 4px 2px;font-weight:700;'>── ENTRY TRIGGER & KONTEKS ──</div>", unsafe_allow_html=True)
-
     bb_poin  = l4["Bollinger_Bands"]["poin"]
     fib_poin = l4["Fibonacci"]["poin"]
-    _row_indikator(
-        "Bollinger Bands (20,2)",
-        f"Upper:{info['bb_upper']:,.0f} | Mid:{info['bb_mid']:,.0f} | Lower:{info['bb_lower']:,.0f}",
-        l4["Bollinger_Bands"]["label"],
-        "#00C853" if bb_poin > 0 else ("#FF5252" if bb_poin < 0 else "#9E9E9E"),
-    )
-    _row_indikator(
-        "Fibonacci",
-        f"H:{info['fib_high']:,.0f} | L:{info['fib_low']:,.0f}",
-        l4["Fibonacci"]["label"],
-        "#00C853" if fib_poin > 0 else ("#FF5252" if fib_poin < 0 else "#9E9E9E"),
-    )
-    _row_indikator(
-        "Candlestick",
-        "—",
-        info['candle'],
-        "#00C853" if l4["Candlestick"]["poin"] > 0 else (
-            "#FF5252" if l4["Candlestick"]["poin"] < 0 else "#9E9E9E"),
-    )
+    _row_indikator("Bollinger Bands (20,2)", f"Upper:{info['bb_upper']:,.0f} | Mid:{info['bb_mid']:,.0f} | Lower:{info['bb_lower']:,.0f}", l4["Bollinger_Bands"]["label"], "#00C853" if bb_poin > 0 else ("#FF5252" if bb_poin < 0 else "#9E9E9E"))
+    _row_indikator("Fibonacci", f"H:{info['fib_high']:,.0f} | L:{info['fib_low']:,.0f}", l4["Fibonacci"]["label"], "#00C853" if fib_poin > 0 else ("#FF5252" if fib_poin < 0 else "#9E9E9E"))
+    _row_indikator("Candlestick", "—", info['candle'], "#00C853" if l4["Candlestick"]["poin"] > 0 else ("#FF5252" if l4["Candlestick"]["poin"] < 0 else "#9E9E9E"))
     vol_poin = l4["Volume_Spike"]["poin"]
-    _row_indikator(
-        "Volume Spike",
-        l1["Volume"]["nilai"],
-        l4["Volume_Spike"]["label"],
-        "#00C853" if vol_poin > 0 else ("#FF5252" if vol_poin < 0 else "#9E9E9E"),
-    )
-
-    _row_indikator(
-        "ATR% (Volatilitas)",
-        f"ATR: {info['atr']:,.0f} ({info['atr_pct']:.2f}%)",
-        (
-            "Volatilitas Rendah (<1%)" if info['atr_pct'] < 1
-            else "Volatilitas Normal (1–3%)" if info['atr_pct'] < 3
-            else "Volatilitas Tinggi (>3%) ⚠️"
-        ),
-        "#9E9E9E" if info['atr_pct'] < 1 else ("#00C853" if info['atr_pct'] < 3 else "#FF6D00"),
-    )
+    _row_indikator("Volume Spike", l1["Volume"]["nilai"], l4["Volume_Spike"]["label"], "#00C853" if vol_poin > 0 else ("#FF5252" if vol_poin < 0 else "#9E9E9E"))
+    _row_indikator("ATR% (Volatilitas)", f"ATR: {info['atr']:,.0f} ({info['atr_pct']:.2f}%)", ("Volatilitas Rendah (<1%)" if info['atr_pct'] < 1 else "Volatilitas Normal (1–3%)" if info['atr_pct'] < 3 else "Volatilitas Tinggi (>3%) ⚠️"), "#9E9E9E" if info['atr_pct'] < 1 else ("#00C853" if info['atr_pct'] < 3 else "#FF6D00"))
 
     st.markdown("<br>", unsafe_allow_html=True)
 
@@ -1429,24 +1208,20 @@ def render_trading_plan(sc: dict, total_modal: float, max_risiko: float):
     with c1:
         st.metric("Entry (Harga Saat Ini)", f"Rp {plan['entry']:,.0f}")
     with c2:
-        st.metric(
-            "🛑 Stop Loss",
-            f"Rp {plan['sl']:,.0f}",
-            delta=f"-{plan['sl_pct']:.1f}%",
-            delta_color="inverse",
-        )
+        st.metric("🛑 Stop Loss", f"Rp {plan['sl']:,.0f}", delta=f"-{plan['sl_pct']:.1f}%", delta_color="inverse")
     with c3:
-        st.metric("🎯 Target 1 (R:R 1:1)",  f"Rp {plan['tp1']:,.0f}",
-                  delta=f"+{plan['tp1_pct']:.1f}%")
+        st.metric("🎯 Target 1 (R:R 1:1)", f"Rp {plan['tp1']:,.0f}", delta=f"+{plan['tp1_pct']:.1f}%")
 
     c4, c5, c6 = st.columns(3)
     with c4:
-        st.metric("🎯 Target 2 (R:R 1:2)",  f"Rp {plan['tp2']:,.0f}",
-                  delta=f"+{plan['tp2_pct']:.1f}%")
+        st.metric("🎯 Target 2 (R:R 1:2)", f"Rp {plan['tp2']:,.0f}", delta=f"+{plan['tp2_pct']:.1f}%")
     with c5:
         st.metric("ATR Saat Ini", f"{plan['atr']:,.0f} ({plan['atr_pct']:.2f}%)")
     with c6:
         st.metric("Risk/Reward", f"1:{plan['rr1']:.1f} / 1:{plan['rr2']:.1f}")
+
+    max_lembar_risk = max_lembar_capital = 0
+    final_lot = 0
 
     if plan['entry'] > 0 and plan['sl'] > 0:
         risk_per_share     = plan['entry'] - plan['sl']
@@ -1454,10 +1229,7 @@ def render_trading_plan(sc: dict, total_modal: float, max_risiko: float):
         max_lembar_capital = (0.15 * total_modal) / plan['entry']
         final_lot          = int(min(max_lembar_risk, max_lembar_capital) // 100)
 
-        st.info(
-            f"💡 **Position Sizing** — Modal: Rp {total_modal:,.0f} | "
-            f"Maks Risiko: Rp {max_risiko:,.0f}"
-        )
+        st.info(f"💡 **Position Sizing** — Modal: Rp {total_modal:,.0f} | Maks Risiko: Rp {max_risiko:,.0f}")
         p1, p2, p3 = st.columns(3)
         with p1:
             st.metric("Risk-Based Limit", f"{int(max_lembar_risk):,.0f} lembar")
@@ -1471,49 +1243,46 @@ def render_trading_plan(sc: dict, total_modal: float, max_risiko: float):
             else:
                 st.warning(f"**MAX LOT: {final_lot} LOT** *(tidak direkomendasikan saat ini)*")
             st.caption("Angka paling konservatif")
-    else:
-        max_lembar_risk = max_lembar_capital = 0
-        final_lot = 0
 
     return {
-        "max_lembar_risk":    max_lembar_risk if plan['entry'] > 0 else 0,
-        "max_lembar_capital": max_lembar_capital if plan['entry'] > 0 else 0,
+        "max_lembar_risk":    max_lembar_risk,
+        "max_lembar_capital": max_lembar_capital,
         "final_lot":          final_lot,
     }
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # GENERATOR PDF
-# PERBAIKAN: Hapus "from fpdf.enums import XPos, YPos" — tidak kompatibel
-# dengan fpdf v1.x yang mungkin terinstall di Streamlit Cloud lama.
-# Ganti XPos.LMARGIN → "LMARGIN" dan YPos.NEXT → "NEXT" (string enum
-# yang didukung fpdf2 >= 2.2 tanpa perlu import fpdf.enums).
+# FIX: Ganti new_x/new_y (fpdf2 >= 2.5 only) dengan pola set_xy + ln()
+# yang kompatibel lintas semua versi fpdf/fpdf2.
 # ─────────────────────────────────────────────────────────────────────────────
 
 def generate_pdf_fpdf(data: dict, logo_path: str = "logo_expert_stock_pro.png") -> bytes:
     """
     Bangun PDF laporan analisa teknikal menggunakan fpdf2.
-    Kompatibel dengan fpdf2 >= 2.2 tanpa import fpdf.enums.
+    Kompatibel dengan semua versi fpdf2 (tanpa new_x/new_y keyword argument).
     """
-    # ── shortcut sanitizer ────────────────────────────────────────────────────
     def s(text) -> str:
         return _sanitize_pdf(str(text) if text is not None else "-")
 
-    # ── layout konstanta ──────────────────────────────────────────────────────
-    LM     = 10      # left margin mm
-    RM     = 10      # right margin mm
-    PW     = 210     # page width mm
-    C1     = 44      # kolom label mm
-    C2     = 48      # kolom nilai mm
-    C3     = PW - LM - RM - C1 - C2   # kolom simpulan (~98mm)
-    RH     = 5       # row height mm
+    LM = 10
+    RM = 10
+    PW = 210
+    C1 = 44
+    C2 = 48
+    C3 = PW - LM - RM - C1 - C2
+    RH = 5
 
-    # ── helper: satu baris tabel 3-kolom ─────────────────────────────────────
-    def row2(label_txt: str, val_txt, simpulan_txt):
+    def _cell_ln(pdf_obj, w, h, txt, **kw):
         """
-        Cetak baris: label | nilai | simpulan.
-        Gunakan set_xy() eksplisit agar multi_cell kolom-3 tidak crash.
+        Pengganti cnl() — tulis cell lalu pindah baris secara eksplisit.
+        Kompatibel dengan fpdf v1.x, fpdf2 2.4.x, dan fpdf2 >= 2.5.x.
         """
+        pdf_obj.cell(w, h, s(txt), **kw)
+        pdf_obj.ln(h)
+
+    def row2(label_txt, val_txt, simpulan_txt):
+        """Cetak baris: label | nilai | simpulan."""
         y0 = pdf.get_y()
         pdf.set_font("Helvetica", 'B', 9)
         pdf.set_xy(LM, y0)
@@ -1524,21 +1293,15 @@ def generate_pdf_fpdf(data: dict, logo_path: str = "logo_expert_stock_pro.png") 
         pdf.set_xy(LM + C1 + C2, y0)
         pdf.multi_cell(C3, RH, s(str(simpulan_txt)))
 
-    # ── helper: header section ────────────────────────────────────────────────
     def section_header(title: str):
         pdf.set_fill_color(30, 42, 58)
         pdf.set_text_color(255, 255, 255)
         pdf.set_font("Helvetica", 'B', 10)
-        # String enum "LMARGIN"/"NEXT" — bekerja di fpdf2 >= 2.2 tanpa import fpdf.enums
-        pdf.cell(0, 7, s(title), new_x="LMARGIN", new_y="NEXT", fill=True)
+        pdf.cell(0, 7, s(title), fill=True)
+        pdf.ln(7)
         pdf.set_text_color(0, 0, 0)
         pdf.set_font("Helvetica", '', 9)
 
-    # ── helper: cell dengan newline ───────────────────────────────────────────
-    def cnl(w, h, txt, **kw):
-        pdf.cell(w, h, s(txt), new_x="LMARGIN", new_y="NEXT", **kw)
-
-    # ── init ──────────────────────────────────────────────────────────────────
     pdf = FPDF()
     pdf.set_margins(LM, 10, RM)
     pdf.add_page()
@@ -1546,7 +1309,7 @@ def generate_pdf_fpdf(data: dict, logo_path: str = "logo_expert_stock_pro.png") 
     syariah_raw = s(data.get('syariah', ''))
     status_syariah_teks = "Syariah" if "Syariah" in syariah_raw and "Non" not in syariah_raw else "Non-Syariah"
 
-    # ── HEADER ────────────────────────────────────────────────────────────────
+    # HEADER
     pdf.set_fill_color(13, 17, 23)
     pdf.rect(0, 0, 210, 28, 'F')
 
@@ -1565,18 +1328,19 @@ def generate_pdf_fpdf(data: dict, logo_path: str = "logo_expert_stock_pro.png") 
 
     pdf.set_font("Arial", "I", 10)
     pdf.set_text_color(0, 0, 255)
-    pdf.cell(0, 5, "Sumber: https://s.id/pintarsaham", ln=True, align="C",
+    pdf.cell(0, 5, "Sumber: https://s.id/pintarsaham", align="C",
              link="https://s.id/pintarsaham")
+    pdf.ln(5)
 
     pdf.set_text_color(0, 0, 0)
     pdf.set_font("Helvetica", 'B', 16)
-    cnl(0, 9, s(f"{data.get('ticker','?')} - {data.get('nama_perusahaan','')}"), align='C')
+    _cell_ln(pdf, 0, 9, s(f"{data.get('ticker','?')} - {data.get('nama_perusahaan','')}"), align='C')
 
     pdf.set_font("Helvetica", '', 10)
-    cnl(0, 5, s(f"Sektor: {data.get('sektor','-')} | Status: {status_syariah_teks}"), align='C')
+    _cell_ln(pdf, 0, 5, s(f"Sektor: {data.get('sektor','-')} | Status: {status_syariah_teks}"), align='C')
 
     pdf.set_font("Helvetica", 'B', 9)
-    cnl(0, 5,
+    _cell_ln(pdf, 0, 5,
         s(f"Analisa: {data.get('waktu','-')} | TF: {data.get('timeframe','-')} | "
           f"Harga: Rp {data.get('harga', 0):,.0f}"),
         align='R')
@@ -1584,7 +1348,7 @@ def generate_pdf_fpdf(data: dict, logo_path: str = "logo_expert_stock_pro.png") 
     pdf.line(LM, pdf.get_y() + 1, PW - RM, pdf.get_y() + 1)
     pdf.ln(4)
 
-    # ── SKOR & SIMPULAN ───────────────────────────────────────────────────────
+    # SKOR & SIMPULAN
     score = data.get('score', 0)
     label = data.get('label', '-')
     warna_map = {
@@ -1602,14 +1366,14 @@ def generate_pdf_fpdf(data: dict, logo_path: str = "logo_expert_stock_pro.png") 
     pdf.set_fill_color(r, g, b)
     pdf.set_text_color(0, 0, 0)
     pdf.set_font("Helvetica", 'B', 13)
-    cnl(0, 10, s(f"SKOR TEKNIKAL: {score}/100  |  {label}"), fill=True, align='C')
+    _cell_ln(pdf, 0, 10, s(f"SKOR TEKNIKAL: {score}/100  |  {label}"), fill=True, align='C')
 
     pdf.set_font("Helvetica", 'I', 9)
     pdf.set_text_color(50, 50, 50)
     pdf.multi_cell(0, 5, s(f"Catatan: {data.get('confidence','-')}"))
     pdf.ln(2)
 
-    # ── LAYER 1 ───────────────────────────────────────────────────────────────
+    # LAYER 1
     section_header("1. FILTER (GO / NO-GO)")
     l1 = data.get('layer1', {})
     row2("ADX/DMI (14)",  l1.get('adx_nilai', '-'), l1.get('adx_label', '-'))
@@ -1617,7 +1381,7 @@ def generate_pdf_fpdf(data: dict, logo_path: str = "logo_expert_stock_pro.png") 
     row2("Likuiditas",    l1.get('liq_nilai', '-'),  l1.get('liq_label', '-'))
     pdf.ln(2)
 
-    # ── LAYER 2 ───────────────────────────────────────────────────────────────
+    # LAYER 2
     section_header("2. TREND CONFIRMATION")
     l2 = data.get('layer2', {})
     row2("EMA Stack",      l2.get('ema_nilai', '-'),   l2.get('ema_label', '-'))
@@ -1627,7 +1391,7 @@ def generate_pdf_fpdf(data: dict, logo_path: str = "logo_expert_stock_pro.png") 
     row2("VWAP (20)",      l2.get('vwap_nilai', '-'),  l2.get('vwap_label', '-'))
     pdf.ln(2)
 
-    # ── LAYER 3 ───────────────────────────────────────────────────────────────
+    # LAYER 3
     section_header("3. MOMENTUM CONFIRMATION")
     l3 = data.get('layer3', {})
     row2("MACD (12,26,9)",      l3.get('macd_nilai', '-'),  l3.get('macd_label', '-'))
@@ -1636,7 +1400,7 @@ def generate_pdf_fpdf(data: dict, logo_path: str = "logo_expert_stock_pro.png") 
     row2("OBV",                 l3.get('obv_nilai', '-'),   l3.get('obv_label', '-'))
     pdf.ln(2)
 
-    # ── LAYER 4 ───────────────────────────────────────────────────────────────
+    # LAYER 4
     section_header("4. ENTRY TRIGGER & KONTEKS")
     l4 = data.get('layer4', {})
     row2("Bollinger Bands", l4.get('bb_nilai', '-'),      l4.get('bb_label', '-'))
@@ -1646,7 +1410,7 @@ def generate_pdf_fpdf(data: dict, logo_path: str = "logo_expert_stock_pro.png") 
     row2("ATR%",            l4.get('atr_nilai', '-'),      l4.get('atr_label', '-'))
     pdf.ln(2)
 
-    # ── TRADING PLAN ──────────────────────────────────────────────────────────
+    # TRADING PLAN
     section_header("5. TRADING PLAN & POSITION SIZING")
     plan = data.get('plan', {})
 
@@ -1659,34 +1423,28 @@ def generate_pdf_fpdf(data: dict, logo_path: str = "logo_expert_stock_pro.png") 
         pdf.set_text_color(0, 0, 0)
 
     row2("Harga Entry",    f"Rp {plan.get('entry', 0):,.0f}", "-")
-    row2("Stop Loss",      f"Rp {plan.get('sl', 0):,.0f}",
-         f"-{plan.get('sl_pct', 0):.1f}% dari entry")
-    row2("Target 1 (TP1)", f"Rp {plan.get('tp1', 0):,.0f}",
-         f"+{plan.get('tp1_pct', 0):.1f}% | R:R 1:{plan.get('rr1', 0):.1f}")
-    row2("Target 2 (TP2)", f"Rp {plan.get('tp2', 0):,.0f}",
-         f"+{plan.get('tp2_pct', 0):.1f}% | R:R 1:{plan.get('rr2', 0):.1f}")
-    row2("ATR",
-         f"{plan.get('atr', 0):,.0f} ({plan.get('atr_pct', 0):.2f}%)",
-         "Dasar perhitungan SL dan TP")
+    row2("Stop Loss",      f"Rp {plan.get('sl', 0):,.0f}",   f"-{plan.get('sl_pct', 0):.1f}% dari entry")
+    row2("Target 1 (TP1)", f"Rp {plan.get('tp1', 0):,.0f}",  f"+{plan.get('tp1_pct', 0):.1f}% | R:R 1:{plan.get('rr1', 0):.1f}")
+    row2("Target 2 (TP2)", f"Rp {plan.get('tp2', 0):,.0f}",  f"+{plan.get('tp2_pct', 0):.1f}% | R:R 1:{plan.get('rr2', 0):.1f}")
+    row2("ATR", f"{plan.get('atr', 0):,.0f} ({plan.get('atr_pct', 0):.2f}%)", "Dasar perhitungan SL dan TP")
     pdf.ln(2)
 
     pdf.set_font("Helvetica", 'B', 9)
-    cnl(0, 5, "POSITION SIZING")
+    _cell_ln(pdf, 0, 5, "POSITION SIZING")
     row2("Modal",               f"Rp {data.get('total_modal', 0):,.0f}",                 "-")
     row2("Maks Risiko",         f"Rp {data.get('max_risiko', 0):,.0f}",                  "-")
     row2("Risk-Based Limit",    f"{int(data.get('max_lembar_risk', 0)):,.0f} lembar",    "-")
     row2("Capital-Based (15%)", f"{int(data.get('max_lembar_capital', 0)):,.0f} lembar", "-")
-    row2("FINAL MAX LOT",       f"{data.get('final_lot', 0)} LOT",
-         "Angka paling konservatif")
+    row2("FINAL MAX LOT",       f"{data.get('final_lot', 0)} LOT",                       "Angka paling konservatif")
     pdf.ln(2)
 
-    # ── SENTIMEN ──────────────────────────────────────────────────────────────
+    # SENTIMEN
     section_header("6. SENTIMEN BERITA")
-    cnl(0, 5, s(f"Status: {data.get('sentiment', '-')}"))
+    _cell_ln(pdf, 0, 5, s(f"Status: {data.get('sentiment', '-')}"))
     pdf.multi_cell(0, 5, s(f"Headline: {data.get('headline', '-')}"))
     pdf.ln(8)
 
-    # ── DISCLAIMER ────────────────────────────────────────────────────────────
+    # DISCLAIMER
     pdf.line(LM, pdf.get_y(), PW - RM, pdf.get_y())
     pdf.set_font("Helvetica", 'I', 7)
     pdf.set_text_color(100, 100, 100)
@@ -1696,7 +1454,6 @@ def generate_pdf_fpdf(data: dict, logo_path: str = "logo_expert_stock_pro.png") 
         "untuk membeli/menjual saham. Keputusan investasi sepenuhnya menjadi tanggung "
         "jawab pribadi investor. Selalu terapkan manajemen risiko dan DYOR.")
 
-    # fpdf2: output() return bytes langsung
     return pdf.output()
 
 
@@ -1707,7 +1464,6 @@ def generate_pdf_fpdf(data: dict, logo_path: str = "logo_expert_stock_pro.png") 
 def run_teknikal():
     """Entry point modul analisa teknikal — dipanggil dari app.py."""
 
-    # ── LOGO ──────────────────────────────────────────────────────────────────
     logo_file = "logo_expert_stock_pro.png"
     if not os.path.exists(logo_file):
         logo_file = "../logo_expert_stock_pro.png"
@@ -1720,10 +1476,7 @@ def run_teknikal():
             unsafe_allow_html=True,
         )
 
-    st.markdown(
-        "<h1 style='text-align:center;'>📈 Analisa Teknikal Pro</h1>",
-        unsafe_allow_html=True,
-    )
+    st.markdown("<h1 style='text-align:center;'>📈 Analisa Teknikal Pro</h1>", unsafe_allow_html=True)
     st.markdown(
         "<p style='text-align:center;color:#90CAF9;'>Sistem Scoring Berlapis: "
         "Filter → Trend → Momentum → Entry Trigger</p>",
@@ -1731,7 +1484,6 @@ def run_teknikal():
     )
     st.markdown("---")
 
-    # ── INPUT ─────────────────────────────────────────────────────────────────
     st.markdown("### ⚙️ Input & Manajemen Risiko")
     col_inp, col_mod, col_rsk = st.columns([1, 1, 1])
     with col_inp:
@@ -1754,11 +1506,11 @@ def run_teknikal():
         st.info("Masukkan kode saham dan klik tombol untuk menjalankan analisa.")
         return
 
-    # ── FETCH DATA ────────────────────────────────────────────────────────────
+    # FETCH DATA
     with st.spinner("Mengambil data..."):
         data_daily = get_full_stock_data(ticker_jk, interval="1d")
         df_daily   = data_daily.get('history', pd.DataFrame())
-        info       = data_daily.get('info', {})
+        yf_info    = data_daily.get('info', {})
 
         try:
             tk_obj  = yf.Ticker(ticker_jk)
@@ -1771,7 +1523,7 @@ def run_teknikal():
         st.error("Data harian tidak mencukupi. Coba ticker lain.")
         return
 
-    # ── KALKULASI ─────────────────────────────────────────────────────────────
+    # KALKULASI
     with st.spinner("Menghitung semua indikator..."):
         df_daily_calc = calculate_technical_indicators(df_daily)
 
@@ -1784,9 +1536,11 @@ def run_teknikal():
         sc_swing = compute_score(df_daily_calc, timeframe="swing")
         sc_day   = compute_score(df_m15_calc, timeframe="day") if m15_ok else None
 
-    # ── INFO HEADER ───────────────────────────────────────────────────────────
-    nama_perusahaan = info.get('longName', ticker_bersih)
-    sektor_id       = translate_sector(info.get('sector', 'Sektor Tidak Diketahui'))
+    # INFO HEADER
+    # FIX: Sektor diambil dari liquid_stocks.csv / pre_liquid_stocks.csv terlebih dulu,
+    # bukan langsung dari yfinance info yang sering return None untuk saham IDX.
+    nama_perusahaan = yf_info.get('longName', ticker_bersih)
+    sektor_id       = _get_sektor(ticker_bersih, yf_info)
     status_syariah  = get_syariah_status(ticker_bersih)
     sentimen_status, sentimen_headline = analyze_news_sentiment(ticker_jk)
 
@@ -1802,12 +1556,10 @@ def run_teknikal():
     )
     st.markdown("---")
 
-    # ── TAB DAY TRADE vs SWING TRADE ─────────────────────────────────────────
+    # TAB
     tab_swing, tab_day = st.tabs(["📅 Swing Trade (Daily)", "⚡ Day Trade (M15)"])
 
-    # ═══════════════════════════════════════════════════════════════
-    # TAB SWING TRADE
-    # ═══════════════════════════════════════════════════════════════
+    # ═══ TAB SWING TRADE ═══
     with tab_swing:
         st.markdown("##### Timeframe: Daily | Parameter Supertrend (10,3)")
 
@@ -1830,41 +1582,41 @@ def run_teknikal():
 
         ps_swing = render_trading_plan(sc_swing, total_modal_input, max_risiko_input)
 
-        # ── PDF SWING ────────────────────────────────────────────────────────
+        # PDF SWING
         st.markdown("---")
-        info_sw  = sc_swing["info"]
-        plan_sw  = sc_swing["trading_plan"]
-        l1_sw    = sc_swing["layer1_filter"]
-        l2_sw    = sc_swing["layer2_trend"]
-        l3_sw    = sc_swing["layer3_momentum"]
-        l4_sw    = sc_swing["layer4_entry"]
+        info_sw = sc_swing["info"]
+        plan_sw = sc_swing["trading_plan"]
+        l1_sw   = sc_swing["layer1_filter"]
+        l2_sw   = sc_swing["layer2_trend"]
+        l3_sw   = sc_swing["layer3_momentum"]
+        l4_sw   = sc_swing["layer4_entry"]
 
         pdf_data_swing = {
-            "ticker":           ticker_bersih,
-            "nama_perusahaan":  nama_perusahaan,
-            "sektor":           sektor_id,
-            "syariah":          status_syariah,
-            "waktu":            datetime.now().strftime("%d-%m-%Y %H:%M"),
-            "timeframe":        "Swing Trade — Daily",
-            "harga":            info_sw['price'],
-            "score":            sc_swing["score"],
-            "label":            sc_swing["label"],
-            "confidence":       sc_swing["confidence"],
-            "sentiment":        sentimen_status,
-            "headline":         sentimen_headline,
-            "total_modal":      total_modal_input,
-            "max_risiko":       max_risiko_input,
-            "max_lembar_risk":  ps_swing["max_lembar_risk"],
+            "ticker":             ticker_bersih,
+            "nama_perusahaan":    nama_perusahaan,
+            "sektor":             sektor_id,
+            "syariah":            status_syariah,
+            "waktu":              datetime.now().strftime("%d-%m-%Y %H:%M"),
+            "timeframe":          "Swing Trade — Daily",
+            "harga":              info_sw['price'],
+            "score":              sc_swing["score"],
+            "label":              sc_swing["label"],
+            "confidence":         sc_swing["confidence"],
+            "sentiment":          sentimen_status,
+            "headline":           sentimen_headline,
+            "total_modal":        total_modal_input,
+            "max_risiko":         max_risiko_input,
+            "max_lembar_risk":    ps_swing["max_lembar_risk"],
             "max_lembar_capital": ps_swing["max_lembar_capital"],
-            "final_lot":        ps_swing["final_lot"],
-            "plan":             plan_sw,
+            "final_lot":          ps_swing["final_lot"],
+            "plan":               plan_sw,
             "layer1": {
-                "adx_nilai":  l1_sw["ADX"]["nilai"],
-                "adx_label":  l1_sw["ADX"]["label"],
-                "vol_nilai":  l1_sw["Volume"]["nilai"],
-                "vol_label":  l1_sw["Volume"]["label"],
-                "liq_nilai":  f"Rp {info_sw['value_ma20']:,.0f}",
-                "liq_label":  "Likuid" if info_sw['value_ma20'] > 1_000_000_000 else "Cek Manual",
+                "adx_nilai": l1_sw["ADX"]["nilai"],
+                "adx_label": l1_sw["ADX"]["label"],
+                "vol_nilai": l1_sw["Volume"]["nilai"],
+                "vol_label": l1_sw["Volume"]["label"],
+                "liq_nilai": f"Rp {info_sw['value_ma20']:,.0f}",
+                "liq_label": "Likuid" if info_sw['value_ma20'] > 1_000_000_000 else "Cek Manual",
             },
             "layer2": {
                 "ema_nilai":   f"EMA9:{info_sw['ema9']:,.0f}|EMA20:{info_sw['ema20']:,.0f}|EMA50:{info_sw['ema50']:,.0f}|EMA200:{info_sw['ema200']:,.0f}",
@@ -1879,14 +1631,14 @@ def run_teknikal():
                 "vwap_label":  "Di Atas VWAP" if info_sw['price'] > info_sw['vwap'] else "Di Bawah VWAP",
             },
             "layer3": {
-                "macd_nilai":   l3_sw["MACD"]["nilai"],
-                "macd_label":   l3_sw["MACD"]["label"],
-                "rsi_nilai":    f"{info_sw['rsi']:.1f}",
-                "rsi_label":    l3_sw["RSI"]["label"],
-                "stoch_nilai":  f"%K:{info_sw['stoch_k']:.1f}|%D:{info_sw['stoch_d']:.1f}",
-                "stoch_label":  l3_sw["Stochastic"]["label"],
-                "obv_nilai":    f"{info_sw['obv']:,.0f}",
-                "obv_label":    "OBV Naik (Akumulasi)" if info_sw['obv'] > info_sw['obv_prev'] else "OBV Turun (Distribusi)",
+                "macd_nilai":  l3_sw["MACD"]["nilai"],
+                "macd_label":  l3_sw["MACD"]["label"],
+                "rsi_nilai":   f"{info_sw['rsi']:.1f}",
+                "rsi_label":   l3_sw["RSI"]["label"],
+                "stoch_nilai": f"%K:{info_sw['stoch_k']:.1f}|%D:{info_sw['stoch_d']:.1f}",
+                "stoch_label": l3_sw["Stochastic"]["label"],
+                "obv_nilai":   f"{info_sw['obv']:,.0f}",
+                "obv_label":   "OBV Naik (Akumulasi)" if info_sw['obv'] > info_sw['obv_prev'] else "OBV Turun (Distribusi)",
             },
             "layer4": {
                 "bb_nilai":       f"U:{info_sw['bb_upper']:,.0f}|M:{info_sw['bb_mid']:,.0f}|L:{info_sw['bb_lower']:,.0f}",
@@ -1896,11 +1648,7 @@ def run_teknikal():
                 "candle_label":   l4_sw["Candlestick"]["label"],
                 "volspike_label": l4_sw["Volume_Spike"]["label"],
                 "atr_nilai":      f"{info_sw['atr']:,.0f} ({info_sw['atr_pct']:.2f}%)",
-                "atr_label":      (
-                    "Volatilitas Rendah (<1%)" if info_sw['atr_pct'] < 1
-                    else "Volatilitas Normal (1-3%)" if info_sw['atr_pct'] < 3
-                    else "Volatilitas Tinggi (>3%)"
-                ),
+                "atr_label":      ("Volatilitas Rendah (<1%)" if info_sw['atr_pct'] < 1 else "Volatilitas Normal (1-3%)" if info_sw['atr_pct'] < 3 else "Volatilitas Tinggi (>3%)"),
             },
         }
 
@@ -1917,9 +1665,7 @@ def run_teknikal():
         except Exception as e:
             st.warning(f"⚠️ PDF tidak dapat dibuat: {e}")
 
-    # ═══════════════════════════════════════════════════════════════
-    # TAB DAY TRADE
-    # ═══════════════════════════════════════════════════════════════
+    # ═══ TAB DAY TRADE ═══
     with tab_day:
         st.markdown("##### Timeframe: M15 | Parameter Supertrend (7,3)")
 
@@ -1949,41 +1695,41 @@ def run_teknikal():
 
             ps_day = render_trading_plan(sc_day, total_modal_input, max_risiko_input)
 
-            # ── PDF DAY ──────────────────────────────────────────────────────
+            # PDF DAY
             st.markdown("---")
-            info_dy  = sc_day["info"]
-            plan_dy  = sc_day["trading_plan"]
-            l1_dy    = sc_day["layer1_filter"]
-            l2_dy    = sc_day["layer2_trend"]
-            l3_dy    = sc_day["layer3_momentum"]
-            l4_dy    = sc_day["layer4_entry"]
+            info_dy = sc_day["info"]
+            plan_dy = sc_day["trading_plan"]
+            l1_dy   = sc_day["layer1_filter"]
+            l2_dy   = sc_day["layer2_trend"]
+            l3_dy   = sc_day["layer3_momentum"]
+            l4_dy   = sc_day["layer4_entry"]
 
             pdf_data_day = {
-                "ticker":           ticker_bersih,
-                "nama_perusahaan":  nama_perusahaan,
-                "sektor":           sektor_id,
-                "syariah":          status_syariah,
-                "waktu":            datetime.now().strftime("%d-%m-%Y %H:%M"),
-                "timeframe":        "Day Trade — M15",
-                "harga":            info_dy['price'],
-                "score":            sc_day["score"],
-                "label":            sc_day["label"],
-                "confidence":       sc_day["confidence"],
-                "sentiment":        sentimen_status,
-                "headline":         sentimen_headline,
-                "total_modal":      total_modal_input,
-                "max_risiko":       max_risiko_input,
-                "max_lembar_risk":  ps_day["max_lembar_risk"],
+                "ticker":             ticker_bersih,
+                "nama_perusahaan":    nama_perusahaan,
+                "sektor":             sektor_id,
+                "syariah":            status_syariah,
+                "waktu":              datetime.now().strftime("%d-%m-%Y %H:%M"),
+                "timeframe":          "Day Trade — M15",
+                "harga":              info_dy['price'],
+                "score":              sc_day["score"],
+                "label":              sc_day["label"],
+                "confidence":         sc_day["confidence"],
+                "sentiment":          sentimen_status,
+                "headline":           sentimen_headline,
+                "total_modal":        total_modal_input,
+                "max_risiko":         max_risiko_input,
+                "max_lembar_risk":    ps_day["max_lembar_risk"],
                 "max_lembar_capital": ps_day["max_lembar_capital"],
-                "final_lot":        ps_day["final_lot"],
-                "plan":             plan_dy,
+                "final_lot":          ps_day["final_lot"],
+                "plan":               plan_dy,
                 "layer1": {
-                    "adx_nilai":  l1_dy["ADX"]["nilai"],
-                    "adx_label":  l1_dy["ADX"]["label"],
-                    "vol_nilai":  l1_dy["Volume"]["nilai"],
-                    "vol_label":  l1_dy["Volume"]["label"],
-                    "liq_nilai":  f"Rp {info_dy['value_ma20']:,.0f}",
-                    "liq_label":  "Likuid" if info_dy['value_ma20'] > 0 else "Cek Manual",
+                    "adx_nilai": l1_dy["ADX"]["nilai"],
+                    "adx_label": l1_dy["ADX"]["label"],
+                    "vol_nilai": l1_dy["Volume"]["nilai"],
+                    "vol_label": l1_dy["Volume"]["label"],
+                    "liq_nilai": f"Rp {info_dy['value_ma20']:,.0f}",
+                    "liq_label": "Likuid" if info_dy['value_ma20'] > 0 else "Cek Manual",
                 },
                 "layer2": {
                     "ema_nilai":   f"EMA9:{info_dy['ema9']:,.0f}|EMA20:{info_dy['ema20']:,.0f}",
@@ -1998,14 +1744,14 @@ def run_teknikal():
                     "vwap_label":  "Di Atas VWAP" if info_dy['price'] > info_dy['vwap'] else "Di Bawah VWAP",
                 },
                 "layer3": {
-                    "macd_nilai":   l3_dy["MACD"]["nilai"],
-                    "macd_label":   l3_dy["MACD"]["label"],
-                    "rsi_nilai":    f"{info_dy['rsi']:.1f}",
-                    "rsi_label":    l3_dy["RSI"]["label"],
-                    "stoch_nilai":  f"%K:{info_dy['stoch_k']:.1f}|%D:{info_dy['stoch_d']:.1f}",
-                    "stoch_label":  l3_dy["Stochastic"]["label"],
-                    "obv_nilai":    f"{info_dy['obv']:,.0f}",
-                    "obv_label":    "OBV Naik (Akumulasi)" if info_dy['obv'] > info_dy['obv_prev'] else "OBV Turun (Distribusi)",
+                    "macd_nilai":  l3_dy["MACD"]["nilai"],
+                    "macd_label":  l3_dy["MACD"]["label"],
+                    "rsi_nilai":   f"{info_dy['rsi']:.1f}",
+                    "rsi_label":   l3_dy["RSI"]["label"],
+                    "stoch_nilai": f"%K:{info_dy['stoch_k']:.1f}|%D:{info_dy['stoch_d']:.1f}",
+                    "stoch_label": l3_dy["Stochastic"]["label"],
+                    "obv_nilai":   f"{info_dy['obv']:,.0f}",
+                    "obv_label":   "OBV Naik (Akumulasi)" if info_dy['obv'] > info_dy['obv_prev'] else "OBV Turun (Distribusi)",
                 },
                 "layer4": {
                     "bb_nilai":       f"U:{info_dy['bb_upper']:,.0f}|M:{info_dy['bb_mid']:,.0f}|L:{info_dy['bb_lower']:,.0f}",
@@ -2015,11 +1761,7 @@ def run_teknikal():
                     "candle_label":   l4_dy["Candlestick"]["label"],
                     "volspike_label": l4_dy["Volume_Spike"]["label"],
                     "atr_nilai":      f"{info_dy['atr']:,.0f} ({info_dy['atr_pct']:.2f}%)",
-                    "atr_label":      (
-                        "Volatilitas Rendah (<1%)" if info_dy['atr_pct'] < 1
-                        else "Volatilitas Normal (1-3%)" if info_dy['atr_pct'] < 3
-                        else "Volatilitas Tinggi (>3%)"
-                    ),
+                    "atr_label":      ("Volatilitas Rendah (<1%)" if info_dy['atr_pct'] < 1 else "Volatilitas Normal (1-3%)" if info_dy['atr_pct'] < 3 else "Volatilitas Tinggi (>3%)"),
                 },
             }
 
@@ -2036,7 +1778,6 @@ def run_teknikal():
             except Exception as e:
                 st.warning(f"⚠️ PDF tidak dapat dibuat: {e}")
 
-    # ── DISCLAIMER ────────────────────────────────────────────────────────────
     st.markdown("---")
     st.warning(
         "⚠️ **DISCLAIMER:** Laporan analisa ini dihasilkan secara otomatis menggunakan "
