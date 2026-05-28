@@ -1454,7 +1454,11 @@ def generate_pdf_fpdf(data: dict, logo_path: str = "logo_expert_stock_pro.png") 
         "untuk membeli/menjual saham. Keputusan investasi sepenuhnya menjadi tanggung "
         "jawab pribadi investor. Selalu terapkan manajemen risiko dan DYOR.")
 
-    return pdf.output()
+    # bytes() diperlukan karena fpdf2 >= 2.2 return bytearray, bukan bytes.
+    # Streamlit download_button dan kondisi `if pdf_bytes:` keduanya butuh bytes/bytearray
+    # yang truthy — bytearray non-kosong sudah truthy, tapi bytes() memastikan
+    # tipe konsisten di semua versi fpdf/fpdf2.
+    return bytes(pdf.output())
 
 
 # ─────────────────────────────────────────────────────────────────────────────
