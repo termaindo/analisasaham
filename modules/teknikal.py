@@ -1454,11 +1454,19 @@ def generate_pdf_fpdf(data: dict, logo_path: str = "logo_expert_stock_pro.png") 
         "untuk membeli/menjual saham. Keputusan investasi sepenuhnya menjadi tanggung "
         "jawab pribadi investor. Selalu terapkan manajemen risiko dan DYOR.")
 
-    # bytes() diperlukan karena fpdf2 >= 2.2 return bytearray, bukan bytes.
-    # Streamlit download_button dan kondisi `if pdf_bytes:` keduanya butuh bytes/bytearray
-    # yang truthy — bytearray non-kosong sudah truthy, tapi bytes() memastikan
-    # tipe konsisten di semua versi fpdf/fpdf2.
-    return bytes(pdf.output())
+    # pdf.output() return type berbeda-beda tergantung versi:
+    #   fpdf2 >= 2.2 → bytearray
+    #   fpdf2 < 2.2 / fpdf v1.x Python 3 → str (latin-1 encoded)
+    #   bytes() langsung → TypeError jika input adalah str
+    # Handler di bawah menangani semua kasus tanpa exception.
+    raw = pdf.output()
+    if isinstance(raw, bytes):
+        return raw
+    if isinstance(raw, bytearray):
+        return bytes(raw)
+    if isinstance(raw, str):
+        return raw.encode("latin-1")
+    raise TypeError(f"pdf.output() mengembalikan tipe tidak dikenal: {type(raw)}")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
