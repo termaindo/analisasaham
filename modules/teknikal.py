@@ -1596,84 +1596,82 @@ def run_teknikal():
 
         # PDF SWING
         st.markdown("---")
-        info_sw = sc_swing["info"]
-        plan_sw = sc_swing["trading_plan"]
-        l1_sw   = sc_swing["layer1_filter"]
-        l2_sw   = sc_swing["layer2_trend"]
-        l3_sw   = sc_swing["layer3_momentum"]
-        l4_sw   = sc_swing["layer4_entry"]
-
-        pdf_data_swing = {
-            "ticker":             ticker_bersih,
-            "nama_perusahaan":    nama_perusahaan,
-            "sektor":             sektor_id,
-            "syariah":            status_syariah,
-            "waktu":              datetime.now().strftime("%d-%m-%Y %H:%M"),
-            "timeframe":          "Swing Trade — Daily",
-            "harga":              info_sw['price'],
-            "score":              sc_swing["score"],
-            "label":              sc_swing["label"],
-            "confidence":         sc_swing["confidence"],
-            "sentiment":          sentimen_status,
-            "headline":           sentimen_headline,
-            "total_modal":        total_modal_input,
-            "max_risiko":         max_risiko_input,
-            "max_lembar_risk":    ps_swing["max_lembar_risk"],
-            "max_lembar_capital": ps_swing["max_lembar_capital"],
-            "final_lot":          ps_swing["final_lot"],
-            "plan":               plan_sw,
-            "layer1": {
-                "adx_nilai": l1_sw["ADX"]["nilai"],
-                "adx_label": l1_sw["ADX"]["label"],
-                "vol_nilai": l1_sw["Volume"]["nilai"],
-                "vol_label": l1_sw["Volume"]["label"],
-                "liq_nilai": f"Rp {info_sw['value_ma20']:,.0f}",
-                "liq_label": "Likuid" if info_sw['value_ma20'] > 1_000_000_000 else "Cek Manual",
-            },
-            "layer2": {
-                "ema_nilai":   f"EMA9:{info_sw['ema9']:,.0f}|EMA20:{info_sw['ema20']:,.0f}|EMA50:{info_sw['ema50']:,.0f}|EMA200:{info_sw['ema200']:,.0f}",
-                "ema_label":   l2_sw["EMA_Stack"]["label"],
-                "super_nilai": f"{info_sw['super_line']:,.0f}",
-                "super_label": l2_sw["Supertrend"]["label"],
-                "sar_nilai":   f"{info_sw['sar']:,.0f}",
-                "sar_label":   l2_sw["Parabolic_SAR"]["label"],
-                "sma_nilai":   f"Harga:{info_sw['price']:,.0f}|SMA20:{info_sw['bb_mid']:,.0f}",
-                "sma_label":   l2_sw["BB_Mid"]["label"],
-                "vwap_nilai":  f"{info_sw['vwap']:,.0f}",
-                "vwap_label":  "Di Atas VWAP" if info_sw['price'] > info_sw['vwap'] else "Di Bawah VWAP",
-            },
-            "layer3": {
-                "macd_nilai":  l3_sw["MACD"]["nilai"],
-                "macd_label":  l3_sw["MACD"]["label"],
-                "rsi_nilai":   f"{info_sw['rsi']:.1f}",
-                "rsi_label":   l3_sw["RSI"]["label"],
-                "stoch_nilai": f"%K:{info_sw['stoch_k']:.1f}|%D:{info_sw['stoch_d']:.1f}",
-                "stoch_label": l3_sw["Stochastic"]["label"],
-                "obv_nilai":   f"{info_sw['obv']:,.0f}",
-                "obv_label":   "OBV Naik (Akumulasi)" if info_sw['obv'] > info_sw['obv_prev'] else "OBV Turun (Distribusi)",
-            },
-            "layer4": {
-                "bb_nilai":       f"U:{info_sw['bb_upper']:,.0f}|M:{info_sw['bb_mid']:,.0f}|L:{info_sw['bb_lower']:,.0f}",
-                "bb_label":       l4_sw["Bollinger_Bands"]["label"],
-                "fib_nilai":      f"H:{info_sw['fib_high']:,.0f}|L:{info_sw['fib_low']:,.0f}",
-                "fib_label":      l4_sw["Fibonacci"]["label"],
-                "candle_label":   l4_sw["Candlestick"]["label"],
-                "volspike_label": l4_sw["Volume_Spike"]["label"],
-                "atr_nilai":      f"{info_sw['atr']:,.0f} ({info_sw['atr_pct']:.2f}%)",
-                "atr_label":      ("Volatilitas Rendah (<1%)" if info_sw['atr_pct'] < 1 else "Volatilitas Normal (1-3%)" if info_sw['atr_pct'] < 3 else "Volatilitas Tinggi (>3%)"),
-            },
-        }
-
         try:
+            info_sw = sc_swing["info"]
+            plan_sw = sc_swing["trading_plan"]
+            l1_sw   = sc_swing["layer1_filter"]
+            l2_sw   = sc_swing["layer2_trend"]
+            l3_sw   = sc_swing["layer3_momentum"]
+            l4_sw   = sc_swing["layer4_entry"]
+
+            pdf_data_swing = {
+                "ticker":             ticker_bersih,
+                "nama_perusahaan":    nama_perusahaan,
+                "sektor":             sektor_id,
+                "syariah":            status_syariah,
+                "waktu":              datetime.now().strftime("%d-%m-%Y %H:%M"),
+                "timeframe":          "Swing Trade - Daily",
+                "harga":              info_sw['price'],
+                "score":              sc_swing["score"],
+                "label":              sc_swing["label"],
+                "confidence":         sc_swing["confidence"],
+                "sentiment":          sentimen_status,
+                "headline":           sentimen_headline,
+                "total_modal":        total_modal_input,
+                "max_risiko":         max_risiko_input,
+                "max_lembar_risk":    ps_swing["max_lembar_risk"],
+                "max_lembar_capital": ps_swing["max_lembar_capital"],
+                "final_lot":          ps_swing["final_lot"],
+                "plan":               plan_sw,
+                "layer1": {
+                    "adx_nilai": l1_sw["ADX"]["nilai"],
+                    "adx_label": l1_sw["ADX"]["label"],
+                    "vol_nilai": l1_sw["Volume"]["nilai"],
+                    "vol_label": l1_sw["Volume"]["label"],
+                    "liq_nilai": f"Rp {info_sw['value_ma20']:,.0f}",
+                    "liq_label": "Likuid" if info_sw["value_ma20"] > 1_000_000_000 else "Cek Manual",
+                },
+                "layer2": {
+                    "ema_nilai":   f"EMA9:{info_sw['ema9']:,.0f}|EMA20:{info_sw['ema20']:,.0f}|EMA50:{info_sw['ema50']:,.0f}|EMA200:{info_sw['ema200']:,.0f}",
+                    "ema_label":   l2_sw["EMA_Stack"]["label"],
+                    "super_nilai": f"{info_sw['super_line']:,.0f}",
+                    "super_label": l2_sw["Supertrend"]["label"],
+                    "sar_nilai":   f"{info_sw['sar']:,.0f}",
+                    "sar_label":   l2_sw["Parabolic_SAR"]["label"],
+                    "sma_nilai":   f"Harga:{info_sw['price']:,.0f}|SMA20:{info_sw['bb_mid']:,.0f}",
+                    "sma_label":   l2_sw["BB_Mid"]["label"],
+                    "vwap_nilai":  f"{info_sw['vwap']:,.0f}",
+                    "vwap_label":  "Di Atas VWAP" if info_sw["price"] > info_sw["vwap"] else "Di Bawah VWAP",
+                },
+                "layer3": {
+                    "macd_nilai":  l3_sw["MACD"]["nilai"],
+                    "macd_label":  l3_sw["MACD"]["label"],
+                    "rsi_nilai":   f"{info_sw['rsi']:.1f}",
+                    "rsi_label":   l3_sw["RSI"]["label"],
+                    "stoch_nilai": f"%K:{info_sw['stoch_k']:.1f}|%D:{info_sw['stoch_d']:.1f}",
+                    "stoch_label": l3_sw["Stochastic"]["label"],
+                    "obv_nilai":   f"{info_sw['obv']:,.0f}",
+                    "obv_label":   "OBV Naik (Akumulasi)" if info_sw["obv"] > info_sw["obv_prev"] else "OBV Turun (Distribusi)",
+                },
+                "layer4": {
+                    "bb_nilai":       f"U:{info_sw['bb_upper']:,.0f}|M:{info_sw['bb_mid']:,.0f}|L:{info_sw['bb_lower']:,.0f}",
+                    "bb_label":       l4_sw["Bollinger_Bands"]["label"],
+                    "fib_nilai":      f"H:{info_sw['fib_high']:,.0f}|L:{info_sw['fib_low']:,.0f}",
+                    "fib_label":      l4_sw["Fibonacci"]["label"],
+                    "candle_label":   l4_sw["Candlestick"]["label"],
+                    "volspike_label": l4_sw["Volume_Spike"]["label"],
+                    "atr_nilai":      f"{info_sw['atr']:,.0f} ({info_sw['atr_pct']:.2f}%)",
+                    "atr_label":      ("Volatilitas Rendah (<1%)" if info_sw["atr_pct"] < 1 else "Volatilitas Normal (1-3%)" if info_sw["atr_pct"] < 3 else "Volatilitas Tinggi (>3%)"),
+                },
+            }
             pdf_bytes_swing = generate_pdf_fpdf(pdf_data_swing)
-            if pdf_bytes_swing:
-                st.download_button(
-                    label="📄 Unduh Laporan Swing Trade (PDF)",
-                    data=pdf_bytes_swing,
-                    file_name=f"ESP_Swing_{ticker_bersih}_{datetime.now().strftime('%Y%m%d')}.pdf",
-                    mime="application/pdf",
-                    use_container_width=True,
-                )
+            st.download_button(
+                label="📄 Unduh Laporan Swing Trade (PDF)",
+                data=pdf_bytes_swing,
+                file_name=f"ESP_Swing_{ticker_bersih}_{datetime.now().strftime('%Y%m%d')}.pdf",
+                mime="application/pdf",
+                use_container_width=True,
+            )
         except Exception as e:
             st.warning(f"⚠️ PDF tidak dapat dibuat: {e}")
 
@@ -1709,84 +1707,82 @@ def run_teknikal():
 
             # PDF DAY
             st.markdown("---")
-            info_dy = sc_day["info"]
-            plan_dy = sc_day["trading_plan"]
-            l1_dy   = sc_day["layer1_filter"]
-            l2_dy   = sc_day["layer2_trend"]
-            l3_dy   = sc_day["layer3_momentum"]
-            l4_dy   = sc_day["layer4_entry"]
-
-            pdf_data_day = {
-                "ticker":             ticker_bersih,
-                "nama_perusahaan":    nama_perusahaan,
-                "sektor":             sektor_id,
-                "syariah":            status_syariah,
-                "waktu":              datetime.now().strftime("%d-%m-%Y %H:%M"),
-                "timeframe":          "Day Trade — M15",
-                "harga":              info_dy['price'],
-                "score":              sc_day["score"],
-                "label":              sc_day["label"],
-                "confidence":         sc_day["confidence"],
-                "sentiment":          sentimen_status,
-                "headline":           sentimen_headline,
-                "total_modal":        total_modal_input,
-                "max_risiko":         max_risiko_input,
-                "max_lembar_risk":    ps_day["max_lembar_risk"],
-                "max_lembar_capital": ps_day["max_lembar_capital"],
-                "final_lot":          ps_day["final_lot"],
-                "plan":               plan_dy,
-                "layer1": {
-                    "adx_nilai": l1_dy["ADX"]["nilai"],
-                    "adx_label": l1_dy["ADX"]["label"],
-                    "vol_nilai": l1_dy["Volume"]["nilai"],
-                    "vol_label": l1_dy["Volume"]["label"],
-                    "liq_nilai": f"Rp {info_dy['value_ma20']:,.0f}",
-                    "liq_label": "Likuid" if info_dy['value_ma20'] > 0 else "Cek Manual",
-                },
-                "layer2": {
-                    "ema_nilai":   f"EMA9:{info_dy['ema9']:,.0f}|EMA20:{info_dy['ema20']:,.0f}",
-                    "ema_label":   l2_dy["EMA_Stack"]["label"],
-                    "super_nilai": f"{info_dy['super_line']:,.0f}",
-                    "super_label": l2_dy["Supertrend"]["label"],
-                    "sar_nilai":   f"{info_dy['sar']:,.0f}",
-                    "sar_label":   l2_dy["Parabolic_SAR"]["label"],
-                    "sma_nilai":   f"Harga:{info_dy['price']:,.0f}|SMA20:{info_dy['bb_mid']:,.0f}",
-                    "sma_label":   l2_dy["BB_Mid"]["label"],
-                    "vwap_nilai":  f"{info_dy['vwap']:,.0f}",
-                    "vwap_label":  "Di Atas VWAP" if info_dy['price'] > info_dy['vwap'] else "Di Bawah VWAP",
-                },
-                "layer3": {
-                    "macd_nilai":  l3_dy["MACD"]["nilai"],
-                    "macd_label":  l3_dy["MACD"]["label"],
-                    "rsi_nilai":   f"{info_dy['rsi']:.1f}",
-                    "rsi_label":   l3_dy["RSI"]["label"],
-                    "stoch_nilai": f"%K:{info_dy['stoch_k']:.1f}|%D:{info_dy['stoch_d']:.1f}",
-                    "stoch_label": l3_dy["Stochastic"]["label"],
-                    "obv_nilai":   f"{info_dy['obv']:,.0f}",
-                    "obv_label":   "OBV Naik (Akumulasi)" if info_dy['obv'] > info_dy['obv_prev'] else "OBV Turun (Distribusi)",
-                },
-                "layer4": {
-                    "bb_nilai":       f"U:{info_dy['bb_upper']:,.0f}|M:{info_dy['bb_mid']:,.0f}|L:{info_dy['bb_lower']:,.0f}",
-                    "bb_label":       l4_dy["Bollinger_Bands"]["label"],
-                    "fib_nilai":      f"H:{info_dy['fib_high']:,.0f}|L:{info_dy['fib_low']:,.0f}",
-                    "fib_label":      l4_dy["Fibonacci"]["label"],
-                    "candle_label":   l4_dy["Candlestick"]["label"],
-                    "volspike_label": l4_dy["Volume_Spike"]["label"],
-                    "atr_nilai":      f"{info_dy['atr']:,.0f} ({info_dy['atr_pct']:.2f}%)",
-                    "atr_label":      ("Volatilitas Rendah (<1%)" if info_dy['atr_pct'] < 1 else "Volatilitas Normal (1-3%)" if info_dy['atr_pct'] < 3 else "Volatilitas Tinggi (>3%)"),
-                },
-            }
-
             try:
+                info_dy = sc_day["info"]
+                plan_dy = sc_day["trading_plan"]
+                l1_dy   = sc_day["layer1_filter"]
+                l2_dy   = sc_day["layer2_trend"]
+                l3_dy   = sc_day["layer3_momentum"]
+                l4_dy   = sc_day["layer4_entry"]
+
+                pdf_data_day = {
+                    "ticker":             ticker_bersih,
+                    "nama_perusahaan":    nama_perusahaan,
+                    "sektor":             sektor_id,
+                    "syariah":            status_syariah,
+                    "waktu":              datetime.now().strftime("%d-%m-%Y %H:%M"),
+                    "timeframe":          "Day Trade - M15",
+                    "harga":              info_dy['price'],
+                    "score":              sc_day["score"],
+                    "label":              sc_day["label"],
+                    "confidence":         sc_day["confidence"],
+                    "sentiment":          sentimen_status,
+                    "headline":           sentimen_headline,
+                    "total_modal":        total_modal_input,
+                    "max_risiko":         max_risiko_input,
+                    "max_lembar_risk":    ps_day["max_lembar_risk"],
+                    "max_lembar_capital": ps_day["max_lembar_capital"],
+                    "final_lot":          ps_day["final_lot"],
+                    "plan":               plan_dy,
+                    "layer1": {
+                        "adx_nilai": l1_dy["ADX"]["nilai"],
+                        "adx_label": l1_dy["ADX"]["label"],
+                        "vol_nilai": l1_dy["Volume"]["nilai"],
+                        "vol_label": l1_dy["Volume"]["label"],
+                        "liq_nilai": f"Rp {info_dy['value_ma20']:,.0f}",
+                        "liq_label": "Likuid" if info_dy["value_ma20"] > 0 else "Cek Manual",
+                    },
+                    "layer2": {
+                        "ema_nilai":   f"EMA9:{info_dy['ema9']:,.0f}|EMA20:{info_dy['ema20']:,.0f}",
+                        "ema_label":   l2_dy["EMA_Stack"]["label"],
+                        "super_nilai": f"{info_dy['super_line']:,.0f}",
+                        "super_label": l2_dy["Supertrend"]["label"],
+                        "sar_nilai":   f"{info_dy['sar']:,.0f}",
+                        "sar_label":   l2_dy["Parabolic_SAR"]["label"],
+                        "sma_nilai":   f"Harga:{info_dy['price']:,.0f}|SMA20:{info_dy['bb_mid']:,.0f}",
+                        "sma_label":   l2_dy["BB_Mid"]["label"],
+                        "vwap_nilai":  f"{info_dy['vwap']:,.0f}",
+                        "vwap_label":  "Di Atas VWAP" if info_dy["price"] > info_dy["vwap"] else "Di Bawah VWAP",
+                    },
+                    "layer3": {
+                        "macd_nilai":  l3_dy["MACD"]["nilai"],
+                        "macd_label":  l3_dy["MACD"]["label"],
+                        "rsi_nilai":   f"{info_dy['rsi']:.1f}",
+                        "rsi_label":   l3_dy["RSI"]["label"],
+                        "stoch_nilai": f"%K:{info_dy['stoch_k']:.1f}|%D:{info_dy['stoch_d']:.1f}",
+                        "stoch_label": l3_dy["Stochastic"]["label"],
+                        "obv_nilai":   f"{info_dy['obv']:,.0f}",
+                        "obv_label":   "OBV Naik (Akumulasi)" if info_dy["obv"] > info_dy["obv_prev"] else "OBV Turun (Distribusi)",
+                    },
+                    "layer4": {
+                        "bb_nilai":       f"U:{info_dy['bb_upper']:,.0f}|M:{info_dy['bb_mid']:,.0f}|L:{info_dy['bb_lower']:,.0f}",
+                        "bb_label":       l4_dy["Bollinger_Bands"]["label"],
+                        "fib_nilai":      f"H:{info_dy['fib_high']:,.0f}|L:{info_dy['fib_low']:,.0f}",
+                        "fib_label":      l4_dy["Fibonacci"]["label"],
+                        "candle_label":   l4_dy["Candlestick"]["label"],
+                        "volspike_label": l4_dy["Volume_Spike"]["label"],
+                        "atr_nilai":      f"{info_dy['atr']:,.0f} ({info_dy['atr_pct']:.2f}%)",
+                        "atr_label":      ("Volatilitas Rendah (<1%)" if info_dy["atr_pct"] < 1 else "Volatilitas Normal (1-3%)" if info_dy["atr_pct"] < 3 else "Volatilitas Tinggi (>3%)"),
+                    },
+                }
                 pdf_bytes_day = generate_pdf_fpdf(pdf_data_day)
-                if pdf_bytes_day:
-                    st.download_button(
-                        label="📄 Unduh Laporan Day Trade (PDF)",
-                        data=pdf_bytes_day,
-                        file_name=f"ESP_DayTrade_{ticker_bersih}_{datetime.now().strftime('%Y%m%d')}.pdf",
-                        mime="application/pdf",
-                        use_container_width=True,
-                    )
+                st.download_button(
+                    label="📄 Unduh Laporan Day Trade (PDF)",
+                    data=pdf_bytes_day,
+                    file_name=f"ESP_DayTrade_{ticker_bersih}_{datetime.now().strftime('%Y%m%d')}.pdf",
+                    mime="application/pdf",
+                    use_container_width=True,
+                )
             except Exception as e:
                 st.warning(f"⚠️ PDF tidak dapat dibuat: {e}")
 
