@@ -827,103 +827,176 @@ def run_analisa_cepat():
         else:
             sentiment = "NEUTRAL / SIDEWAYS 😐"
 
-        # ── REKOMENDASI & TRADING PLAN HTML ────────────────────────────────────
-        company_name = info.get("longName", ticker)
+        # ── PERSIAPKAN SEMUA NILAI DINAMIS SEBAGAI VARIABEL BIASA ─────────────
+        # (tidak ada ekspresi kondisional di dalam f-string HTML)
+        company_name  = info.get("longName", ticker)
+        label_kas     = "Positif" if ocf > 0 else "Negatif"
 
         if t_score >= 85:
             rekomen   = "Boleh Trading → Silakan ambil posisi sesuai saran di bawah ini:"
             color_rec = "#00ff00"
-            trading_plan_html = f"""
-            <li><b>6. Trading Plan &amp; Sizing (Swing Target 1:2):</b><br>
-                &bull; Harga Sekarang: Rp {int(curr):,.0f}<br>
-                &bull; Usulan Entry: Rp {int(entry_bawah):,.0f} &ndash; Rp {int(entry_atas):,.0f}
-                       (Buy on Weakness -1%)<br>
-                &bull; Titik Target (TP): Rp {int(tp):,.0f} (Potensi Reward: +{reward_pct:.1f}%)<br>
-                &bull; Batas Risiko (SL): Rp {int(sl_final):,.0f}
-                       (Risiko Maks: -{risk_pct:.1f}%){sl_note}<br>
-                &bull; <span style='color:#00e676;font-size:16px;'>
-                       <b>Max Lot Pembelian: {max_lot} Lot</b> <i>({alasan_lot})</i></span>
-            </li>"""
-
+            lot_color = "#00e676"
         elif t_score >= 70:
             rekomen   = ("Hati-hati → Masukkan ke daftar pantauan, "
                          "atau boleh trading dengan lot sebagian dulu.")
             color_rec = "#ffcc00"
-            trading_plan_html = f"""
-            <li><b>6. Trading Plan &amp; Sizing (Swing Target 1:2):</b><br>
-                &bull; Harga Sekarang: Rp {int(curr):,.0f}<br>
-                &bull; Usulan Entry: Rp {int(entry_bawah):,.0f} &ndash; Rp {int(entry_atas):,.0f}
-                       (Buy on Weakness -1%)<br>
-                &bull; Titik Target (TP): Rp {int(tp):,.0f} (Potensi Reward: +{reward_pct:.1f}%)<br>
-                &bull; Batas Risiko (SL): Rp {int(sl_final):,.0f}
-                       (Risiko Maks: -{risk_pct:.1f}%){sl_note}<br>
-                &bull; <span style='color:#ffb300;font-size:16px;'>
-                       <b>Max Lot Pembelian: {max_lot} Lot</b> <i>({alasan_lot})</i></span>
-            </li>"""
-
+            lot_color = "#ffb300"
         else:
             rekomen   = "Dilarang Trading → Belum didukung indikator teknikal yang memadai."
             color_rec = "#ff0000"
-            trading_plan_html = (
-                "<li><b>6. Trading Plan:</b><br>"
-                "<span style='color:#ff5252;font-weight:bold;'>"
-                "Tidak Disarankan untuk Melakukan Trading dulu, "
-                "karena belum didukung oleh indikator teknikal yang memadai."
-                "</span></li>"
-            )
+            lot_color = "#ff5252"
+
+        curr_fmt         = f"Rp {int(curr):,.0f}"
+        entry_bawah_fmt  = f"Rp {int(entry_bawah):,.0f}"
+        entry_atas_fmt   = f"Rp {int(entry_atas):,.0f}"
+        tp_fmt           = f"Rp {int(tp):,.0f}"
+        sl_fmt           = f"Rp {int(sl_final):,.0f}"
+        reward_fmt       = f"+{reward_pct:.1f}%"
+        risk_fmt         = f"-{risk_pct:.1f}%"
+        sl_note_str      = sl_note  # sudah string biasa
+
+        # ── OUTPUT UI — HEADER CARD ────────────────────────────────────────────
+        st.markdown(
+            f"""
+            <div style="background-color:#1e2b3e;padding:20px 25px 5px 25px;
+                        border-radius:12px 12px 0 0;
+                        border-left:10px solid {color_rec};
+                        border-top:1px solid {color_rec};
+                        border-right:1px solid #2e3d52;
+                        color:#e0e0e0;font-family:sans-serif;">
+                <h3 style="margin-top:0;color:white;margin-bottom:4px;">
+                    {company_name} ({ticker})
+                </h3>
+                <p style="margin:0 0 4px 0;font-size:14px;color:#b0bec5;">
+                    Sektor: <b>{sector.title()}</b> &nbsp;|&nbsp; Syariah: <b>{syariah}</b>
+                </p>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+        # ── BARIS SKOR — metric cards ──────────────────────────────────────────
+        mc1, mc2, mc3 = st.columns(3)
+        mc1.metric("📊 Fundamental Score", f"{f_score}/100")
+        mc2.metric("📈 Technical Score (Swing)", f"{t_score}/100")
+        mc3.metric("🧭 Sentimen", sentiment.split(" ")[0])
+
+        # ── DETAIL SKOR ────────────────────────────────────────────────────────
+        st.markdown(
+            f"""
+            <div style="background-color:#1e2b3e;padding:15px 25px;
+                        border-left:10px solid {color_rec};
+                        border-right:1px solid #2e3d52;
+                        color:#e0e0e0;font-family:sans-serif;font-size:15px;line-height:1.9;">
+                <b>1. Fundamental Score ({f_score}/100):</b>
+                ROE {roe:.1f}%, {lbl_solv}, EPS Grw {eps_g:.1f}%, Arus Kas {label_kas}.<br>
+                <b>2. Technical Score Swing Trading ({t_score}/100):</b>
+                Trigger &rarr; {teks_alasan}<br>
+                <b>3. Sentiment Pasar:</b> {sentiment}
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
 
         # ── VALUASI HISTORIS (hanya jika is_liquid) ───────────────────────────
-        valuasi_hist_html = ""
         if is_liquid and (median_per_3y or median_pbv_3y):
-            rows = []
+            valuasi_rows = []
             if median_per_3y and curr_per > 0:
                 selisih_per = curr_per - median_per_3y
                 warna_per   = "#ff5252" if selisih_per > 0 else "#00e676"
                 label_per   = "di atas" if selisih_per > 0 else "di bawah"
-                rows.append(
-                    f"PER saat ini <b>{curr_per:.1f}x</b> vs Median 3Y <b>{median_per_3y:.1f}x</b> "
-                    f"— <span style='color:{warna_per};'>{label_per} historis sebesar {abs(selisih_per):.1f}x</span>"
+                valuasi_rows.append(
+                    f"PER saat ini <b>{curr_per:.1f}x</b> vs Median 3Y "
+                    f"<b>{median_per_3y:.1f}x</b> — "
+                    f"<span style='color:{warna_per};'>"
+                    f"{label_per} historis sebesar {abs(selisih_per):.1f}x</span>"
                 )
             if median_pbv_3y and curr_pbv > 0:
                 selisih_pbv = curr_pbv - median_pbv_3y
                 warna_pbv   = "#ff5252" if selisih_pbv > 0 else "#00e676"
                 label_pbv   = "di atas" if selisih_pbv > 0 else "di bawah"
-                rows.append(
-                    f"PBV saat ini <b>{curr_pbv:.2f}x</b> vs Median 3Y <b>{median_pbv_3y:.2f}x</b> "
-                    f"— <span style='color:{warna_pbv};'>{label_pbv} historis sebesar {abs(selisih_pbv):.2f}x</span>"
+                valuasi_rows.append(
+                    f"PBV saat ini <b>{curr_pbv:.2f}x</b> vs Median 3Y "
+                    f"<b>{median_pbv_3y:.2f}x</b> — "
+                    f"<span style='color:{warna_pbv};'>"
+                    f"{label_pbv} historis sebesar {abs(selisih_pbv):.2f}x</span>"
                 )
-            if rows:
-                valuasi_hist_html = (
-                    "<li><b>Valuasi vs Historis 3 Tahun:</b><br>"
-                    + "<br>".join(f"&bull; {r}" for r in rows)
-                    + "</li>"
+            if valuasi_rows:
+                val_body = "<br>".join(f"&bull; {r}" for r in valuasi_rows)
+                st.markdown(
+                    f"""
+                    <div style="background-color:#1a2e1a;padding:12px 25px;
+                                border-left:10px solid {color_rec};
+                                border-right:1px solid #2e3d52;
+                                color:#e0e0e0;font-family:sans-serif;font-size:15px;line-height:1.9;">
+                        <b>Valuasi vs Historis 3 Tahun:</b><br>{val_body}
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
                 )
 
-        # ── OUTPUT HTML ────────────────────────────────────────────────────────
-        html_output = f"""
-        <div style="background-color:#1e2b3e;padding:25px;border-radius:12px;
-                    border-left:10px solid {color_rec};color:#e0e0e0;font-family:sans-serif;">
-            <h3 style="margin-top:0;color:white;margin-bottom:5px;">{company_name} ({ticker})</h3>
-            <p style="margin-top:0;font-size:14px;color:#b0bec5;margin-bottom:15px;">
-                Sektor: <b>{sector.title()}</b> | Syariah: <b>{syariah}</b>
-            </p>
-            <ul style="line-height:1.8;padding-left:20px;font-size:16px;">
-                <li><b>1. Fundamental Score ({f_score}/100):</b>
-                    ROE {roe:.1f}%, {lbl_solv}, EPS Grw {eps_g:.1f}%,
-                    Arus Kas {'Positif' if ocf > 0 else 'Negatif'}.</li>
-                <li><b>2. Technical Score-Swing Trading ({t_score:g}/100):</b>
-                    Trigger &rarr; {teks_alasan}</li>
-                <li><b>3. Sentiment Pasar:</b> <b>{sentiment}</b></li>
-                {valuasi_hist_html}
-                <li><b>4. Rekomendasi Final:</b><br>
-                    <span style="color:{color_rec};font-weight:bold;font-size:17px;">
-                    {rekomen}</span></li>
-                <li><b>5. Timeframe:</b> Swing Trading (Menengah)</li>
-                {trading_plan_html}
-            </ul>
-        </div>
-        """
-        st.markdown(html_output, unsafe_allow_html=True)
+        # ── REKOMENDASI FINAL ──────────────────────────────────────────────────
+        st.markdown(
+            f"""
+            <div style="background-color:#1e2b3e;padding:15px 25px;
+                        border-left:10px solid {color_rec};
+                        border-right:1px solid #2e3d52;
+                        color:#e0e0e0;font-family:sans-serif;">
+                <b>4. Rekomendasi Final:</b><br>
+                <span style="color:{color_rec};font-weight:bold;font-size:18px;">
+                    {rekomen}
+                </span><br>
+                <span style="font-size:13px;color:#b0bec5;">
+                    Timeframe: Swing Trading (Menengah)
+                </span>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+        # ── TRADING PLAN (hanya jika t_score >= 70) ───────────────────────────
+        if t_score >= 70:
+            st.markdown(
+                f"""
+                <div style="background-color:#162030;padding:15px 25px;
+                            border-radius:0 0 12px 12px;
+                            border-left:10px solid {color_rec};
+                            border-bottom:1px solid {color_rec};
+                            border-right:1px solid #2e3d52;
+                            color:#e0e0e0;font-family:sans-serif;font-size:15px;line-height:2.0;">
+                    <b>5. Trading Plan &amp; Sizing (Swing Target 1:2):</b><br>
+                    &bull; Harga Sekarang: <b>{curr_fmt}</b><br>
+                    &bull; Usulan Entry: <b>{entry_bawah_fmt}</b> &ndash; <b>{entry_atas_fmt}</b>
+                           (Buy on Weakness -1%)<br>
+                    &bull; Titik Target (TP):
+                           <span style="color:#00e676;font-weight:bold;">{tp_fmt}</span>
+                           (Potensi Reward: <span style="color:#00e676;">{reward_fmt}</span>)<br>
+                    &bull; Batas Risiko (SL):
+                           <span style="color:#ff5252;font-weight:bold;">{sl_fmt}</span>
+                           (Risiko Maks: <span style="color:#ff5252;">{risk_fmt}</span>{sl_note_str})<br>
+                    &bull; <span style="color:{lot_color};font-size:16px;font-weight:bold;">
+                           Max Lot Pembelian: {max_lot} Lot</span>
+                           <span style="color:#b0bec5;font-size:13px;"> ({alasan_lot})</span>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+        else:
+            st.markdown(
+                f"""
+                <div style="background-color:#2a1515;padding:15px 25px;
+                            border-radius:0 0 12px 12px;
+                            border-left:10px solid {color_rec};
+                            border-bottom:1px solid {color_rec};
+                            border-right:1px solid #2e3d52;
+                            color:#ff5252;font-family:sans-serif;font-size:15px;">
+                    <b>5. Trading Plan:</b><br>
+                    Tidak disarankan trading saat ini — belum didukung indikator teknikal
+                    yang memadai. Pantau hingga skor teknikal minimal 70.
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
 
         # ── EXPANDER DATA MENTAH ────────────────────────────────────────────────
         with st.expander("Lihat Detail Data Mentah"):
