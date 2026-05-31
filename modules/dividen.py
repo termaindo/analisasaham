@@ -237,8 +237,7 @@ def run_dividen():
 
         if not is_ticker_liquid(ticker_bersih, liquid_df):
             st.info(
-                "ℹ️ Ticker ini tidak ada dalam daftar saham pilihan. "
-                "Analisa menggunakan data langsung dari yfinance."
+                "ℹ️ Analisa menggunakan data langsung dari yfinance."
             )
 
         # ── Data live dari yfinance ──────────────────────────────────────────
