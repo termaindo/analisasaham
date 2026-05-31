@@ -7,7 +7,14 @@ import os
 from datetime import datetime
 from io import BytesIO
 from fpdf import FPDF
-from utils.data_loader import get_full_stock_data, hitung_div_yield_normal  
+from utils.data_loader import (
+    get_full_stock_data,
+    get_liquid_stocks,
+    is_ticker_liquid,
+    get_ticker_row,
+    hitung_div_yield_normal,
+    PRE_LIQUID_PATH,
+)
 
 def translate_sector(sector_en):
     mapping = {
@@ -353,6 +360,18 @@ def run_fundamental():
         ticker_input = st.text_input("Kode Saham (Contoh: ASII):", value="ASII").upper()
     ticker = ticker_input if ticker_input.endswith(".JK") else f"{ticker_input}.JK"
 
+    # --- FALLBACK CHAIN: liquid → pre_liquid → yfinance ---
+    ticker_bersih = ticker_input.strip().upper().replace(".JK", "")
+    liquid_df  = get_liquid_stocks()
+    is_liquid  = is_ticker_liquid(ticker_bersih, liquid_df)
+    ticker_row = get_ticker_row(ticker_bersih, liquid_df)
+    if not is_liquid:
+        try:
+            df_pre     = pd.read_csv(PRE_LIQUID_PATH)
+            ticker_row = get_ticker_row(ticker_bersih, df_pre)
+        except Exception:
+            ticker_row = None
+
     if st.button(f"Bedah Fundamental {ticker_input}"):
         with st.spinner("Menginvestigasi kualitas aset, valuasi, dan sentimen pasar..."):
             data = get_full_stock_data(ticker)
@@ -373,7 +392,11 @@ def run_fundamental():
             st.markdown(f"<h1 style='text-align: center; color: #4CAF50; margin-bottom: 0;'>🏢 {ticker_input} - {nama_perusahaan}</h1>", unsafe_allow_html=True)
             
             sektor_indo = translate_sector(info.get('sector'))
-            status_syariah = "Syariah (ISSI)" if is_syariah(ticker_input) else "Non-Syariah"
+
+            # --- STATUS SYARIAH: lookup kolom Syariah dari ticker_row ---
+            syariah_val    = ticker_row["Syariah"] if ticker_row is not None and "Syariah" in ticker_row.index else None
+            status_syariah = "Syariah (ISSI)" if str(syariah_val).strip().lower() in ("ya", "yes", "true", "1") else "Non-Syariah"
+
             st.markdown(f"<p style='text-align: center; font-size: 18px; color: #b0bec5;'>Sektor: <b>{sektor_indo}</b> | Kategori: <b>✅ {status_syariah}</b></p>", unsafe_allow_html=True)
             st.markdown("<br>", unsafe_allow_html=True)
 
