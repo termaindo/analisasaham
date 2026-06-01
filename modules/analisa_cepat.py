@@ -1005,10 +1005,9 @@ def run_analisa_cepat():
             st.write(f"**Jumlah candle bersih  :** {len(df)}")
             if stale_days > 0:
                 st.write(
-                    f"**Stale days            :** {stale_days} hari kalender "
+                    f"**Jumlah hari libur            :** {stale_days} hari kalender "
                     f"sejak candle valid terakhir ke hari ini"
                 )
-            st.write(f"**Sumber data           :** {'liquid_stocks.csv' if is_liquid else 'pre_liquid / yfinance langsung'}")
             if is_liquid and ticker_row is not None:
                 mktcap_label = ticker_row.get("MktCap", "-")
                 st.write(f"**Market Cap            :** {mktcap_label}")
