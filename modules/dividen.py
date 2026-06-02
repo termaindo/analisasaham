@@ -17,7 +17,7 @@ from fpdf import FPDF
 
 from utils.data_loader import (
     get_full_stock_data,
-    get_liquid_stocks,
+    get_liquid_dividend_stocks,
     is_ticker_liquid,
     get_ticker_row,
     PRE_LIQUID_PATH,
