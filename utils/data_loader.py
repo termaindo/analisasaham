@@ -26,9 +26,10 @@ import os
 from bs4 import BeautifulSoup
 
 # ── Path konstanta ────────────────────────────────────────────────────────────
-_BASE_DIR       = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-PRE_LIQUID_PATH = os.path.join(_BASE_DIR, "data", "pre_liquid_stocks.csv")
-LIQUID_PATH     = os.path.join(_BASE_DIR, "data", "liquid_stocks.csv")
+_BASE_DIR              = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+PRE_LIQUID_PATH        = os.path.join(_BASE_DIR, "data", "pre_liquid_stocks.csv")
+LIQUID_PATH            = os.path.join(_BASE_DIR, "data", "liquid_stocks.csv")
+LIQUID_DIVIDEND_PATH   = os.path.join(_BASE_DIR, "data", "liquid_dividend_stocks.csv")
 
 # ── Threshold per profil ──────────────────────────────────────────────────────
 _PROFILE_THRESHOLDS = {
@@ -204,6 +205,31 @@ def get_liquid_stocks() -> pd.DataFrame:
 def clear_liquid_stocks_cache() -> None:
     """Panggil setelah admin selesai upload liquid_stocks.csv ke GitHub."""
     get_liquid_stocks.clear()
+
+
+@st.cache_data(ttl=60 * 60 * 24, show_spinner=False)
+def get_liquid_dividend_stocks() -> pd.DataFrame:
+    """
+    Baca liquid_dividend_stocks.csv dari folder /data di repo lokal.
+    Dipakai oleh dividen.py untuk lookup kolom HDY
+    (EPS_5Y, DPS_5Y, FCF_5Y, PR_5Y, DY_5Y, ICR, DebtEBITDA).
+    Cache TTL 24 jam.
+
+    Mengembalikan DataFrame kosong jika file belum ada.
+    """
+    if not os.path.exists(LIQUID_DIVIDEND_PATH):
+        return pd.DataFrame()
+    try:
+        df = pd.read_csv(LIQUID_DIVIDEND_PATH)
+        return df
+    except Exception as e:
+        print(f"[get_liquid_dividend_stocks] Gagal baca {LIQUID_DIVIDEND_PATH}: {e}")
+        return pd.DataFrame()
+
+
+def clear_liquid_dividend_stocks_cache() -> None:
+    """Panggil setelah admin selesai upload liquid_dividend_stocks.csv ke GitHub."""
+    get_liquid_dividend_stocks.clear()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -675,7 +701,9 @@ def process_liquid_stocks(
     Menerima DataFrame langsung — tanpa file temporary.
     Mengembalikan DataFrame hasil enrichment & filter.
 
-    profil: "trading" atau "dividen"
+    profil "trading"  → output untuk liquid_stocks.csv
+    profil "dividen"  → output untuk liquid_dividend_stocks.csv
+    Kedua file terpisah agar modul screening dan dividen punya universe masing-masing.
     """
     df_hasil, before, after = enrich_and_filter(
         df_input      = df_pre,
