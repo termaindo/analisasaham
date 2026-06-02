@@ -358,4 +358,78 @@ def show_dashboard():
 
     c1, c2 = st.columns(2)
     with c1:
-        if st.button("
+        if st.button("🔍 Screening Saham Harian Pro", use_container_width=True):
+            st.session_state.current_menu = "screening"; st.rerun()
+    with c2:
+        if check_module_exists("analisa_cepat"):
+            if st.button("⚡ Analisa Cepat Pro", use_container_width=True):
+                st.session_state.current_menu = "analisa_cepat"; st.rerun()
+        else:
+            st.button("⚡ Analisa Cepat (Belum Tersedia)", use_container_width=True, disabled=True)
+
+    c3, c4 = st.columns(2)
+    with c3:
+        if st.button("📈 Analisa Teknikal Pro", use_container_width=True):
+            st.session_state.current_menu = "teknikal"; st.rerun()
+    with c4:
+        if st.button("📊 Analisa Fundamental Pro", use_container_width=True):
+            st.session_state.current_menu = "fundamental"; st.rerun()
+
+    c5, c6 = st.columns(2)
+    with c5:
+        if st.button("💰 Analisa Dividen Pro", use_container_width=True):
+            st.session_state.current_menu = "dividen"; st.rerun()
+    with c6:
+        if st.button("⚖️ Perbandingan Saham Pro", use_container_width=True):
+            st.session_state.current_menu = "perbandingan"; st.rerun()
+
+    st.markdown("---")
+    if st.button("Keluar / Logout"):
+        for key in ('logged_in', 'user_name', 'user_wa', 'is_trial',
+                    'is_admin', 'trial_expiry_date', 'current_menu'):
+            st.session_state[key] = (
+                "Beranda" if key == "current_menu" else
+                False     if key in ('logged_in', 'is_trial', 'is_admin') else
+                ""
+            )
+        st.rerun()
+
+
+# --- 7. MAIN ROUTER ---
+def main_app():
+    """Router utama — mengarahkan ke modul yang dipilih user."""
+    if st.session_state.current_menu == "Beranda":
+        show_dashboard()
+        return
+
+    # Tombol kembali
+    col_back, _ = st.columns([1, 4])
+    with col_back:
+        st.markdown('<div class="back-btn-container">', unsafe_allow_html=True)
+        if st.button("⬅️ Menu Utama"):
+            st.session_state.current_menu = "Beranda"
+            st.rerun()
+        st.markdown('</div>', unsafe_allow_html=True)
+    st.markdown("---")
+
+    m = st.session_state.current_menu
+
+    # ── PENTING: nama modul tanpa ekstensi .py ──
+    if   m == "screening":   load_and_run_module("screening",    "run_screening")
+    elif m == "analisa_cepat":load_and_run_module("analisa_cepat","run_analisa_cepat")
+    elif m == "teknikal":     load_and_run_module("teknikal",     "run_teknikal")
+    elif m == "fundamental":  load_and_run_module("fundamental",  "run_fundamental")
+    elif m == "dividen":      load_and_run_module("dividen",      "run_dividen")
+    elif m == "perbandingan": load_and_run_module("perbandingan", "run_perbandingan")
+    else:
+        st.error(f"⚠️ Menu `{m}` tidak dikenal.")
+        st.session_state.current_menu = "Beranda"
+        st.rerun()
+
+
+# --- ENTRY POINT ---
+if __name__ == "__main__":
+    if st.session_state.logged_in:
+        main_app()
+    else:
+        login_page()
