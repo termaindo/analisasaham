@@ -180,22 +180,34 @@ def get_full_stock_data(ticker: str, interval: str = "1d") -> dict:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# BACA LIQUID STOCKS  (dipakai semua modul)
+# BACA INPUT & LIQUID STOCKS
 # ─────────────────────────────────────────────────────────────────────────────
+
+def get_pre_liquid_stocks() -> pd.DataFrame:
+    """
+    Membaca data/pre_liquid_stocks.csv dengan auto-detect separator (, atau ;)
+    Dibuat untuk mencegah error kolom bersatu akibat format Excel Indonesia.
+    """
+    if not os.path.exists(PRE_LIQUID_PATH):
+        return pd.DataFrame()
+    try:
+        # sep=None dan engine='python' membuat pandas mendeteksi otomatis , atau ;
+        df = pd.read_csv(PRE_LIQUID_PATH, sep=None, engine='python')
+        return df
+    except Exception as e:
+        print(f"[get_pre_liquid_stocks] Gagal baca {PRE_LIQUID_PATH}: {e}")
+        return pd.DataFrame()
+
 
 @st.cache_data(ttl=60 * 60 * 24, show_spinner=False)
 def get_liquid_stocks() -> pd.DataFrame:
     """
     Baca liquid_stocks.csv dari folder /data di repo lokal.
-    Cache TTL 24 jam — cukup untuk frekuensi update mingguan.
-
-    Mengembalikan DataFrame kosong (bukan error) jika file belum ada,
-    sehingga modul lain bisa fallback ke pre_liquid_stocks.csv dengan aman.
     """
     if not os.path.exists(LIQUID_PATH):
         return pd.DataFrame()
     try:
-        df = pd.read_csv(LIQUID_PATH)
+        df = pd.read_csv(LIQUID_PATH, sep=None, engine='python')
         return df
     except Exception as e:
         print(f"[get_liquid_stocks] Gagal baca {LIQUID_PATH}: {e}")
@@ -211,16 +223,11 @@ def clear_liquid_stocks_cache() -> None:
 def get_liquid_dividend_stocks() -> pd.DataFrame:
     """
     Baca liquid_dividend_stocks.csv dari folder /data di repo lokal.
-    Dipakai oleh dividen.py untuk lookup kolom HDY
-    (EPS_5Y, DPS_5Y, FCF_5Y, PR_5Y, DY_5Y, ICR, DebtEBITDA).
-    Cache TTL 24 jam.
-
-    Mengembalikan DataFrame kosong jika file belum ada.
     """
     if not os.path.exists(LIQUID_DIVIDEND_PATH):
         return pd.DataFrame()
     try:
-        df = pd.read_csv(LIQUID_DIVIDEND_PATH)
+        df = pd.read_csv(LIQUID_DIVIDEND_PATH, sep=None, engine='python')
         return df
     except Exception as e:
         print(f"[get_liquid_dividend_stocks] Gagal baca {LIQUID_DIVIDEND_PATH}: {e}")
@@ -239,8 +246,6 @@ def clear_liquid_dividend_stocks_cache() -> None:
 def get_ticker_row(ticker_bersih: str, df: pd.DataFrame) -> pd.Series | None:
     """
     Ambil satu baris dari liquid_stocks atau pre_liquid DataFrame.
-    ticker_bersih = kode tanpa .JK (mis: 'BBCA').
-    Mengembalikan None jika tidak ditemukan.
     """
     if df.empty:
         return None
@@ -327,7 +332,6 @@ def _build_5y_array(
 ) -> list:
     """
     Bangun array 5 elemen [t-4, t-3, t-2, t-1, t0] dari dict {tahun: nilai}.
-    None untuk tahun yang tidak tersedia.
     """
     return [annual_data.get(ref_year - (4 - i)) for i in range(5)]
 
@@ -340,13 +344,6 @@ def _enrich_hdy(
     """
     Hitung kolom HDY untuk satu ticker:
       EPS_5Y, DPS_5Y, FCF_5Y, PR_5Y, DY_5Y, ICR, DebtEBITDA
-
-    Parameter:
-      ticker  : kode dengan .JK
-      sektor  : string sektor dari pre_liquid
-      data    : hasil get_full_stock_data()
-
-    Return dict kolom HDY; semua None jika data tidak cukup.
     """
     result = {
         "EPS_5Y":      None,
@@ -364,17 +361,13 @@ def _enrich_hdy(
     cashflow  = data.get("cashflow", pd.DataFrame())
     dividends = data.get("dividends", pd.Series(dtype="float64"))
 
-    ref_year = pd.Timestamp.now().year - 1  # tahun buku terakhir yang lengkap
+    ref_year = pd.Timestamp.now().year - 1
 
     # ── EPS_5Y ────────────────────────────────────────────────────────────────
-    # Ambil dari income statement (financials); kolom = tahun, index = item
-    # EPS normalized = Net Income / shares_outstanding (exclude extraordinary via
-    # "Normalized Income" jika tersedia, fallback ke "Net Income")
     try:
         eps_annual: dict[int, float | None] = {}
         shares = _safe_float(info.get("sharesOutstanding"))
         if not fin.empty and shares and shares > 0:
-            # Coba ambil Normalized Income dulu
             ni_row = None
             for k in ["Normalized Income", "Net Income", "NetIncome",
                       "Net Income Common Stockholders"]:
@@ -394,22 +387,19 @@ def _enrich_hdy(
         result["EPS_5Y"] = json.dumps([None] * 5)
 
     # ── DPS_5Y ────────────────────────────────────────────────────────────────
-    # Agregasi dividen per tahun kalender dari stock.dividends
+    # PERBAIKAN: stock.dividends yfinance sudah berbentuk nominal PER LEMBAR SAHAM. Jangan dibagi shares lagi.
     try:
         dps_annual: dict[int, float | None] = {}
-        shares = _safe_float(info.get("sharesOutstanding"))
-        if not dividends.empty and shares and shares > 0:
+        if not dividends.empty:
             divs = dividends.copy()
             divs.index = pd.to_datetime(divs.index)
             for year, group in divs.groupby(divs.index.year):
-                total_div_rupiah = float(group.sum())
-                dps_annual[int(year)] = total_div_rupiah / shares
+                dps_annual[int(year)] = float(group.sum())
         result["DPS_5Y"] = json.dumps(_build_5y_array(dps_annual, ref_year))
     except Exception:
         result["DPS_5Y"] = json.dumps([None] * 5)
 
     # ── FCF_5Y ────────────────────────────────────────────────────────────────
-    # Ambil "Free Cash Flow" dari cashflow statement
     try:
         fcf_annual: dict[int, float | None] = {}
         if not cashflow.empty:
@@ -430,7 +420,6 @@ def _enrich_hdy(
         result["FCF_5Y"] = json.dumps([None] * 5)
 
     # ── PR_5Y ─────────────────────────────────────────────────────────────────
-    # PR_5Y[i] = DPS_5Y[i] / EPS_5Y[i]; None jika salah satu None atau EPS <= 0
     try:
         eps_arr = json.loads(result["EPS_5Y"] or "[]")
         dps_arr = json.loads(result["DPS_5Y"] or "[]")
@@ -445,7 +434,6 @@ def _enrich_hdy(
         result["PR_5Y"] = json.dumps([None] * 5)
 
     # ── DY_5Y ─────────────────────────────────────────────────────────────────
-    # DY_5Y[i] = DPS_5Y[i] / Close_akhir_tahun[i]
     try:
         dps_arr     = json.loads(result["DPS_5Y"] or "[]")
         annual_close = _get_annual_close_prices(hist)
@@ -462,20 +450,17 @@ def _enrich_hdy(
         result["DY_5Y"] = json.dumps([None] * 5)
 
     # ── ICR ───────────────────────────────────────────────────────────────────
-    # ICR = EBIT / Interest Expense (TTM) dari financials
     try:
         ebit     = None
         interest = None
         if not fin.empty:
             for k in ["EBIT", "Ebit", "Operating Income"]:
                 if k in fin.index:
-                    ebit = _safe_float(fin.loc[k].iloc[0])
-                    break
+                    ebit = _safe_float(fin.loc[k].iloc[0]); break
             for k in ["Interest Expense", "InterestExpense",
                       "Interest Expense Non Operating"]:
                 if k in fin.index:
                     raw = _safe_float(fin.loc[k].iloc[0])
-                    # yfinance kadang menyimpan interest expense sebagai nilai negatif
                     interest = abs(raw) if raw is not None else None
                     break
         if ebit is not None and interest and interest > 0:
@@ -484,8 +469,6 @@ def _enrich_hdy(
         pass
 
     # ── DebtEBITDA ────────────────────────────────────────────────────────────
-    # Hanya untuk sektor Infrastruktur / Utilitas
-    # DebtEBITDA = totalDebt / EBITDA (TTM)
     try:
         if sektor in _SEKTOR_DEBT_EBITDA:
             total_debt = _safe_float(info.get("totalDebt"))
@@ -493,8 +476,7 @@ def _enrich_hdy(
             if not fin.empty:
                 for k in ["EBITDA", "Ebitda"]:
                     if k in fin.index:
-                        ebitda = _safe_float(fin.loc[k].iloc[0])
-                        break
+                        ebitda = _safe_float(fin.loc[k].iloc[0]); break
             if total_debt is not None and ebitda and ebitda > 0:
                 result["DebtEBITDA"] = round(total_debt / ebitda, 2)
     except Exception:
@@ -515,15 +497,7 @@ def enrich_and_filter(
     progress_callback     = None,
 ) -> tuple[pd.DataFrame, int, int]:
     """
-    Terima DataFrame dari pre_liquid_stocks.csv (sudah dinormalisasi),
-    fetch data tiap saham dari yfinance, hitung kolom enrichment,
-    lalu filter dan kembalikan (df_hasil, total_before, total_after).
-
-    profil:
-      "trading" → Value_MA20 >= 2M, ROE >= 10%, tanpa HDY
-      "dividen" → Value_MA20 >= 500jt, ROE >= 5%, dengan HDY
-
-    progress_callback(i, total, ticker) → opsional untuk progress bar UI.
+    Terima DataFrame dari pre_liquid_stocks.csv, proses enrichment, lalu filter.
     """
     df_pre = _normalize_columns(df_input)
 
@@ -566,7 +540,6 @@ def enrich_and_filter(
             "NPL":                None,
             "_PER_median_ticker": None,
             "_PBV_median_ticker": None,
-            # Kolom HDY — diisi hanya jika profil dividen
             "EPS_5Y":     None,
             "DPS_5Y":     None,
             "FCF_5Y":     None,
@@ -589,35 +562,25 @@ def enrich_and_filter(
                 h["Value"]    = h["Close"] * h["Volume"]
                 rec["Value_MA20"] = h["Value"].tail(20).mean()
 
-            # ── ROE & ROA — fetch yfinance hanya jika tidak ada di file ───────
+            # ── ROE & ROA — fetch yfinance jika kosong ────────────────────────
             if rec["ROE"] is None or rec["ROA"] is None:
                 try:
                     net_income = total_equity = total_assets = None
                     if not fin.empty:
-                        for k in ["Net Income", "NetIncome",
-                                  "Net Income Common Stockholders"]:
+                        for k in ["Net Income", "NetIncome", "Net Income Common Stockholders"]:
                             if k in fin.index:
                                 net_income = fin.loc[k].iloc[0]; break
                     if not bs.empty:
-                        for k in ["Stockholders Equity",
-                                  "Total Stockholders Equity",
-                                  "Common Stock Equity",
-                                  "Total Equity Gross Minority Interest"]:
+                        for k in ["Stockholders Equity", "Total Stockholders Equity", "Common Stock Equity", "Total Equity Gross Minority Interest"]:
                             if k in bs.index:
                                 total_equity = bs.loc[k].iloc[0]; break
                         for k in ["Total Assets", "TotalAssets"]:
                             if k in bs.index:
                                 total_assets = bs.loc[k].iloc[0]; break
-                    if (rec["ROE"] is None and net_income is not None
-                            and total_equity and total_equity != 0):
-                        rec["ROE"] = round(
-                            float(net_income / total_equity) * 100, 2
-                        )
-                    if (rec["ROA"] is None and net_income is not None
-                            and total_assets and total_assets != 0):
-                        rec["ROA"] = round(
-                            float(net_income / total_assets) * 100, 2
-                        )
+                    if rec["ROE"] is None and net_income is not None and total_equity and total_equity != 0:
+                        rec["ROE"] = round(float(net_income / total_equity) * 100, 2)
+                    if rec["ROA"] is None and net_income is not None and total_assets and total_assets != 0:
+                        rec["ROA"] = round(float(net_income / total_assets) * 100, 2)
                 except Exception:
                     pass
 
@@ -630,11 +593,7 @@ def enrich_and_filter(
 
             # ── Median PER & PBV historis 3 tahun per ticker ──────────────────
             try:
-                closes = (
-                    hist.tail(252 * 3)["Close"]
-                    if len(hist) >= 252
-                    else hist["Close"]
-                )
+                closes = hist.tail(252 * 3)["Close"] if len(hist) >= 252 else hist["Close"]
                 eps  = info.get("trailingEps")
                 bvps = info.get("bookValue")
                 if eps  and eps  > 0 and not closes.empty:
@@ -657,14 +616,8 @@ def enrich_and_filter(
     df = pd.DataFrame(records)
 
     # ── Agregasi median PER & PBV per sektor ──────────────────────────────────
-    df = df.join(
-        df.groupby("Sektor")["_PER_median_ticker"].median().rename("Median_PER_3Y"),
-        on="Sektor",
-    )
-    df = df.join(
-        df.groupby("Sektor")["_PBV_median_ticker"].median().rename("Median_PBV_3Y"),
-        on="Sektor",
-    )
+    df = df.join(df.groupby("Sektor")["_PER_median_ticker"].median().rename("Median_PER_3Y"), on="Sektor")
+    df = df.join(df.groupby("Sektor")["_PBV_median_ticker"].median().rename("Median_PBV_3Y"), on="Sektor")
     df.drop(columns=["_PER_median_ticker", "_PBV_median_ticker"], inplace=True)
 
     # ── Filter berdasarkan profil ──────────────────────────────────────────────
@@ -674,8 +627,6 @@ def enrich_and_filter(
     df = df[df["ROA"].notna()        & (df["ROA"] > 0)]
     after = len(df)
 
-    # Untuk profil dividen, buang kolom HDY yang semuanya None
-    # (terjadi jika semua ticker gagal fetch financials)
     if is_dividen:
         hdy_cols = ["EPS_5Y", "DPS_5Y", "FCF_5Y", "PR_5Y", "DY_5Y", "ICR", "DebtEBITDA"]
         for col in hdy_cols:
@@ -698,12 +649,6 @@ def process_liquid_stocks(
 ) -> pd.DataFrame:
     """
     Dipanggil oleh app.py di Step 2 panel admin.
-    Menerima DataFrame langsung — tanpa file temporary.
-    Mengembalikan DataFrame hasil enrichment & filter.
-
-    profil "trading"  → output untuk liquid_stocks.csv
-    profil "dividen"  → output untuk liquid_dividend_stocks.csv
-    Kedua file terpisah agar modul screening dan dividen punya universe masing-masing.
     """
     df_hasil, before, after = enrich_and_filter(
         df_input      = df_pre,
@@ -725,10 +670,7 @@ def process_liquid_stocks(
             min_roe       = -999,
             profil        = profil,
         )
-        cols = [
-            c for c in ["Ticker", "Value_MA20", "ROE", "ROA"]
-            if c in df_debug.columns
-        ]
+        cols = [c for c in ["Ticker", "Value_MA20", "ROE", "ROA"] if c in df_debug.columns]
         st.dataframe(df_debug[cols].head(5), use_container_width=True)
 
     return df_hasil
