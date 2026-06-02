@@ -125,6 +125,25 @@ def load_universe() -> tuple[list[str], pd.DataFrame]:
     df_liquid = get_liquid_stocks()
     if not df_liquid.empty:
         df = _normalize_universe_columns(df_liquid)
+
+        # Filter trading: hanya ticker dengan Value_MA20 >= 2M dan ROE >= 10%.
+        # Dilakukan di sini (bukan di process_single_stock) agar saham profil
+        # dividen yang lolos threshold lebih rendah tidak masuk antrian API call.
+        # Filter hanya aktif jika kolom tersedia — agar tidak crash saat
+        # liquid_stocks.csv belum di-enrich ulang.
+        _TRADING_MIN_VALUE_MA20 = 2_000_000_000
+        _TRADING_MIN_ROE        = 10.0
+        if "Value_MA20" in df.columns:
+            df = df[
+                df["Value_MA20"].notna() &
+                (pd.to_numeric(df["Value_MA20"], errors="coerce") >= _TRADING_MIN_VALUE_MA20)
+            ]
+        if "ROE" in df.columns:
+            df = df[
+                df["ROE"].notna() &
+                (pd.to_numeric(df["ROE"], errors="coerce") >= _TRADING_MIN_ROE)
+            ]
+
         saham_list = [
             (t if t.endswith(".JK") else t + ".JK")
             for t in df["Kode Saham"].astype(str).str.strip().tolist()
