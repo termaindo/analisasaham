@@ -1015,19 +1015,29 @@ def run_dividen():
                 unsafe_allow_html=True)
     st.markdown("---")
 
-    # ── Input ─────────────────────────────────────────────────────────────────
-    with st.sidebar:
-        st.header("⚙️ Parameter")
-        ticker_input = st.text_input("Kode Saham:", value="BBCA").upper()
-        jumlah_lot   = st.number_input("Jumlah Lot (opsional):", min_value=0,
-                                       value=0, step=1)
-        harga_beli   = st.number_input("Harga Beli Rata-rata (opsional):",
-                                       min_value=0.0, value=0.0, step=100.0,
-                                       format="%.0f")
-        jalankan     = st.button("🔍 Jalankan Analisa", use_container_width=True)
+    # ── Input — di halaman utama, bukan sidebar ───────────────────────────────
+    col_inp1, col_inp2, col_inp3 = st.columns([2, 2, 2])
+    with col_inp1:
+        ticker_input = st.text_input("Kode Saham (contoh: BBCA):", value="BBCA").upper()
+    with col_inp2:
+        jumlah_lot = st.number_input(
+            "Jumlah Lot yang Dimiliki (opsional):",
+            min_value=0, value=0, step=1,
+        )
+    with col_inp3:
+        harga_beli = st.number_input(
+            "Harga Beli Rata-rata (opsional, Rp):",
+            min_value=0.0, value=0.0, step=100.0, format="%.0f",
+        )
+
+    jalankan = st.button(
+        "🔍 Jalankan Analisa Dividen",
+        use_container_width=True,
+    )
+    st.markdown("---")
 
     if not jalankan:
-        st.info("Masukkan kode saham di sidebar, lalu klik **Jalankan Analisa**.")
+        st.info("Masukkan kode saham di atas, lalu klik **Jalankan Analisa Dividen**.")
         return
 
     ticker_bersih = ticker_input.strip().upper().replace(".JK", "")
