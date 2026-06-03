@@ -1168,13 +1168,13 @@ def run_dividen():
         terminal_growth = terminal_growth_pct / 100.0
 
     jalankan = st.button(
-        "🔍 Jalankan Analisa Dividen",
+        "🔍 Jalankan Analisa Dividen ticker_input",
         use_container_width=True,
     )
     st.markdown("---")
 
     if not jalankan:
-        st.info("Masukkan kode saham di atas, lalu klik **Jalankan Analisa Dividen**.")
+        st.info("Masukkan kode saham di atas, lalu klik **Jalankan Analisa Dividen ticker_input**.")
         return
 
     ticker_bersih = ticker_input.strip().upper().replace(".JK", "")
