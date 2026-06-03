@@ -16,13 +16,14 @@ Dua file output terpisah:
 
 import datetime
 import os
+
 import pandas as pd
 import streamlit as st
 
 from utils.data_loader import (
-    PRE_LIQUID_PATH,
     LIQUID_PATH,
     LIQUID_DIVIDEND_PATH,
+    PRE_LIQUID_PATH,
     clear_liquid_stocks_cache,
     clear_liquid_dividend_stocks_cache,
     enrich_and_filter,
@@ -49,7 +50,7 @@ _PROFIL_CONFIG = {
         "liquid_path":   LIQUID_DIVIDEND_PATH,
         "clear_cache":   clear_liquid_dividend_stocks_cache,
         "min_value_ma20": 500_000_000,
-        "min_roe":        5.0,
+        "min_roe":         5.0,
         "deskripsi":     (
             "Universe untuk modul Analisa Dividen (HDY). "
             "Threshold lebih longgar + kolom EPS_5Y, DPS_5Y, FCF_5Y, PR_5Y, DY_5Y, ICR, DebtEBITDA."
@@ -61,15 +62,14 @@ _PROFIL_CONFIG = {
 
 def _render_enrichment_panel(profil: str, df_pre: pd.DataFrame) -> None:
     """Render panel enrichment untuk satu profil (trading atau dividen)."""
-    cfg = _PROFIL_CONFIG[profil]
+    cfg      = _PROFIL_CONFIG[profil]
     state_key_result = f"enrichment_result_{profil}"
     state_key_done   = f"enrichment_done_{profil}"
-    state_key_metrics = f"enrichment_metrics_{profil}"
 
-    # Cek status expander agar menutup otomatis jika sudah selesai
-    is_expanded = not st.session_state.get(state_key_done, False)
-
-    with st.expander(f"{cfg['label']} — {cfg['file_name']}", expanded=is_expanded):
+    with st.expander(
+        f"{cfg['label']} — {cfg['file_name']}",
+        expanded=not st.session_state.get(state_key_done, False),
+    ):
         st.caption(cfg["deskripsi"])
 
         col1, col2 = st.columns(2)
@@ -102,16 +102,19 @@ def _render_enrichment_panel(profil: str, df_pre: pd.DataFrame) -> None:
 
         st.warning(
             "⏳ Proses enrichment bisa memakan waktu beberapa menit. "
-            "Jangan tutup atau refresh halaman ini selama proses berjalan."
+            "Jangan tutup halaman ini."
         )
 
-        # Tombol Pemicu Utama
-        if st.button(f"▶️ Mulai Enrichment {cfg['label']}", type="primary", key=f"btn_enrich_{profil}"):
+        if st.button(
+            f"▶️ Mulai Enrichment {cfg['label']}",
+            type="primary",
+            key=f"btn_enrich_{profil}",
+        ):
             progress_bar = st.progress(0, text="Memulai...")
             status_text  = st.empty()
 
             def on_progress(i: int, total: int, ticker: str) -> None:
-                pct = min(int((i / total) * 100), 100)
+                pct = int((i / total) * 100)
                 progress_bar.progress(pct, text=f"Fetching ({i}/{total}): {ticker}")
                 status_text.caption(f"Sedang memproses: `{ticker}`")
 
@@ -127,62 +130,44 @@ def _render_enrichment_panel(profil: str, df_pre: pd.DataFrame) -> None:
                 progress_bar.progress(100, text="Selesai!")
                 status_text.empty()
 
-                # Simpan hasil ke session_state agar aman dari rerun
+                m1, m2, m3 = st.columns(3)
+                m1.metric("Total Awal",   f"{total_before} saham")
+                m2.metric("Lolos Filter", f"{total_after} saham")
+                m3.metric("Dibuang",      f"{total_before - total_after} saham")
+
+                # Preview hasil
+                st.subheader(f"📊 Preview {cfg['file_name']}")
+                df_display = df_result.copy()
+                if "Value_MA20" in df_display.columns:
+                    df_display["Value_MA20"] = df_display["Value_MA20"].apply(
+                        lambda x: f"Rp {x:,.0f}" if pd.notna(x) else "-"
+                    )
+                for col in ["ROE", "ROA", "CAR", "NPL",
+                            "Median_PER_3Y", "Median_PBV_3Y", "ICR", "DebtEBITDA"]:
+                    if col in df_display.columns:
+                        df_display[col] = df_display[col].apply(
+                            lambda x: f"{x:.2f}" if pd.notna(x) else "-"
+                        )
+                for col in ["EPS_5Y", "DPS_5Y", "FCF_5Y", "PR_5Y", "DY_5Y"]:
+                    if col in df_display.columns:
+                        df_display[col] = df_display[col].apply(
+                            lambda x: (str(x)[:40] + "…") if pd.notna(x) and x else "-"
+                        )
+                st.dataframe(df_display, use_container_width=True)
+
                 st.session_state[state_key_result] = df_result
-                st.session_state[state_key_metrics] = {
-                    "before": total_before,
-                    "after": total_after,
-                    "dropped": total_before - total_after
-                }
-                st.session_state[state_key_done] = True
-                
-                # Paksa rerun sekali agar expander menutup dan download button muncul mandiri
-                st.rerun()
+                st.session_state[state_key_done]   = True
 
             except ValueError as ve:
                 st.error(f"❌ Error pada file CSV: {ve}")
             except Exception as e:
                 st.error(f"❌ Terjadi kesalahan tidak terduga: {e}")
 
-        # OUTPUT RENDER (Di luar blok button, membaca langsung dari Session State)
+        # Tombol download — muncul jika enrichment sudah selesai
         if st.session_state.get(state_key_done, False):
             df_result = st.session_state[state_key_result]
-            metrics = st.session_state[state_key_metrics]
-
-            # Tampilkan metrics eksekusi terakhir
-            m1, m2, m3 = st.columns(3)
-            m1.metric("Total Awal",   f"{metrics['before']} saham")
-            m2.metric("Lolos Filter", f"{metrics['after']} saham")
-            m3.metric("Dibuang",      f"{metrics['dropped']} saham")
-
-            # Preview hasil
-            st.subheader(f"📊 Preview {cfg['file_name']}")
-            df_display = df_result.copy()
-            
-            if "Value_MA20" in df_display.columns:
-                df_display["Value_MA20"] = df_display["Value_MA20"].apply(
-                    lambda x: f"Rp {x:,.0f}" if pd.notna(x) else "-"
-                )
-            
-            clean_cols = ["ROE", "ROA", "CAR", "NPL", "Median_PER_3Y", "Median_PBV_3Y", "ICR", "DebtEBITDA"]
-            for col in clean_cols:
-                if col in df_display.columns:
-                    df_display[col] = df_display[col].apply(
-                        lambda x: f"{x:.2f}" if pd.notna(x) else "-"
-                    )
-            
-            hdy_cols = ["EPS_5Y", "DPS_5Y", "FCF_5Y", "PR_5Y", "DY_5Y"]
-            for col in hdy_cols:
-                if col in df_display.columns:
-                    df_display[col] = df_display[col].apply(
-                        lambda x: (str(x)[:40] + "…") if pd.notna(x) and x else "-"
-                    )
-            
-            st.dataframe(df_display, use_container_width=True)
-
-            # Sediakan tombol download yang stabil
             csv_bytes = df_result.to_csv(index=False).encode("utf-8")
-            st.success(f"✅ Data `{cfg['file_name']}` siap di-download.")
+            st.success(f"✅ Enrichment selesai — siap di-download.")
             st.download_button(
                 label     = f"⬇️ Download {cfg['file_name']}",
                 data      = csv_bytes,
@@ -192,14 +177,17 @@ def _render_enrichment_panel(profil: str, df_pre: pd.DataFrame) -> None:
                 key       = f"dl_{profil}",
             )
 
-        # Status file aktif di server lokal/cloud
+        # Status file aktif di server
         st.divider()
         st.caption("**Status file saat ini di server:**")
         if os.path.exists(cfg["liquid_path"]):
             mtime = os.path.getmtime(cfg["liquid_path"])
             tgl   = datetime.datetime.fromtimestamp(mtime).strftime("%d %b %Y %H:%M")
-            st.success(f"✅ `{cfg['file_name']}` ditemukan di server — Update terakhir: {tgl}")
-            if st.button("🔄 Clear cache (paksa baca ulang file terbaru)", key=f"clear_cache_{profil}"):
+            st.success(f"✅ `{cfg['file_name']}` ditemukan — terakhir diupdate: {tgl}")
+            if st.button(
+                "🔄 Clear cache (paksa baca ulang file terbaru)",
+                key=f"clear_cache_{profil}",
+            ):
                 cfg["clear_cache"]()
                 st.success("Cache dikosongkan. Data terbaru akan dimuat pada request berikutnya.")
         else:
@@ -212,21 +200,20 @@ def _render_enrichment_panel(profil: str, df_pre: pd.DataFrame) -> None:
 def render_admin_panel() -> None:
     st.header("⚙️ Panel Admin — Enrichment Data Saham")
     st.caption(
-        "Proses ini membaca `pre_liquid_stocks.csv`, fetch data tiap saham melalui yfinance, "
-        "lahu menghasilkan dua file terpisah yang siap diunduh dan di-commit ke GitHub."
+        "Proses ini membaca `pre_liquid_stocks.csv`, fetch data tiap saham, "
+        "lalu menghasilkan dua file terpisah yang bisa kamu download dan upload ke GitHub."
     )
 
     # ── Step 1: Preview pre_liquid_stocks.csv ────────────────────────────────
     st.subheader("📋 Step 1 — Daftar Saham (pre_liquid_stocks.csv)")
     try:
-        # Menggunakan PRE_LIQUID_PATH yang diimport dari data_loader agar jalurnya konsisten
-        df_pre = pd.read_csv(PRE_LIQUID_PATH)
+        df_pre = pd.read_csv(PRE_LIQUID_PATH, sep=None, engine="python")
         st.dataframe(df_pre, use_container_width=True)
-        st.caption(f"Total target universe awal: {len(df_pre)} saham")
+        st.caption(f"Total: {len(df_pre)} saham")
     except FileNotFoundError:
         st.error(
-            f"`pre_liquid_stocks.csv` tidak ditemukan di path: `{PRE_LIQUID_PATH}`. "
-            "Pastikan file ada di folder `/data` di root repo Anda."
+            "`data/pre_liquid_stocks.csv` tidak ditemukan. "
+            "Pastikan file ada di folder `/data` di root repo."
         )
         return
 
@@ -235,8 +222,9 @@ def render_admin_panel() -> None:
     # ── Step 2 & 3: Enrichment per profil ────────────────────────────────────
     st.subheader("🔧 Step 2 — Enrichment & Download")
     st.info(
-        "Jalankan **kedua profil** di bawah bergantian agar modul Screening dan modul Dividen "
-        "masing-masing mendapatkan file universe ter-update. Urutan eksekusi bebas."
+        "Jalankan **kedua profil** agar modul Screening dan modul Dividen "
+        "masing-masing punya universe yang sesuai. "
+        "Urutan bebas — keduanya independen."
     )
 
     _render_enrichment_panel("trading", df_pre)
@@ -247,21 +235,21 @@ def render_admin_panel() -> None:
     # ── Step 4: Instruksi Upload ke GitHub ────────────────────────────────────
     st.subheader("☁️ Step 3 — Upload ke GitHub")
     st.markdown("""
-**Setelah men-download kedua file di atas, selesaikan langkah sinkronisasi ini:**
+**Setelah download kedua file, ikuti langkah berikut:**
 
-1. Buka repository GitHub Anda di browser.
-2. Masuk ke dalam direktori **`data/`**.
-3. Klik tombol **"Add file"** → pilih **"Upload files"**.
-4. Seret atau pilih **kedua file** hasil download secara bersamaan:
-   - `liquid_stocks.csv` (untuk modul Screening)
-   - `liquid_dividend_stocks.csv` (untuk modul Dividen)
-5. Klik **"Commit changes"**. Streamlit Cloud akan mendeteksi perubahan data dan melakukan auto-restart.
+1. Buka repo GitHub kamu di browser
+2. Masuk ke folder **`data/`**
+3. Klik **"Add file"** → **"Upload files"**
+4. Upload **kedua file** sekaligus:
+   - `liquid_stocks.csv` ← universe Screening
+   - `liquid_dividend_stocks.csv` ← universe Dividen
+5. Klik **"Commit changes"** → Streamlit Cloud akan otomatis restart
 
-> ⚠️ **PENTING:** Jangan mengubah nama file (harus tetap menggunakan huruf kecil semua) agar tidak merusak pencarian path data internal aplikasi.
+> ⚠️ Pastikan nama file **tidak berubah** (huruf kecil semua) agar path di kode cocok.
+> Tidak perlu upload ulang file yang tidak berubah sejak enrichment terakhir.
     """)
 
 
 if __name__ == "__main__":
-    # Konfigurasi halaman diletakkan di puncak eksekusi utama
-    st.set_page_config(page_title="Admin Panel — Analisa Cepat Pro", layout="wide", page_icon="⚙️")
+    st.set_page_config(page_title="Admin Panel", layout="wide")
     render_admin_panel()
