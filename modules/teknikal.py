@@ -859,29 +859,29 @@ def compute_score(df: pd.DataFrame, timeframe: str = "swing") -> dict:
         result["signal"]     = "STRONG BUY — Konfirmasi Tinggi"
         result["confidence"] = "Mayoritas indikator selaras bullish. Entry dapat dipertimbangkan sesuai trading plan."
     elif score_final >= 35:
-        result["label"]      = "BUY"
+        result["label"]      = "BELI"
         result["warna"]      = "#69F0AE"
-        result["signal"]     = "BUY — Konfirmasi Cukup"
+        result["signal"]     = "BELI — Konfirmasi Cukup"
         result["confidence"] = "Sinyal beli dengan konfirmasi memadai. Tetap gunakan stop loss ketat."
     elif score_final >= 10:
-        result["label"]      = "WATCH"
+        result["label"]      = "MASUK PANTAUAN"
         result["warna"]      = "#FFD600"
-        result["signal"]     = "WATCH — Bias Bullish Lemah"
+        result["signal"]     = "MASUK PANTAUAN — Bias Bullish Lemah"
         result["confidence"] = "Belum ideal untuk entry. Pantau konfirmasi tambahan sebelum masuk."
     elif score_final >= -9:
-        result["label"]      = "NEUTRAL"
+        result["label"]      = "NETRAL"
         result["warna"]      = "#9E9E9E"
-        result["signal"]     = "NEUTRAL — Tidak Ada Sinyal Jelas"
+        result["signal"]     = "NETRAL — Tidak Ada Sinyal Jelas"
         result["confidence"] = "Indikator saling bertentangan. Tunggu kejelasan arah."
     elif score_final >= -34:
-        result["label"]      = "CAUTION"
+        result["label"]      = "HATI-HATI"
         result["warna"]      = "#FF6D00"
-        result["signal"]     = "CAUTION — Bias Bearish"
+        result["signal"]     = "HATI-HATI — Bias Bearish"
         result["confidence"] = "Tekanan jual mendominasi. Hindari entry beli baru."
     elif score_final >= -64:
-        result["label"]      = "SELL/AVOID"
+        result["label"]      = "JUAL/HINDARI"
         result["warna"]      = "#D50000"
-        result["signal"]     = "SELL / AVOID"
+        result["signal"]     = "JUAL / HINDARI"
         result["confidence"] = "Sinyal bearish kuat. Jika pegang posisi, pertimbangkan exit."
     else:
         result["label"]      = "STRONG SELL"
@@ -1353,11 +1353,11 @@ def generate_pdf_fpdf(data: dict, logo_path: str = "logo_expert_stock_pro.png") 
     label = data.get('label', '-')
     warna_map = {
         "STRONG BUY":          (0, 200, 83),
-        "BUY":                 (105, 240, 174),
-        "WATCH":               (255, 214, 0),
-        "NEUTRAL":             (158, 158, 158),
-        "CAUTION":             (255, 109, 0),
-        "SELL/AVOID":          (213, 0, 0),
+        "BELI":                 (105, 240, 174),
+        "MASUK PANTAUAN":               (255, 214, 0),
+        "NETRAL":             (158, 158, 158),
+        "HATI_HATI":             (255, 109, 0),
+        "JUAL/HINDARI":          (213, 0, 0),
         "STRONG SELL":         (183, 28, 28),
         "KONDISI TIDAK IDEAL": (100, 100, 100),
     }
