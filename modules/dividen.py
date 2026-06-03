@@ -1167,15 +1167,14 @@ def run_dividen():
         discount_rate   = discount_rate_pct / 100.0
         terminal_growth = terminal_growth_pct / 100.0
 
-    jalankan = st.button(f"🔍 Jalankan Analisa {ticker_bersih}", type="primary"):
-        st.info("Masukkan kode saham dan klik tombol untuk menjalankan analisa.")
-        return
+    jalankan = st.button(
+        "🔍 Jalankan Analisa Dividen",
         use_container_width=True,
     )
     st.markdown("---")
 
     if not jalankan:
-        st.info("Masukkan kode saham di atas, lalu klik **Jalankan Analisa Dividen ticker_input**.")
+        st.info("Masukkan kode saham di atas, lalu klik **Jalankan Analisa Dividen**.")
         return
 
     ticker_bersih = ticker_input.strip().upper().replace(".JK", "")
