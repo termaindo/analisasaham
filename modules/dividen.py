@@ -1,7 +1,12 @@
 """
 dividen.py — Analisa Dividen Pro
 Modul analisa dividen dengan scoring HDY 100 poin, klasifikasi gabungan,
-proyeksi forward yield, dan export PDF.
+proyeksi forward yield, Two-Stage DDM, dan export PDF.
+
+Changelog:
+- Fix: tambah get_liquid_stocks ke import; run_dividen() pakai
+  get_liquid_dividend_stocks() untuk universe dividen (file terpisah).
+- Tambah: _hitung_two_stage_ddm() + UI Bagian 3 harga wajar DDM.
 """
 
 import json
@@ -17,7 +22,8 @@ from fpdf import FPDF
 
 from utils.data_loader import (
     get_full_stock_data,
-    get_liquid_dividend_stocks,
+    get_liquid_stocks,           # ← FIX: diperlukan oleh dividen.py
+    get_liquid_dividend_stocks,  # universe dividen (file terpisah)
     is_ticker_liquid,
     get_ticker_row,
     PRE_LIQUID_PATH,
@@ -34,6 +40,11 @@ DER_MAX_GENERAL     = 3.0    # batas knockout DER sektor umum
 CAR_MIN_BANK        = 8.0    # batas knockout CAR sektor Bank (%)
 NPL_MAX_BANK        = 5.0    # batas knockout NPL sektor Bank (%)
 DEBT_EBITDA_MAX_INF = 5.0    # batas knockout Debt/EBITDA sektor Infrastruktur
+
+# DDM defaults
+DDM_TERMINAL_GROWTH = 0.055  # 5.5% — proxy inflasi jangka panjang Indonesia
+DDM_HIGH_GROWTH_YRS = 5      # fase pertumbuhan tinggi (tahun)
+DDM_DISCOUNT_DEFAULT = 0.12  # 12% — WACC proxy IDX default
 
 SEKTOR_BANK   = {"Bank", "Finansial", "Keuangan", "Perbankan"}
 SEKTOR_INFRA  = {"Infrastruktur", "Utilitas"}
@@ -81,7 +92,7 @@ def _parse_json_col(val) -> list:
 
 
 def _get_identitas(ticker_bersih: str, liquid_df: pd.DataFrame) -> dict:
-    """Ambil Sektor dan Syariah via fallback chain: liquid → pre_liquid → default."""
+    """Ambil Sektor dan Syariah via fallback chain: liquid_dividend → pre_liquid → default."""
     result = {"sektor": "Tidak Diketahui", "syariah": "Tidak Diketahui"}
 
     if is_ticker_liquid(ticker_bersih, liquid_df):
@@ -103,9 +114,9 @@ def _get_identitas(ticker_bersih: str, liquid_df: pd.DataFrame) -> dict:
     return result
 
 
-def _build_hdy_arrays_from_liquid(ticker_row: dict) -> dict:
+def _build_hdy_arrays_from_liquid(ticker_row) -> dict:
     """
-    Ambil array HDY dari liquid_stocks.csv (sudah di-enrich admin).
+    Ambil array HDY dari liquid_dividend_stocks.csv (sudah di-enrich admin).
     Kembalikan dict dengan key: eps_5y, dps_5y, fcf_5y, pr_5y, dy_5y, icr, debt_ebitda.
     """
     return {
@@ -126,7 +137,7 @@ def _build_hdy_arrays_from_yfinance(stock_data: dict, curr_price: float,
     Akurasi tidak dijamin untuk semua ticker IDX.
     """
     info      = stock_data.get("info", {})
-    fin       = stock_data.get("financials", pd.DataFrame())   # income stmt, kolom = tahun
+    fin       = stock_data.get("financials", pd.DataFrame())
     cashflow  = stock_data.get("cashflow", pd.DataFrame())
 
     def _tail5_annual(df: pd.DataFrame, row_key: str) -> list:
@@ -135,13 +146,11 @@ def _build_hdy_arrays_from_yfinance(stock_data: dict, curr_price: float,
             return [None] * 5
         series = df.loc[row_key].sort_index(ascending=True)
         vals   = list(series.values[-5:])
-        # pad kiri dengan None bila < 5
         while len(vals) < 5:
             vals.insert(0, None)
         return [None if (v is None or (isinstance(v, float) and np.isnan(v)))
                 else float(v) for v in vals]
 
-    # EPS: Net Income / Shares Outstanding (per tahun)
     net_income_arr = _tail5_annual(fin, "Net Income")
     shares         = info.get("sharesOutstanding") or 0
     eps_5y = [
@@ -149,10 +158,8 @@ def _build_hdy_arrays_from_yfinance(stock_data: dict, curr_price: float,
         for ni in net_income_arr
     ]
 
-    # FCF: dari cashflow statement
     fcf_5y = _tail5_annual(cashflow, "Free Cash Flow")
     if all(v is None for v in fcf_5y):
-        # fallback ke Operating CF - CapEx
         ocf  = _tail5_annual(cashflow, "Operating Cash Flow")
         capx = _tail5_annual(cashflow, "Capital Expenditure")
         fcf_5y = [
@@ -160,7 +167,6 @@ def _build_hdy_arrays_from_yfinance(stock_data: dict, curr_price: float,
             for o, c in zip(ocf, capx)
         ]
 
-    # DPS: dari dividen historis, agregasi per tahun kalender
     dps_5y = [None] * 5
     if divs is not None and len(divs) > 0:
         df_d         = divs.to_frame(name="DPS")
@@ -172,7 +178,6 @@ def _build_hdy_arrays_from_yfinance(stock_data: dict, curr_price: float,
             last5 = np.insert(last5, 0, np.nan)
         dps_5y = [None if np.isnan(v) else float(v) for v in last5]
 
-    # PR: DPS / EPS per tahun
     pr_5y = []
     for d, e in zip(dps_5y, eps_5y):
         if d is not None and e is not None and e > 0:
@@ -180,14 +185,11 @@ def _build_hdy_arrays_from_yfinance(stock_data: dict, curr_price: float,
         else:
             pr_5y.append(None)
 
-    # DY: DPS / harga penutupan akhir tahun (simplifikasi: pakai harga sekarang untuk semua)
-    # Ini adalah fallback kasar — liquid_stocks lebih akurat
     dy_5y = [
         round(d / curr_price, 4) if (d is not None and curr_price > 0) else None
         for d in dps_5y
     ]
 
-    # ICR: EBIT / Interest Expense (TTM dari info)
     ebit       = info.get("ebit")
     int_exp    = info.get("interestExpense")
     icr = None
@@ -201,7 +203,7 @@ def _build_hdy_arrays_from_yfinance(stock_data: dict, curr_price: float,
         "pr_5y":       pr_5y,
         "dy_5y":       dy_5y,
         "icr":         icr,
-        "debt_ebitda": None,   # tidak tersedia dari yfinance untuk semua sektor
+        "debt_ebitda": None,
     }
 
 
@@ -257,6 +259,118 @@ def _hitung_dy_avg(divs: pd.Series, history: pd.DataFrame,
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# TWO-STAGE DDM
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _hitung_two_stage_ddm(
+    arrays: dict,
+    curr_price: float,
+    discount_rate: float,
+    high_growth_years: int = DDM_HIGH_GROWTH_YRS,
+    terminal_growth: float = DDM_TERMINAL_GROWTH,
+) -> dict | None:
+    """
+    Hitung harga wajar saham dengan Two-Stage DDM.
+
+    Formula:
+      Fase 1 (tahun 1..N): PV = Σ [ DPS_t / (1+r)^t ]
+        di mana DPS_t = DPS_0 × (1+g1)^t
+      Fase 2 (terminal): TV = DPS_(N+1) / (r - g2)
+        PV_TV = TV / (1+r)^N
+      Intrinsic Value = PV_fase1 + PV_TV
+
+    Input:
+      arrays         : dict dari _build_hdy_arrays_from_liquid / _from_yfinance
+      curr_price     : harga saham saat ini
+      discount_rate  : r, dari input user (desimal, mis: 0.12)
+      high_growth_years : N, fase pertumbuhan tinggi (default 5)
+      terminal_growth   : g2 (default 5.5%)
+
+    Return dict atau None jika tidak bisa dihitung.
+    Alasan None: DPS_0 <= 0, r <= g2, atau data tidak tersedia.
+    """
+    dps_5y = arrays.get("dps_5y", [])
+    dps_valid = [v for v in dps_5y if v is not None and v > 0]
+
+    if not dps_valid:
+        return None
+
+    # DPS_0: DPS tahun terakhir yang valid
+    dps_0 = dps_valid[-1]
+
+    # g1: CAGR DPS historis dari array 5 tahun
+    g1 = 0.0
+    if len(dps_valid) >= 2:
+        n_periods = len(dps_valid) - 1
+        if dps_valid[0] > 0:
+            g1 = (dps_valid[-1] / dps_valid[0]) ** (1 / n_periods) - 1
+    # Cap g1: tidak boleh melebihi discount_rate - 0.02 (agar model tetap konvergen)
+    # dan tidak boleh lebih dari 30% (outlier)
+    g1 = min(g1, discount_rate - 0.02, 0.30)
+    g1 = max(g1, -0.10)  # floor -10% agar saham dengan tren dividen turun tetap bisa dihitung
+
+    # Validasi: r harus > g2
+    if discount_rate <= terminal_growth:
+        return {
+            "error": f"Discount rate ({discount_rate*100:.1f}%) harus lebih besar "
+                     f"dari terminal growth ({terminal_growth*100:.1f}%). "
+                     f"Naikkan discount rate.",
+            "intrinsic_value": None,
+        }
+
+    # ── Fase 1: PV dividen tahun 1..N ────────────────────────────────────────
+    pv_fase1   = 0.0
+    dps_fase1  = []
+    for t in range(1, high_growth_years + 1):
+        dps_t  = dps_0 * (1 + g1) ** t
+        pv_t   = dps_t / (1 + discount_rate) ** t
+        pv_fase1 += pv_t
+        dps_fase1.append(round(dps_t, 2))
+
+    # ── Fase 2: Terminal Value ────────────────────────────────────────────────
+    dps_terminal = dps_0 * (1 + g1) ** high_growth_years * (1 + terminal_growth)
+    tv           = dps_terminal / (discount_rate - terminal_growth)
+    pv_tv        = tv / (1 + discount_rate) ** high_growth_years
+
+    intrinsic    = pv_fase1 + pv_tv
+
+    # Margin of safety
+    mos_pct      = ((intrinsic - curr_price) / intrinsic * 100) if intrinsic > 0 else 0.0
+
+    # Label valuasi
+    if curr_price <= intrinsic * 0.80:
+        valuasi_label = "🟢 Undervalued (diskon ≥20%)"
+        valuasi_warna = "#00C853"
+    elif curr_price <= intrinsic * 1.00:
+        valuasi_label = "🟡 Fair Value (dalam rentang wajar)"
+        valuasi_warna = "#FFD600"
+    elif curr_price <= intrinsic * 1.20:
+        valuasi_label = "🟠 Sedikit Overvalued (premium <20%)"
+        valuasi_warna = "#FF9800"
+    else:
+        valuasi_label = "🔴 Overvalued (premium ≥20%)"
+        valuasi_warna = "#D50000"
+
+    return {
+        "error":           None,
+        "dps_0":           round(dps_0, 2),
+        "g1_pct":          round(g1 * 100, 2),
+        "g2_pct":          round(terminal_growth * 100, 2),
+        "r_pct":           round(discount_rate * 100, 2),
+        "dps_fase1":       dps_fase1,
+        "pv_fase1":        round(pv_fase1, 2),
+        "dps_terminal":    round(dps_terminal, 2),
+        "tv":              round(tv, 2),
+        "pv_tv":           round(pv_tv, 2),
+        "intrinsic_value": round(intrinsic, 2),
+        "curr_price":      curr_price,
+        "mos_pct":         round(mos_pct, 1),
+        "valuasi_label":   valuasi_label,
+        "valuasi_warna":   valuasi_warna,
+    }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # SCORING HDY — HARD KNOCKOUT
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -300,14 +414,12 @@ def _check_hard_knockout(arrays: dict, info: dict, sektor: str,
     sektor_upper = sektor.strip().title()
 
     if sektor_upper in SEKTOR_BANK:
-        # CAR < 8%
         car = None
         if liquid_df_row is not None:
             car = liquid_df_row.get("CAR")
         if car is not None and not (isinstance(car, float) and np.isnan(car)):
             if float(car) < CAR_MIN_BANK:
                 alasan.append(f"CAR {car:.1f}% di bawah minimum OJK 8%")
-        # NPL > 5%
         npl = None
         if liquid_df_row is not None:
             npl = liquid_df_row.get("NPL")
@@ -316,14 +428,12 @@ def _check_hard_knockout(arrays: dict, info: dict, sektor: str,
                 alasan.append(f"NPL {npl:.1f}% melampaui batas kritis 5%")
 
     elif sektor_upper in SEKTOR_INFRA:
-        # Debt/EBITDA > 5x
         de = arrays.get("debt_ebitda")
         if de is not None and not (isinstance(de, float) and np.isnan(de)):
             if float(de) > DEBT_EBITDA_MAX_INF:
                 alasan.append(f"Debt/EBITDA {de:.1f}x melampaui batas aman 5x")
 
     else:
-        # DER > 3.0 sektor umum
         der_raw = info.get("debtToEquity")
         if der_raw is not None:
             der = float(der_raw) / 100.0
@@ -409,28 +519,10 @@ def _score_dimensi_a(arrays: dict) -> tuple[int, dict]:
     total += poin_fcf
 
     # ── Indikator T1: FCF Payout Ratio · 5 poin ────────────────────────────
-    # Gunakan total dividen historis / FCF per tahun (alternatif kedua dari spec)
-    fcf_pr_ratios = []
-    for dps_val, fcf_val in zip(dps_5y, fcf_5y):
-        if (dps_val is not None and fcf_val is not None
-                and fcf_val > 0 and dps_val > 0):
-            # dps_val dalam rupiah per saham; gunakan sebagai proksi
-            # rasio relatif — FCF per saham tidak tersedia langsung,
-            # sehingga kita gunakan DPS/FCF_per_saham jika shares ada,
-            # atau skip jika tidak. Spec: pakai total dividen / FCF.
-            # Karena total_div = DPS * shares dan FCF sudah dalam rupiah total,
-            # rasio ini baru valid jika kita tahu shares.
-            # Pendekatan: simpan DPS/FCF sebagai proxy kardinalitas relatif;
-            # beri catatan di UI bahwa ini perkiraan.
-            fcf_pr_ratios.append(dps_val / fcf_val)   # proxy: DPS per rupiah FCF
-
-    # Normalisasi: jika median proxy < 0.006 → anggap ≤60%; dst.
-    # Karena skala tidak sama persis, gunakan PR_5Y sebagai basis jika tersedia
     pr_valid = [v for v in arrays["pr_5y"] if v is not None]
     if pr_valid and fcf_valid:
         pr_avg    = float(np.mean(pr_valid))
-        fcf_pr    = pr_avg   # gunakan PR_5Y × (EPS/FCF per saham) idealnya,
-        # tapi tanpa shares kita gunakan PR saja sebagai proxy FCF_PR
+        fcf_pr    = pr_avg
         poin_fcf_pr = (5 if fcf_pr <= 0.60 else 3 if fcf_pr <= 0.80 else 0)
     else:
         fcf_pr      = None
@@ -474,7 +566,6 @@ def _score_dimensi_b(arrays: dict, curr_dy: float | None) -> tuple[int, dict]:
     detail["poin_dy"]   = poin_dy
     total += poin_dy
 
-    # Yield Anomaly Warning
     anomali_yield = False
     if dy_avg is not None and curr_dy is not None and dy_avg > 0:
         if (curr_dy * 100) > 1.5 * dy_avg:
@@ -531,7 +622,6 @@ def _score_dimensi_c(arrays: dict, info: dict) -> tuple[int, dict]:
         if e_prev is not None and e_prev > 0 and e_curr is not None:
             eps_yoy = ((e_curr - e_prev) / abs(e_prev)) * 100
 
-    # Fallback ke yfinance earnings growth
     if eps_yoy is None:
         eg = info.get("earningsGrowth")
         if eg is not None:
@@ -556,7 +646,6 @@ def _score_dimensi_d(arrays: dict, info: dict,
     sektor_upper = sektor.strip().title()
 
     if sektor_upper in SEKTOR_BANK:
-        # CAR
         car = None
         if liquid_df_row is not None:
             car = liquid_df_row.get("CAR")
@@ -571,7 +660,6 @@ def _score_dimensi_d(arrays: dict, info: dict,
         detail["poin_car"] = poin_car
         total += poin_car
 
-        # NPL
         npl = None
         if liquid_df_row is not None:
             npl = liquid_df_row.get("NPL")
@@ -586,7 +674,6 @@ def _score_dimensi_d(arrays: dict, info: dict,
         total += poin_npl
 
     elif sektor_upper in SEKTOR_INFRA:
-        # Debt/EBITDA
         de = arrays.get("debt_ebitda")
         if de is None and liquid_df_row is not None:
             de = liquid_df_row.get("DebtEBITDA")
@@ -600,7 +687,6 @@ def _score_dimensi_d(arrays: dict, info: dict,
         detail["poin_de"]     = poin_de
         total += poin_de
 
-        # ICR
         icr = arrays.get("icr")
         if icr is None and liquid_df_row is not None:
             icr = liquid_df_row.get("ICR")
@@ -620,7 +706,6 @@ def _score_dimensi_d(arrays: dict, info: dict,
         total += poin_icr
 
     else:
-        # DER
         der_raw = info.get("debtToEquity")
         der     = (float(der_raw) / 100.0) if der_raw is not None else None
         if der is not None:
@@ -632,7 +717,6 @@ def _score_dimensi_d(arrays: dict, info: dict,
         detail["poin_der"] = poin_der
         total += poin_der
 
-        # ICR
         icr = arrays.get("icr")
         if icr is None and liquid_df_row is not None:
             icr = liquid_df_row.get("ICR")
@@ -661,10 +745,7 @@ def _score_dimensi_d(arrays: dict, info: dict,
 
 def _klasifikasi_gabungan(skor_hdy: int | None, konsistensi: int,
                           payout: float, knockout: bool) -> dict:
-    """
-    Klasifikasi gabungan yang menggabungkan track record konsistensi dan skor HDY.
-    Kembalikan dict: label, emoji, warna, rekomendasi.
-    """
+    """Klasifikasi gabungan track record konsistensi + skor HDY."""
     if knockout or skor_hdy is None:
         return {
             "label": "Tidak Layak", "emoji": "🚫",
@@ -727,7 +808,6 @@ def _hitung_forward_yield(arrays: dict, info: dict,
     eps_last = eps_valid[-1]
     pr_avg   = float(np.mean(pr_valid))
 
-    # AAGR
     aagr = 0.0
     if len(eps_valid) >= 2:
         growths = []
@@ -736,7 +816,6 @@ def _hitung_forward_yield(arrays: dict, info: dict,
                 growths.append((eps_valid[i] - eps_valid[i - 1]) / eps_valid[i - 1])
         aagr = float(np.mean(growths)) if growths else 0.0
 
-    # EPS YoY
     eps_yoy = 0.0
     if len(eps_valid) >= 2 and eps_valid[-2] > 0:
         eps_yoy = (eps_valid[-1] - eps_valid[-2]) / abs(eps_valid[-2])
@@ -776,6 +855,7 @@ def _generate_pdf(
     knockout_alasan: list[str],
     jumlah_lot: int, harga_beli: float,
     arrays: dict | None = None,
+    ddm: dict | None = None,
 ) -> bytes:
     """Generate laporan PDF lengkap analisa dividen."""
     pdf = FPDF()
@@ -860,10 +940,44 @@ def _generate_pdf(
         pdf.cell(0, 6, _safe_latin1(r), ln=True)
     pdf.ln(3)
 
-    # ── Bagian 2: Detail Skor HDY ────────────────────────────────────────────
-    if not knockout_alasan and skor_hdy is not None:
+    # ── Bagian DDM ────────────────────────────────────────────────────────────
+    if ddm and ddm.get("intrinsic_value") is not None:
         pdf.set_font("Arial", "B", 12)
-        pdf.cell(0, 7, "2. Detail Skor HDY", ln=True)
+        pdf.cell(0, 7, "2. Harga Wajar — Two-Stage DDM", ln=True)
+        pdf.set_font("Arial", "", 11)
+        pdf.cell(0, 6,
+                 _safe_latin1(f"  DPS Dasar: Rp {ddm['dps_0']:,.2f} | "
+                              f"g1 (historis): {ddm['g1_pct']:.1f}% | "
+                              f"g2 (terminal): {ddm['g2_pct']:.1f}% | "
+                              f"r: {ddm['r_pct']:.1f}%"),
+                 ln=True)
+        pdf.cell(0, 6,
+                 _safe_latin1(f"  PV Fase 1 ({DDM_HIGH_GROWTH_YRS} tahun): "
+                              f"Rp {ddm['pv_fase1']:,.2f}"),
+                 ln=True)
+        pdf.cell(0, 6,
+                 _safe_latin1(f"  PV Terminal Value: Rp {ddm['pv_tv']:,.2f}"),
+                 ln=True)
+        pdf.set_font("Arial", "B", 12)
+        pdf.cell(0, 7,
+                 _safe_latin1(f"  Harga Wajar: Rp {ddm['intrinsic_value']:,.2f} "
+                              f"| Harga Pasar: Rp {ddm['curr_price']:,.0f} "
+                              f"| MoS: {ddm['mos_pct']:.1f}%"),
+                 ln=True)
+        pdf.set_font("Arial", "", 10)
+        pdf.cell(0, 5, _safe_latin1(f"  Valuasi: {ddm['valuasi_label']}"), ln=True)
+        pdf.set_font("Arial", "I", 9)
+        pdf.cell(0, 5,
+                 _safe_latin1("  *DDM sangat sensitif terhadap asumsi g dan r. "
+                              "Gunakan sebagai referensi, bukan satu-satunya acuan."),
+                 ln=True)
+        pdf.ln(3)
+
+    # ── Bagian Skor HDY Detail ────────────────────────────────────────────────
+    if not knockout_alasan and skor_hdy is not None:
+        bagian_no = 3
+        pdf.set_font("Arial", "B", 12)
+        pdf.cell(0, 7, f"{bagian_no}. Detail Skor HDY", ln=True)
         pdf.set_font("Arial", "", 10)
 
         def _row(label, val, poin, maks):
@@ -923,7 +1037,7 @@ def _generate_pdf(
         # Forward Yield
         if forward:
             pdf.set_font("Arial", "B", 12)
-            pdf.cell(0, 7, "3. Proyeksi Forward Dividend Yield", ln=True)
+            pdf.cell(0, 7, f"{bagian_no + 1}. Proyeksi Forward Dividend Yield", ln=True)
             pdf.set_font("Arial", "", 11)
             pdf.cell(0, 6,
                      _safe_latin1(f"  EPS Forward: Rp {forward['eps_fwd']:,.2f}"),
@@ -942,29 +1056,25 @@ def _generate_pdf(
                      ln=True)
             pdf.ln(3)
 
-    # ── Proyeksi Pendapatan (jika ada input lot) ─────────────────────────────
+    # ── Proyeksi Pendapatan ──────────────────────────────────────────────────
     if jumlah_lot > 0:
-        n_bagian = 4 if (knockout_alasan or skor_hdy is None) else 4
         pdf.set_font("Arial", "B", 12)
-        pdf.cell(0, 7, f"{n_bagian}. Proyeksi Pendapatan Dividen", ln=True)
+        pdf.cell(0, 7, "Proyeksi Pendapatan Dividen", ln=True)
         pdf.set_font("Arial", "", 11)
         dps_terakhir = 0.0
-        # ambil dari DPS_5Y jika ada
         dps_arr = [v for v in (arrays or {}).get("dps_5y", []) if v is not None and v > 0]
         if dps_arr:
             dps_terakhir = dps_arr[-1]
         lembar        = jumlah_lot * 100
         est_div_tahun = dps_terakhir * lembar
         pdf.cell(0, 6,
-                 _safe_latin1(f"  Jumlah Lot: {jumlah_lot:,} lot "
-                              f"({lembar:,} lembar)"),
+                 _safe_latin1(f"  Jumlah Lot: {jumlah_lot:,} lot ({lembar:,} lembar)"),
                  ln=True)
         pdf.cell(0, 6,
                  _safe_latin1(f"  DPS Terakhir: Rp {dps_terakhir:,.2f}"),
                  ln=True)
         pdf.cell(0, 6,
-                 _safe_latin1(f"  Estimasi Dividen/Tahun: "
-                              f"Rp {est_div_tahun:,.0f}"),
+                 _safe_latin1(f"  Estimasi Dividen/Tahun: Rp {est_div_tahun:,.0f}"),
                  ln=True)
         if harga_beli > 0 and dps_terakhir > 0:
             yoc = dps_terakhir / harga_beli * 100
@@ -1015,7 +1125,7 @@ def run_dividen():
                 unsafe_allow_html=True)
     st.markdown("---")
 
-    # ── Input — di halaman utama, bukan sidebar ───────────────────────────────
+    # ── Input ─────────────────────────────────────────────────────────────────
     col_inp1, col_inp2, col_inp3 = st.columns([2, 2, 2])
     with col_inp1:
         ticker_input = st.text_input("Kode Saham (contoh: BBCA):", value="BBCA").upper()
@@ -1029,6 +1139,33 @@ def run_dividen():
             "Harga Beli Rata-rata (opsional, Rp):",
             min_value=0.0, value=0.0, step=100.0, format="%.0f",
         )
+
+    # ── Input DDM — discount rate ─────────────────────────────────────────────
+    with st.expander("⚙️ Pengaturan Discount Rate (Two-Stage DDM)", expanded=False):
+        st.caption(
+            "Discount rate adalah tingkat imbal hasil minimum yang Anda harapkan "
+            "dari investasi ini. Untuk saham IDX, umumnya 10–15%. "
+            "Angka lebih tinggi → harga wajar lebih rendah (lebih konservatif)."
+        )
+        col_dr1, col_dr2 = st.columns(2)
+        with col_dr1:
+            discount_rate_pct = st.number_input(
+                "Discount Rate / Required Return (%)",
+                min_value=6.0, max_value=30.0,
+                value=float(DDM_DISCOUNT_DEFAULT * 100),
+                step=0.5, format="%.1f",
+            )
+        with col_dr2:
+            terminal_growth_pct = st.number_input(
+                "Terminal Growth Rate (%)",
+                min_value=1.0, max_value=10.0,
+                value=float(DDM_TERMINAL_GROWTH * 100),
+                step=0.5, format="%.1f",
+                help="Pertumbuhan dividen jangka panjang setelah fase tinggi. "
+                     "Default 5.5% ≈ inflasi jangka panjang Indonesia.",
+            )
+        discount_rate   = discount_rate_pct / 100.0
+        terminal_growth = terminal_growth_pct / 100.0
 
     jalankan = st.button(
         "🔍 Jalankan Analisa Dividen",
@@ -1045,7 +1182,8 @@ def run_dividen():
 
     # ── Fetch data ────────────────────────────────────────────────────────────
     with st.spinner(f"Mengambil data untuk {ticker_jk}..."):
-        liquid_df  = get_liquid_stocks()
+        # FIX: gunakan get_liquid_dividend_stocks() untuk universe dividen
+        liquid_df  = get_liquid_dividend_stocks()
         is_liquid  = is_ticker_liquid(ticker_bersih, liquid_df)
         ticker_row = get_ticker_row(ticker_bersih, liquid_df)
 
@@ -1072,13 +1210,10 @@ def run_dividen():
         st.warning("⚠️ Data tidak tersedia untuk ticker ini. Coba ticker lain.")
         st.stop()
 
-    # ── Harga sekarang ────────────────────────────────────────────────────────
     curr_price = float(info.get("currentPrice") or history["Close"].iloc[-1] or 0)
 
     if divs is None or len(divs) == 0:
         st.error("❌ Data dividen tidak ditemukan atau emiten tidak pernah membagi dividen.")
-
-        # Klasifikasi No Dividend tetap ditampilkan
         kls = _klasifikasi_gabungan(None, 0, 0.0, False)
         st.markdown(
             f'<div style="padding:12px;background:#1E1E1E;border-radius:8px;'
@@ -1089,12 +1224,10 @@ def run_dividen():
         )
         return
 
-    # ── Metrik fundamental dasar ──────────────────────────────────────────────
     yield_val    = float(info.get("dividendYield") or 0) * 100
     payout       = float(info.get("payoutRatio")   or 0) * 100
     company_name = info.get("longName") or ticker_bersih
 
-    # ── Histori dividen ───────────────────────────────────────────────────────
     df_div       = divs.to_frame(name="Dividends")
     df_div.index = pd.to_datetime(df_div.index).tz_localize(None)
     df_div["year"] = df_div.index.year
@@ -1107,9 +1240,8 @@ def run_dividen():
     dy_avg3     = _hitung_dy_avg(divs, history, n_tahun=3)
     dy_avg5     = _hitung_dy_avg(divs, history, n_tahun=5)
 
-    # CAGR DPS 5 tahun
-    last5   = df_div_annual.tail(5)
-    cagr    = 0.0
+    last5 = df_div_annual.tail(5)
+    cagr  = 0.0
     if len(last5) >= 2:
         awal  = last5["DPS"].iloc[0]
         akhir = last5["DPS"].iloc[-1]
@@ -1117,7 +1249,6 @@ def run_dividen():
         if awal > 0:
             cagr = (akhir / awal) ** (1 / n) - 1
 
-    # Ex-dividend date berikutnya
     ex_date = info.get("exDividendDate")
     if ex_date:
         try:
@@ -1152,6 +1283,14 @@ def run_dividen():
         dim_d, detail_d = _score_dimensi_d(arrays, info, sektor, liquid_df_row)
         skor_hdy        = min(100, max(0, dim_a + dim_b + dim_c + dim_d))
         forward         = _hitung_forward_yield(arrays, info, curr_price)
+
+    # ── Two-Stage DDM ─────────────────────────────────────────────────────────
+    ddm = _hitung_two_stage_ddm(
+        arrays         = arrays,
+        curr_price     = curr_price,
+        discount_rate  = discount_rate,
+        terminal_growth= terminal_growth,
+    )
 
     # ── Klasifikasi gabungan ──────────────────────────────────────────────────
     klasifikasi = _klasifikasi_gabungan(
@@ -1200,7 +1339,6 @@ def run_dividen():
     # ═══════════════════════════════════════════════════════════════════════════
     st.header("1. Riwayat & Metrik Dividen")
 
-    # Bar chart DPS tahunan
     fig_bar = go.Figure(go.Bar(
         x=df_div_annual["Tahun"].astype(str),
         y=df_div_annual["DPS"],
@@ -1216,7 +1354,6 @@ def run_dividen():
     )
     st.plotly_chart(fig_bar, use_container_width=True)
 
-    # Tabel riwayat dividen tahunan
     tabel_div = df_div_annual.copy()
     tabel_div["Yield Saat Itu"] = tabel_div.apply(
         lambda r: f"{r['DPS'] / float(history[history.index.year == r['Tahun']]['Close'].iloc[-1]) * 100:.2f}%"
@@ -1230,7 +1367,6 @@ def run_dividen():
         use_container_width=True, hide_index=True,
     )
 
-    # Metrik utama
     c1, c2, c3 = st.columns(3)
     c1.metric("Dividend Yield", f"{yield_val:.2f}%")
     c2.metric("Rata-rata Yield 3 Tahun",
@@ -1243,7 +1379,6 @@ def run_dividen():
     c5.metric("CAGR DPS 5 Tahun", f"{cagr * 100:.1f}%")
     c6.metric("Konsistensi Berturut-turut", f"{konsistensi} tahun")
 
-    # Peringatan otomatis
     if payout > 90:
         st.warning("⚠️ Payout Ratio > 90% — dividen berpotensi tidak berkelanjutan.")
     if yield_val > 15:
@@ -1252,7 +1387,6 @@ def run_dividen():
     if 0 < yield_val < 10:
         st.info("ℹ️ Yield < 10% — belum memenuhi target dividend investing aplikasi ini.")
 
-    # Proyeksi pendapatan dividen
     if jumlah_lot > 0:
         st.subheader("📊 Proyeksi Pendapatan Dividen")
         dps_arr     = [v for v in arrays.get("dps_5y", []) if v is not None and v > 0]
@@ -1270,7 +1404,161 @@ def run_dividen():
                        help=f"DPS / harga beli rata-rata Rp {harga_beli:,.0f}")
 
     # ═══════════════════════════════════════════════════════════════════════════
-    # UI — BAGIAN 2: SKOR KELAYAKAN HDY
+    # UI — BAGIAN 2: TWO-STAGE DDM
+    # ═══════════════════════════════════════════════════════════════════════════
+    st.header("2. Harga Wajar — Two-Stage DDM")
+
+    if ddm is None:
+        st.warning(
+            "⚠️ DDM tidak dapat dihitung: data DPS historis tidak tersedia atau "
+            "semua nilai DPS nol/negatif."
+        )
+    elif ddm.get("error"):
+        st.error(f"❌ {ddm['error']}")
+    else:
+        iv   = ddm["intrinsic_value"]
+        warna_ddm = ddm["valuasi_warna"]
+
+        # Kartu harga wajar
+        mos_sign = "+" if ddm["mos_pct"] >= 0 else ""
+        st.markdown(f"""
+            <div style="padding:20px;background:#1E1E1E;border-radius:10px;
+                        border:2px solid {warna_ddm};margin-bottom:16px;">
+                <div style="display:flex;justify-content:space-around;
+                            flex-wrap:wrap;gap:12px;text-align:center;">
+                    <div>
+                        <p style="color:#A0A0A0;margin:0;font-size:0.85em;">Harga Wajar DDM</p>
+                        <p style="color:{warna_ddm};font-size:1.8em;
+                                  font-weight:bold;margin:4px 0;">
+                            Rp {iv:,.0f}
+                        </p>
+                    </div>
+                    <div>
+                        <p style="color:#A0A0A0;margin:0;font-size:0.85em;">Harga Pasar</p>
+                        <p style="color:white;font-size:1.8em;
+                                  font-weight:bold;margin:4px 0;">
+                            Rp {curr_price:,.0f}
+                        </p>
+                    </div>
+                    <div>
+                        <p style="color:#A0A0A0;margin:0;font-size:0.85em;">
+                            Margin of Safety
+                        </p>
+                        <p style="color:{warna_ddm};font-size:1.8em;
+                                  font-weight:bold;margin:4px 0;">
+                            {mos_sign}{ddm['mos_pct']:.1f}%
+                        </p>
+                    </div>
+                </div>
+                <div style="text-align:center;margin-top:12px;">
+                    <span style="background:{warna_ddm};
+                                 color:{'#000' if warna_ddm == '#FFD600' else '#fff'};
+                                 padding:5px 18px;border-radius:20px;font-weight:bold;">
+                        {ddm['valuasi_label']}
+                    </span>
+                </div>
+            </div>
+        """, unsafe_allow_html=True)
+
+        # Asumsi & rincian perhitungan
+        with st.expander("📐 Rincian Asumsi & Perhitungan DDM", expanded=False):
+            col_a, col_b = st.columns(2)
+            with col_a:
+                st.markdown("**Asumsi Model**")
+                st.markdown(f"""
+                | Parameter | Nilai |
+                |-----------|-------|
+                | DPS Dasar (DPS₀) | Rp {ddm['dps_0']:,.2f} |
+                | g1 — Pertumbuhan Fase 1 (historis, capped) | {ddm['g1_pct']:.2f}% |
+                | g2 — Terminal Growth | {ddm['g2_pct']:.1f}% |
+                | r — Discount Rate | {ddm['r_pct']:.1f}% |
+                | Durasi Fase Tinggi | {DDM_HIGH_GROWTH_YRS} tahun |
+                """)
+            with col_b:
+                st.markdown("**Komponen Nilai**")
+                st.markdown(f"""
+                | Komponen | Nilai |
+                |----------|-------|
+                | PV Dividen Fase 1 | Rp {ddm['pv_fase1']:,.2f} |
+                | DPS Terminal (tahun ke-{DDM_HIGH_GROWTH_YRS + 1}) | Rp {ddm['dps_terminal']:,.2f} |
+                | Terminal Value (TV) | Rp {ddm['tv']:,.2f} |
+                | PV Terminal Value | Rp {ddm['pv_tv']:,.2f} |
+                | **Intrinsic Value** | **Rp {iv:,.2f}** |
+                """)
+
+            # Tabel DPS proyeksi fase 1
+            st.markdown("**Proyeksi DPS Fase 1**")
+            tbl_dps = pd.DataFrame({
+                "Tahun ke-": list(range(1, DDM_HIGH_GROWTH_YRS + 1)),
+                "DPS Proyeksi (Rp)": [f"{v:,.2f}" for v in ddm["dps_fase1"]],
+            })
+            st.dataframe(tbl_dps, use_container_width=True, hide_index=True)
+
+        # Waterfall chart PV Fase1 vs PV Terminal
+        fig_ddm = go.Figure(go.Bar(
+            x=["PV Dividen Fase 1", f"PV Terminal Value\n(tahun {DDM_HIGH_GROWTH_YRS + 1}+)",
+               "Harga Wajar Total"],
+            y=[ddm["pv_fase1"], ddm["pv_tv"], iv],
+            marker_color=["#3498db", "#9b59b6", warna_ddm],
+            text=[f"Rp {ddm['pv_fase1']:,.0f}", f"Rp {ddm['pv_tv']:,.0f}",
+                  f"Rp {iv:,.0f}"],
+            textposition="outside",
+        ))
+        fig_ddm.add_hline(
+            y=curr_price, line_dash="dash", line_color="#FF9800",
+            annotation_text=f"Harga Pasar: Rp {curr_price:,.0f}",
+            annotation_position="top right",
+        )
+        fig_ddm.update_layout(
+            title="Komposisi Harga Wajar (Two-Stage DDM)",
+            yaxis_title="Nilai (Rp)",
+            plot_bgcolor="#0E1117", paper_bgcolor="#0E1117",
+            font_color="white", height=360,
+            showlegend=False,
+        )
+        st.plotly_chart(fig_ddm, use_container_width=True)
+
+        # Sensitivitas: tabel harga wajar vs berbagai kombinasi r dan g1
+        with st.expander("📊 Tabel Sensitivitas DDM", expanded=False):
+            st.caption(
+                "Harga wajar pada berbagai kombinasi discount rate (r) dan "
+                "terminal growth (g2). Sel hijau = harga pasar di bawah harga wajar (undervalued)."
+            )
+            r_range  = [discount_rate - 0.02, discount_rate - 0.01,
+                        discount_rate, discount_rate + 0.01, discount_rate + 0.02]
+            g2_range = [terminal_growth - 0.01, terminal_growth,
+                        terminal_growth + 0.01, terminal_growth + 0.005]
+            g2_range = [max(0.01, g) for g in g2_range]
+
+            rows_sens = []
+            for r_s in r_range:
+                row_s = {"r \\ g2": f"{r_s*100:.1f}%"}
+                for g2_s in g2_range:
+                    if r_s <= g2_s:
+                        row_s[f"g2={g2_s*100:.1f}%"] = "n/a"
+                        continue
+                    res_s = _hitung_two_stage_ddm(
+                        arrays, curr_price, r_s, DDM_HIGH_GROWTH_YRS, g2_s
+                    )
+                    if res_s and res_s.get("intrinsic_value"):
+                        iv_s = res_s["intrinsic_value"]
+                        row_s[f"g2={g2_s*100:.1f}%"] = f"Rp {iv_s:,.0f}"
+                    else:
+                        row_s[f"g2={g2_s*100:.1f}%"] = "n/a"
+                rows_sens.append(row_s)
+
+            df_sens = pd.DataFrame(rows_sens).set_index("r \\ g2")
+            st.dataframe(df_sens, use_container_width=True)
+
+        st.caption(
+            "⚠️ **Catatan:** DDM mengasumsikan dividen tumbuh secara konstan dan "
+            "perusahaan hidup selamanya. Model ini **sangat sensitif** terhadap "
+            "asumsi g dan r — selisih 1% bisa mengubah harga wajar secara signifikan. "
+            "Gunakan sebagai salah satu referensi, bukan satu-satunya acuan valuasi."
+        )
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # UI — BAGIAN 3: SKOR KELAYAKAN HDY
     # ═══════════════════════════════════════════════════════════════════════════
     with st.expander("📊 Skor Kelayakan High Dividend Yield (HDY)", expanded=True):
 
@@ -1287,7 +1575,6 @@ def run_dividen():
                 st.markdown(f"- {al}")
             st.stop()
 
-        # ── Progress bar skor ──────────────────────────────────────────────
         warna_skor = ("#00C853" if skor_hdy >= 80
                       else "#FFD600" if skor_hdy >= 65
                       else "#FF9800" if skor_hdy >= 50
@@ -1305,7 +1592,6 @@ def run_dividen():
             </div>
         """, unsafe_allow_html=True)
 
-        # Label kelayakan
         label_map = {
             (80, 101): ("⭐ Prima", "Layak koleksi penuh"),
             (65,  80): ("✅ Layak", "Layak koleksi dengan monitoring rutin"),
@@ -1323,7 +1609,6 @@ def run_dividen():
                 )
                 break
 
-        # ── Detail per dimensi ─────────────────────────────────────────────
         st.markdown("---")
         tab_a, tab_b, tab_c, tab_d = st.tabs([
             f"A: Earnings & FCF ({dim_a}/45)",
@@ -1444,7 +1729,6 @@ def run_dividen():
                     "Dimensi D dihitung dengan data yang ada saja."
                 )
 
-        # ── Forward Yield Projection ───────────────────────────────────────
         st.markdown("---")
         st.subheader("📈 Estimasi Forward Dividend Yield")
         if forward:
@@ -1490,6 +1774,7 @@ def run_dividen():
                 jumlah_lot=int(jumlah_lot),
                 harga_beli=float(harga_beli),
                 arrays=arrays,
+                ddm=ddm,
             )
         st.download_button(
             label="⬇️ Download PDF",
