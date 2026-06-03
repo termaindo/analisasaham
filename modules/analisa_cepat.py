@@ -297,8 +297,7 @@ def run_analisa_cepat():
 
         if not is_liquid:
             st.info(
-                "ℹ️ Ticker ini tidak ada dalam daftar saham pilihan. "
-                "Analisa menggunakan data langsung dari yfinance."
+                "ℹ️ Analisa untuk Saham ini menggunakan data langsung dari yfinance."
             )
             try:
                 df_pre     = pd.read_csv(PRE_LIQUID_PATH)
