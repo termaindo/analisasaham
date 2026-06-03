@@ -1188,8 +1188,7 @@ def run_dividen():
         ticker_row = get_ticker_row(ticker_bersih, liquid_df)
 
         if not is_liquid:
-            st.info("ℹ️ Ticker tidak ada dalam daftar saham pilihan. "
-                    "Analisa menggunakan data langsung dari yfinance.")
+            st.info("ℹ️ Analisa untuk Saham ini menggunakan data langsung dari yfinance.")
             try:
                 df_pre     = pd.read_csv(PRE_LIQUID_PATH)
                 ticker_row = get_ticker_row(ticker_bersih, df_pre)
