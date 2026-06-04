@@ -29,6 +29,15 @@ from utils.data_loader import (
     enrich_and_filter,
 )
 
+# Import lazy — hindari circular import karena screening.py juga import data_loader
+def _clear_universe_cache() -> None:
+    """Clear cache load_universe() di screening.py secara lazy."""
+    try:
+        from modules.screening import clear_load_universe_cache
+        clear_load_universe_cache()
+    except Exception:
+        pass  # Modul belum dimuat — tidak masalah, cache belum ada
+
 # Konfigurasi per profil
 _PROFIL_CONFIG = {
     "trading": {
