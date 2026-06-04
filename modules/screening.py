@@ -122,6 +122,11 @@ def load_universe() -> tuple[list[str], pd.DataFrame]:
     pre_liquid_stocks.csv (fallback).
     Return: (saham_list, df_universe)
     """
+
+  def clear_load_universe_cache() -> None:
+    """Clear cache load_universe() — dipanggil dari admin panel setelah upload file baru."""
+    load_universe.clear()
+    
     df_liquid = get_liquid_stocks()
     if not df_liquid.empty:
         df = _normalize_universe_columns(df_liquid)
