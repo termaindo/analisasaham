@@ -383,7 +383,7 @@ def show_dashboard():
         if st.button("💰 Analisa Dividen Pro", use_container_width=True):
             st.session_state.current_menu = "dividen"; st.rerun()
 
-    c7 = st.columns(2)
+    c7 = st.columns(1)
     with c7:
         if st.button("⚖️ Perbandingan Saham Pro", use_container_width=True):
             st.session_state.current_menu = "perbandingan"; st.rerun()
@@ -424,7 +424,7 @@ def main_app():
     elif m == "analisa_cepat":load_and_run_module("analisa_cepat","run_analisa_cepat")
     elif m == "teknikal":     load_and_run_module("teknikal",     "run_teknikal")
     elif m == "fundamental":  load_and_run_module("fundamental",  "run_fundamental")
-    elif m == "screening_hdy":      load_and_run_module("dividen",      "run_screening_hdy")        
+    elif m == "screening_hdy":      load_and_run_module("screening_hdy",      "run_screening_hdy")        
     elif m == "dividen":      load_and_run_module("dividen",      "run_dividen")
     elif m == "perbandingan": load_and_run_module("perbandingan", "run_perbandingan")
     else:
