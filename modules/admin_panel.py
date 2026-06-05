@@ -29,14 +29,24 @@ from utils.data_loader import (
     enrich_and_filter,
 )
 
-# Import lazy — hindari circular import karena screening.py juga import data_loader
+
 def _clear_universe_cache() -> None:
-    """Clear cache load_universe() di screening.py secara lazy."""
+    """
+    Clear cache load_universe() di screening.py secara lazy import.
+    Dipanggil bersamaan dengan clear_liquid_stocks_cache() saat admin menekan
+    tombol 'Clear cache' profil Trading — agar kedua layer cache terhapus sekaligus
+    dan screening langsung membaca universe terbaru dari liquid_stocks.csv.
+
+    Lazy import digunakan untuk menghindari circular import karena screening.py
+    juga mengimport dari utils.data_loader.
+    """
     try:
         from modules.screening import clear_load_universe_cache
         clear_load_universe_cache()
     except Exception:
-        pass  # Modul belum dimuat — tidak masalah, cache belum ada
+        # Modul belum pernah diimport dalam sesi ini — cache-nya belum ada,
+        # tidak perlu di-clear.
+        pass
 
 # Konfigurasi per profil
 _PROFIL_CONFIG = {
@@ -192,13 +202,34 @@ def _render_enrichment_panel(profil: str, df_pre: pd.DataFrame) -> None:
         if os.path.exists(cfg["liquid_path"]):
             mtime = os.path.getmtime(cfg["liquid_path"])
             tgl   = datetime.datetime.fromtimestamp(mtime).strftime("%d %b %Y %H:%M")
-            st.success(f"✅ `{cfg['file_name']}` ditemukan — terakhir diupdate: {tgl}")
+
+            # Diagnostik jumlah ticker di file aktif
+            try:
+                df_cek   = pd.read_csv(cfg["liquid_path"], sep=None, engine="python")
+                n_ticker = len(df_cek)
+                st.success(
+                    f"✅ `{cfg['file_name']}` ditemukan — "
+                    f"terakhir diupdate: {tgl} — "
+                    f"**{n_ticker} ticker**"
+                )
+            except Exception:
+                st.success(f"✅ `{cfg['file_name']}` ditemukan — terakhir diupdate: {tgl}")
+
             if st.button(
                 "🔄 Clear cache (paksa baca ulang file terbaru)",
                 key=f"clear_cache_{profil}",
             ):
                 cfg["clear_cache"]()
-                st.success("Cache dikosongkan. Data terbaru akan dimuat pada request berikutnya.")
+                if profil == "trading":
+                    # Clear juga cache load_universe() di screening.py agar
+                    # universe langsung diperbarui tanpa menunggu TTL 24 jam.
+                    _clear_universe_cache()
+                    st.success(
+                        "✅ Cache `get_liquid_stocks` dan `load_universe` dikosongkan. "
+                        "Screening akan membaca universe terbaru pada request berikutnya."
+                    )
+                else:
+                    st.success("✅ Cache dikosongkan. Data terbaru akan dimuat pada request berikutnya.")
         else:
             st.warning(
                 f"⚠️ `{cfg['file_name']}` belum ada di folder `/data`. "
