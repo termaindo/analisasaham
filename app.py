@@ -222,8 +222,8 @@ def login_page():
         ### 🧐 Mengapa Expert Stock Pro?
         Banyak trader rugi karena **telat entry** atau **salah pilih emiten** akibat data yang berantakan. Kami menyatukan semuanya untuk Anda:
 
-        * ✅ **6 Modul Analisa Premium:** Dari Teknikal Pro hingga Kalkulator Dividen.
-        * ✅ **Screening Otomatis:** Temukan saham *undervalued* dalam hitungan detik.
+        * ✅ **7 Modul Analisa Premium:** Dari Teknikal Pro hingga Kalkulator Dividen.
+        * ✅ **Screening Otomatis:** Temukan saham untuk *Trading* dan saham *High Dividend Yield* dalam hitungan detik.
         * ✅ **Risk Management:** Fitur Stop Loss & Target Price otomatis di setiap analisa.
         * ✅ **Data Real-Time:** Akses langsung ke data pasar Bursa Efek Indonesia.
         * ✅ **Laporan PDF:** Hasil analisa bisa didownload dalam bentuk PDF.
@@ -377,12 +377,17 @@ def show_dashboard():
 
     c5, c6 = st.columns(2)
     with c5:
+        if st.button("💰 Screening Saham Dividen Pro", use_container_width=True):
+            st.session_state.current_menu = "screening_py"; st.rerun()
+    with c6:    
         if st.button("💰 Analisa Dividen Pro", use_container_width=True):
             st.session_state.current_menu = "dividen"; st.rerun()
-    with c6:
+
+    c7 = st.columns(2)
+    with c7:
         if st.button("⚖️ Perbandingan Saham Pro", use_container_width=True):
             st.session_state.current_menu = "perbandingan"; st.rerun()
-
+    
     st.markdown("---")
     if st.button("Keluar / Logout"):
         for key in ('logged_in', 'user_name', 'user_wa', 'is_trial',
