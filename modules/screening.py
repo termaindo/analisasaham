@@ -115,6 +115,11 @@ _TZ_WIB = pytz.timezone("Asia/Jakarta")
 # LOAD UNIVERSE
 # -----------------------------------------------------------------------------
 
+# Threshold filter universe trading — harus konsisten dengan admin_panel.py profil "trading"
+_TRADING_MIN_VALUE_MA20 = 2_000_000_000
+_TRADING_MIN_ROE        = 10.0
+
+
 @st.cache_data(ttl=60 * 60 * 24, show_spinner=False)
 def load_universe() -> tuple[list[str], pd.DataFrame]:
     """
@@ -122,7 +127,6 @@ def load_universe() -> tuple[list[str], pd.DataFrame]:
     pre_liquid_stocks.csv (fallback).
     Return: (saham_list, df_universe)
     """
-
     df_liquid = get_liquid_stocks()
     if not df_liquid.empty:
         df = _normalize_universe_columns(df_liquid)
@@ -132,8 +136,6 @@ def load_universe() -> tuple[list[str], pd.DataFrame]:
         # dividen yang lolos threshold lebih rendah tidak masuk antrian API call.
         # Filter hanya aktif jika kolom tersedia — agar tidak crash saat
         # liquid_stocks.csv belum di-enrich ulang.
-        _TRADING_MIN_VALUE_MA20 = 2_000_000_000
-        _TRADING_MIN_ROE        = 10.0
         if "Value_MA20" in df.columns:
             df = df[
                 df["Value_MA20"].notna() &
@@ -170,6 +172,16 @@ def load_universe() -> tuple[list[str], pd.DataFrame]:
     except Exception as e:
         st.error(f"Gagal membaca universe saham: {e}")
         return [], pd.DataFrame()
+
+
+def clear_load_universe_cache() -> None:
+    """
+    Clear cache load_universe().
+    Dipanggil dari admin_panel.py setelah admin upload liquid_stocks.csv baru ke GitHub
+    dan menekan tombol 'Clear cache' — agar screening langsung membaca file terbaru
+    tanpa harus menunggu TTL 24 jam habis.
+    """
+    load_universe.clear()
 
 
 def _normalize_universe_columns(df: pd.DataFrame) -> pd.DataFrame:
