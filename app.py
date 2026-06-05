@@ -356,37 +356,39 @@ def show_dashboard():
     st.write("Silakan pilih menu analisa:")
     st.markdown("---")
 
+    # Baris 1 — menu 1 & 2
     c1, c2 = st.columns(2)
     with c1:
         if st.button("🔍 Screening Saham Harian Pro", use_container_width=True):
             st.session_state.current_menu = "screening"; st.rerun()
     with c2:
+        if st.button("💹 Screening Saham Dividen Pro", use_container_width=True):
+            st.session_state.current_menu = "screening_hdy"; st.rerun()
+
+    # Baris 2 — menu 3 & 4
+    c3, c4 = st.columns(2)
+    with c3:
         if check_module_exists("analisa_cepat"):
             if st.button("⚡ Analisa Cepat Pro", use_container_width=True):
                 st.session_state.current_menu = "analisa_cepat"; st.rerun()
         else:
             st.button("⚡ Analisa Cepat (Belum Tersedia)", use_container_width=True, disabled=True)
-
-    c3, c4 = st.columns(2)
-    with c3:
+    with c4:
         if st.button("📈 Analisa Teknikal Pro", use_container_width=True):
             st.session_state.current_menu = "teknikal"; st.rerun()
-    with c4:
-        if st.button("📊 Analisa Fundamental Pro", use_container_width=True):
-            st.session_state.current_menu = "fundamental"; st.rerun()
 
+    # Baris 3 — menu 5 & 6
     c5, c6 = st.columns(2)
     with c5:
-        if st.button("💰 Screening Saham Dividen Pro", use_container_width=True):
-            st.session_state.current_menu = "screening_py"; st.rerun()
-    with c6:    
+        if st.button("📊 Analisa Fundamental Pro", use_container_width=True):
+            st.session_state.current_menu = "fundamental"; st.rerun()
+    with c6:
         if st.button("💰 Analisa Dividen Pro", use_container_width=True):
             st.session_state.current_menu = "dividen"; st.rerun()
 
-    c7 = st.columns(1)
-    with c7:
-        if st.button("⚖️ Perbandingan Saham Pro", use_container_width=True):
-            st.session_state.current_menu = "perbandingan"; st.rerun()
+    # Baris 4 — menu 7 (satu kolom penuh)
+    if st.button("⚖️ Perbandingan Saham Pro", use_container_width=True):
+        st.session_state.current_menu = "perbandingan"; st.rerun()
     
     st.markdown("---")
     if st.button("Keluar / Logout"):
@@ -420,13 +422,13 @@ def main_app():
     m = st.session_state.current_menu
 
     # ── PENTING: nama modul tanpa ekstensi .py ──
-    if   m == "screening":   load_and_run_module("screening",    "run_screening")
-    elif m == "analisa_cepat":load_and_run_module("analisa_cepat","run_analisa_cepat")
-    elif m == "teknikal":     load_and_run_module("teknikal",     "run_teknikal")
-    elif m == "fundamental":  load_and_run_module("fundamental",  "run_fundamental")
-    elif m == "screening_hdy":      load_and_run_module("screening_hdy",      "run_screening_hdy")        
-    elif m == "dividen":      load_and_run_module("dividen",      "run_dividen")
-    elif m == "perbandingan": load_and_run_module("perbandingan", "run_perbandingan")
+    if   m == "screening":     load_and_run_module("screening",     "run_screening")
+    elif m == "screening_hdy": load_and_run_module("screening_hdy", "run_screening_hdy")
+    elif m == "analisa_cepat": load_and_run_module("analisa_cepat", "run_analisa_cepat")
+    elif m == "teknikal":      load_and_run_module("teknikal",      "run_teknikal")
+    elif m == "fundamental":   load_and_run_module("fundamental",   "run_fundamental")
+    elif m == "dividen":       load_and_run_module("dividen",       "run_dividen")
+    elif m == "perbandingan":  load_and_run_module("perbandingan",  "run_perbandingan")
     else:
         st.error(f"⚠️ Menu `{m}` tidak dikenal.")
         st.session_state.current_menu = "Beranda"
