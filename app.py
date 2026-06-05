@@ -424,6 +424,7 @@ def main_app():
     elif m == "analisa_cepat":load_and_run_module("analisa_cepat","run_analisa_cepat")
     elif m == "teknikal":     load_and_run_module("teknikal",     "run_teknikal")
     elif m == "fundamental":  load_and_run_module("fundamental",  "run_fundamental")
+    elif m == "screening_hdy":      load_and_run_module("dividen",      "run_screening_hdy")        
     elif m == "dividen":      load_and_run_module("dividen",      "run_dividen")
     elif m == "perbandingan": load_and_run_module("perbandingan", "run_perbandingan")
     else:
