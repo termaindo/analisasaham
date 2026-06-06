@@ -1246,13 +1246,14 @@ def run_screening_hdy() -> None:
                 f"<span style='color:#E0E0E0;font-size:0.95em;'>{exdate['ex_date_str']}</span>"
                 f"</div>",
                 unsafe_allow_html=True,
-            )
             if exdate["status"] in ("menjelang", "hari_ini", "baru_lewat"):
-                st.markdown(
-                    f"<div style='font-size:0.75em;color:{exdate[\"warna\"]};margin-top:4px;'>"
-                    f"{exdate['pesan']}</div>",
-                    unsafe_allow_html=True,
-                )
+                _exdate_warna = exdate["warna"]
+                _exdate_pesan = exdate["pesan"]
+            st.markdown(
+                f"<div style='font-size:0.75em;color:{_exdate_warna};margin-top:4px;'>"
+                f"{_exdate_pesan}</div>",
+                unsafe_allow_html=True,
+    )
 
             # Dim breakdown mini
             st.markdown(
