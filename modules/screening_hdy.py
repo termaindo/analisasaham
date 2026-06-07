@@ -1067,8 +1067,7 @@ def run_screening_hdy() -> None:
         ⭐ Prima (≥80) | ✅ Layak (65-79) | ⚠️ Perhatikan (50-64) | ❌ Tidak Layak (<50)
 
         **Ex-Date Warning:**
-        Beli saham *sebelum* cum-date (1 hari bursa sebelum ex-date) untuk mendapat dividen, tapi beresiko
-        harga sudah lebih mahal dari seharusnya.
+        Beli saham *sebelum* cum-date (1 hari bursa sebelum ex-date) untuk mendapat dividen.
         Harga sering terkoreksi setelah ex-date — ini bukan sinyal jual otomatis, tapi perlu diantisipasi.
         """)
 
@@ -1254,7 +1253,7 @@ def run_screening_hdy() -> None:
                     f"{exdate['pesan']}</div>",
                     unsafe_allow_html=True,
                 )
-          
+
             # Dim breakdown mini
             st.markdown(
                 f"<div style='font-size:0.75em;color:#607D8B;margin-top:6px;'>"
