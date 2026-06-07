@@ -1175,8 +1175,14 @@ def run_dividen():
         discount_rate   = discount_rate_pct / 100.0
         terminal_growth = terminal_growth_pct / 100.0
 
+    ticker_bersih_preview = ticker_input.strip().upper().replace(".JK", "")
+    label_tombol = (
+        f"🔍 Jalankan Analisa Dividen {ticker_bersih_preview}"
+        if ticker_bersih_preview
+        else "🔍 Jalankan Analisa Dividen"
+    )
     jalankan = st.button(
-        "🔍 Jalankan Analisa Dividen",
+        label_tombol,
         use_container_width=True,
     )
     st.markdown("---")
@@ -1219,7 +1225,18 @@ def run_dividen():
 
     curr_price = float(info.get("currentPrice") or history["Close"].iloc[-1] or 0)
 
-    if divs is None or len(divs) == 0:
+    # ── Cek ketersediaan data dividen: dari yfinance atau dari DPS_5Y di CSV ──
+    dps_from_csv = _parse_json_col(
+        ticker_row.get("DPS_5Y") if ticker_row is not None else None
+    )
+    has_div_from_yf  = divs is not None and len(divs) > 0
+    has_div_from_csv = any(
+        v is not None and float(v) > 0
+        for v in dps_from_csv
+        if v is not None
+    )
+
+    if not has_div_from_yf and not has_div_from_csv:
         st.error("❌ Data dividen tidak ditemukan atau emiten tidak pernah membagi dividen.")
         kls = _klasifikasi_gabungan(None, 0, 0.0, False)
         st.markdown(
@@ -1231,6 +1248,12 @@ def run_dividen():
         )
         return
 
+    if not has_div_from_yf and has_div_from_csv:
+        st.info(
+            "ℹ️ Data dividen dari yfinance tidak tersedia untuk ticker ini. "
+            "Analisa menggunakan data DPS dari liquid_dividend_stocks.csv."
+        )
+
     # FIX: yfinance tidak konsisten — kadang dividendYield dalam desimal (0.06),
     # kadang sudah dalam persen (6.0). hitung_div_yield_normal() menangani kedua kasus.
     yield_val    = hitung_div_yield_normal(info)   # sudah dalam % (mis: 6.0 = 6%)
@@ -1239,17 +1262,49 @@ def run_dividen():
     payout       = payout_raw * 100 if payout_raw <= 1.0 else payout_raw
     company_name = info.get("longName") or ticker_bersih
 
-    df_div       = divs.to_frame(name="Dividends")
-    df_div.index = pd.to_datetime(df_div.index).tz_localize(None)
-    df_div["year"] = df_div.index.year
+    # ── Build df_div_annual: prioritas yfinance, fallback ke DPS_5Y dari CSV ──
+    if has_div_from_yf:
+        df_div       = divs.to_frame(name="Dividends")
+        df_div.index = pd.to_datetime(df_div.index).tz_localize(None)
+        df_div["year"] = df_div.index.year
+        df_div_annual = (df_div.groupby("year")["Dividends"].sum()
+                         .reset_index()
+                         .rename(columns={"year": "Tahun", "Dividends": "DPS"}))
+    else:
+        # Bangun dari DPS_5Y array (index 0 = t-4, index 4 = t0)
+        ref_year  = pd.Timestamp.now().year - 1
+        tahun_arr = [ref_year - (4 - i) for i in range(5)]
+        rows_csv  = [
+            {"Tahun": tahun_arr[i], "DPS": float(dps_from_csv[i])}
+            for i in range(len(dps_from_csv))
+            if dps_from_csv[i] is not None and float(dps_from_csv[i]) > 0
+        ]
+        df_div_annual = (
+            pd.DataFrame(rows_csv)
+            if rows_csv
+            else pd.DataFrame(columns=["Tahun", "DPS"])
+        )
 
-    df_div_annual = (df_div.groupby("year")["Dividends"].sum()
-                     .reset_index()
-                     .rename(columns={"year": "Tahun", "Dividends": "DPS"}))
-
-    konsistensi = _hitung_konsistensi_berturut(divs)
-    dy_avg3     = _hitung_dy_avg(divs, history, n_tahun=3)
-    dy_avg5     = _hitung_dy_avg(divs, history, n_tahun=5)
+    # ── konsistensi, dy_avg: gunakan divs jika ada, fallback ke data CSV ──
+    if has_div_from_yf:
+        konsistensi = _hitung_konsistensi_berturut(divs)
+        dy_avg3     = _hitung_dy_avg(divs, history, n_tahun=3)
+        dy_avg5     = _hitung_dy_avg(divs, history, n_tahun=5)
+    else:
+        # Hitung konsistensi mundur dari dps_from_csv
+        konsistensi = 0
+        for v in reversed(dps_from_csv):
+            if v is not None and float(v) > 0:
+                konsistensi += 1
+            else:
+                break
+        # Ambil dy_avg dari DY_5Y di CSV (sudah dihitung saat enrichment)
+        dy_5y_csv = _parse_json_col(
+            ticker_row.get("DY_5Y") if ticker_row is not None else None
+        )
+        dy_valid = [float(v) for v in dy_5y_csv if v is not None]
+        dy_avg5  = float(np.mean(dy_valid))           if dy_valid           else None
+        dy_avg3  = float(np.mean(dy_valid[-3:]))      if len(dy_valid) >= 3 else dy_avg5
 
     last5 = df_div_annual.tail(5)
     cagr  = 0.0
