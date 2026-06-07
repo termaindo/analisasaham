@@ -1405,17 +1405,6 @@ def run_dividen():
     )
     st.plotly_chart(fig_bar, use_container_width=True)
 
-    tabel_div = df_div_annual.copy()
-    tabel_div["Yield Saat Itu"] = tabel_div.apply(
-        lambda r: (
-            f"{r['DPS'] / float(history[history.index.year == r['Tahun']]['Close'].iloc[-1]) * 100:.2f}%"
-            if not history[history.index.year == r["Tahun"]].empty else "N/A"
-        ),
-        axis=1,
-    )
-    tabel_div["DPS"] = tabel_div["DPS"].apply(lambda v: f"Rp {v:,.2f}")
-    st.dataframe(tabel_div, use_container_width=True, hide_index=True)
-
     # ═══════════════════════════════════════════════════════════════════════════
     # UI — EXPANDER 1: PERINGATAN & RISIKO
     # Hanya ditampilkan jika ada knockout ATAU anomali yield ATAU peringatan lain
