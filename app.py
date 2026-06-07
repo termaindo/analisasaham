@@ -111,6 +111,17 @@ st.markdown("""
         margin-bottom: 15px;
         color: white;
     }
+
+    .menu-group-label {
+        font-size: 0.82em;
+        font-weight: 700;
+        letter-spacing: 1.5px;
+        text-transform: uppercase;
+        color: #607D8B;
+        padding: 6px 4px 4px 4px;
+        border-bottom: 1px solid #263238;
+        margin-bottom: 8px;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -315,13 +326,16 @@ def login_page():
 # --- 6. DASHBOARD UTAMA ---
 def show_dashboard():
     """Tampilkan dashboard utama setelah login."""
+
+    # ── Panel admin — hanya untuk user admin ─────────────────────────────
     if st.session_state.is_admin:
         st.markdown(
             f"### 👋 Halo <span style='color:#ff0000'>{st.session_state.user_name}</span> "
-            f"<span style='background-color: #e74c3c; color: white; padding: 4px 12px; border-radius: 20px; font-size: 0.85em; font-weight: bold; margin-left: 10px;'>🔐 ADMIN</span>",
+            f"<span style='background-color: #e74c3c; color: white; padding: 4px 12px; "
+            f"border-radius: 20px; font-size: 0.85em; font-weight: bold; margin-left: 10px;'>"
+            f"🔐 ADMIN</span>",
             unsafe_allow_html=True
         )
-        # MEMANGGIL PANEL ADMIN VERSI BARU DARI MODULES
         load_and_run_module("admin_panel", "render_admin_panel")
     else:
         st.markdown(
@@ -356,42 +370,73 @@ def show_dashboard():
     st.write("Silakan pilih menu analisa:")
     st.markdown("---")
 
-    # Baris 1 — menu 1 & 2
-    c1, c2 = st.columns(2)
-    with c1:
-        if st.button("🔍 Screening Saham Harian Pro", use_container_width=True):
-            st.session_state.current_menu = "screening"; st.rerun()
-    with c2:
-        if st.button("💹 Screening Saham Dividen Pro", use_container_width=True):
-            st.session_state.current_menu = "screening_hdy"; st.rerun()
+    # ════════════════════════════════════════════════════════════════════════
+    # KELOMPOK 1 — SCREENING
+    # ════════════════════════════════════════════════════════════════════════
+    st.markdown(
+        "<div class='menu-group-label'>🔍 Kelompok Screening</div>",
+        unsafe_allow_html=True,
+    )
+    col_s1, col_s2 = st.columns(2)
+    with col_s1:
+        if st.button("🔍 Screening Saham Harian Pro", use_container_width=True,
+                     key="btn_screening"):
+            st.session_state.current_menu = "screening"
+            st.rerun()
+    with col_s2:
+        if st.button("💹 Screening Saham Dividen Pro", use_container_width=True,
+                     key="btn_screening_hdy"):
+            st.session_state.current_menu = "screening_hdy"
+            st.rerun()
 
-    # Baris 2 — menu 3 & 4
-    c3, c4 = st.columns(2)
-    with c3:
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    # ════════════════════════════════════════════════════════════════════════
+    # KELOMPOK 2 — ANALISA
+    # ════════════════════════════════════════════════════════════════════════
+    st.markdown(
+        "<div class='menu-group-label'>📊 Kelompok Analisa</div>",
+        unsafe_allow_html=True,
+    )
+
+    # Baris analisa 1 — Analisa Cepat & Teknikal
+    col_a1, col_a2 = st.columns(2)
+    with col_a1:
         if check_module_exists("analisa_cepat"):
-            if st.button("⚡ Analisa Cepat Pro", use_container_width=True):
-                st.session_state.current_menu = "analisa_cepat"; st.rerun()
+            if st.button("⚡ Analisa Cepat Pro", use_container_width=True,
+                         key="btn_analisa_cepat"):
+                st.session_state.current_menu = "analisa_cepat"
+                st.rerun()
         else:
-            st.button("⚡ Analisa Cepat (Belum Tersedia)", use_container_width=True, disabled=True)
-    with c4:
-        if st.button("📈 Analisa Teknikal Pro", use_container_width=True):
-            st.session_state.current_menu = "teknikal"; st.rerun()
+            st.button("⚡ Analisa Cepat (Belum Tersedia)", use_container_width=True,
+                      disabled=True, key="btn_analisa_cepat_disabled")
+    with col_a2:
+        if st.button("📈 Analisa Teknikal Pro", use_container_width=True,
+                     key="btn_teknikal"):
+            st.session_state.current_menu = "teknikal"
+            st.rerun()
 
-    # Baris 3 — menu 5 & 6
-    c5, c6 = st.columns(2)
-    with c5:
-        if st.button("📊 Analisa Fundamental Pro", use_container_width=True):
-            st.session_state.current_menu = "fundamental"; st.rerun()
-    with c6:
-        if st.button("💰 Analisa Dividen Pro", use_container_width=True):
-            st.session_state.current_menu = "dividen"; st.rerun()
+    # Baris analisa 2 — Fundamental & Dividen
+    col_a3, col_a4 = st.columns(2)
+    with col_a3:
+        if st.button("📊 Analisa Fundamental Pro", use_container_width=True,
+                     key="btn_fundamental"):
+            st.session_state.current_menu = "fundamental"
+            st.rerun()
+    with col_a4:
+        if st.button("💰 Analisa Dividen Pro", use_container_width=True,
+                     key="btn_dividen"):
+            st.session_state.current_menu = "dividen"
+            st.rerun()
 
-    # Baris 4 — menu 7 (satu kolom penuh)
-    if st.button("⚖️ Perbandingan Saham Pro", use_container_width=True):
-        st.session_state.current_menu = "perbandingan"; st.rerun()
-    
+    # Baris analisa 3 — Perbandingan (satu kolom penuh)
+    if st.button("⚖️ Perbandingan Saham Pro", use_container_width=True,
+                 key="btn_perbandingan"):
+        st.session_state.current_menu = "perbandingan"
+        st.rerun()
+
     st.markdown("---")
-    if st.button("Keluar / Logout"):
+    if st.button("Keluar / Logout", key="btn_logout"):
         for key in ('logged_in', 'user_name', 'user_wa', 'is_trial',
                     'is_admin', 'trial_expiry_date', 'current_menu'):
             st.session_state[key] = (
