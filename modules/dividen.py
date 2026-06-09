@@ -791,7 +791,7 @@ def _klasifikasi_gabungan(skor_hdy: int | None, konsistensi: int,
     return {
         "label": "Tidak Layak", "emoji": "❌",
         "warna": "#D50000",
-        "rekomendasi": "Risiko dividend cut tinggi — hindari.",
+        "rekomendasi": "Risiko dividend trap tinggi — hindari.",
     }
 
 
@@ -1357,7 +1357,7 @@ def _render_hasil(s: dict) -> None:
                 (80, 101): ("⭐ Prima",       "Layak koleksi penuh"),
                 (65,  80): ("✅ Layak",        "Layak koleksi dengan monitoring rutin"),
                 (50,  65): ("⚠️ Perhatikan",  "Posisi kecil, pantau ketat"),
-                ( 0,  50): ("❌ Tidak Layak",  "Hindari; risiko dividend cut tinggi"),
+                ( 0,  50): ("❌ Tidak Layak",  "Hindari; risiko dividend trap tinggi"),
             }
             for (lo, hi), (lbl, rek) in label_map.items():
                 if lo <= skor_hdy < hi:
