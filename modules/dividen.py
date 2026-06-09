@@ -60,27 +60,53 @@ SEKTOR_INFRA = {"Infrastruktur", "Utilitas"}
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _safe_latin1(text: str) -> str:
-    """Transliterasi karakter non-latin1 agar aman untuk FPDF."""
+    """
+    Sanitasi string agar aman untuk FPDF (latin-1 encoded).
+    Strategi: replace karakter Unicode umum ke padanan ASCII,
+    lalu strip sisa karakter non-latin-1 dengan encode(..., 'ignore').
+    """
     _MAP = {
-        "\u2013": "-", "\u2014": "-", "\u2018": "'", "\u2019": "'",
-        "\u201c": '"', "\u201d": '"', "\u2022": "*", "\u2026": "...",
-        "\u00e9": "e", "\u00e8": "e", "\u00ea": "e", "\u00e0": "a",
-        "\u00e2": "a", "\u00f4": "o", "\u00fb": "u", "\u00ee": "i",
-        "\u00e7": "c", "\u00fc": "u", "\u00f6": "o", "\u00e4": "a",
+        # Tanda baca & tipografi
+        "\u2013": "-",    # en-dash
+        "\u2014": "-",    # em-dash
+        "\u2018": "'",    # left single quote
+        "\u2019": "'",    # right single quote
+        "\u201c": '"',    # left double quote
+        "\u201d": '"',    # right double quote
+        "\u2022": "*",    # bullet
+        "\u2026": "...",  # ellipsis
+        "\u2192": "->",   # arrow kanan
+        "\u00d7": "x",    # multiplication sign
+        # Huruf beraksen Latin (tetap lolos latin-1, tapi jaga-jaga)
+        "\u00e9": "e", "\u00e8": "e", "\u00ea": "e",
+        "\u00e0": "a", "\u00e2": "a", "\u00e7": "c",
+        "\u00f4": "o", "\u00fb": "u", "\u00ee": "i",
+        "\u00fc": "u", "\u00f6": "o", "\u00e4": "a",
+        # Emoji warna (dipakai di valuasi_label DDM & label klasifikasi)
+        "\U0001f7e2": "[+]",   # 🟢 green circle
+        "\U0001f7e1": "[~]",   # 🟡 yellow circle
+        "\U0001f7e0": "[!]",   # 🟠 orange circle
+        "\U0001f534": "[-]",   # 🔴 red circle
+        # Emoji umum lainnya
+        "\u2705": "[OK]",  # ✅
+        "\u274c": "[X]",   # ❌
+        "\u26a0": "[!]",   # ⚠️
+        "\u2B50": "[*]",   # ⭐
+        "\U0001f3c6": "[#]",  # 🏆
+        "\U0001f4ca": "[=]",  # 📊
+        "\U0001f4b0": "[Rp]", # 💰
+        "\U0001f4c5": "[D]",  # 📅
+        "\u23f0": "[T]",      # ⏰
+        "\U0001f3e2": "[CO]", # 🏢
+        "\u26AB": "[o]",   # ⚫
+        "\ufe0f": "",      # variation selector (strip saja)
     }
     if not isinstance(text, str):
         text = str(text)
-    result = []
-    for ch in text:
-        if ch in _MAP:
-            result.append(_MAP[ch])
-        else:
-            try:
-                ch.encode("latin-1")
-                result.append(ch)
-            except UnicodeEncodeError:
-                result.append("?")
-    return "".join(result)
+    for char, repl in _MAP.items():
+        text = text.replace(char, repl)
+    # Fallback akhir: strip karakter yang tetap tidak bisa di-encode latin-1
+    return text.encode("latin-1", "ignore").decode("latin-1")
 
 
 def _parse_json_col(val) -> list:
@@ -888,20 +914,26 @@ def _generate_pdf(
                else "TIDAK LAYAK (Hard Knockout)")
     pdf.cell(0, 7, _safe_latin1(f"Klasifikasi: {kls_str}"), ln=True)
 
-    if not knockout_alasan and skor_hdy is not None:
-        pdf.set_font("Arial", "", 11)
+    pdf.set_font("Arial", "", 11)
+    if knockout_alasan:
+        pdf.set_text_color(200, 0, 0)
+        pdf.cell(0, 6, "Alasan Hard Knockout:", ln=True)
+        for al in knockout_alasan:
+            pdf.multi_cell(0, 6, _safe_latin1(f"  - {al}"))
+        pdf.set_text_color(0, 0, 0)
         pdf.cell(0, 6,
-                 _safe_latin1(f"Skor HDY: {skor_hdy}/100 — "
-                              f"Dim A: {dim_a}/45 | B: {dim_b}/35 | "
-                              f"C: {dim_c}/10 | D: {dim_d}/10"),
+                 "Catatan: Data di bawah ditampilkan hanya sebagai referensi.",
                  ln=True)
+    else:
+        if skor_hdy is not None:
+            pdf.cell(0, 6,
+                     _safe_latin1(f"Skor HDY: {skor_hdy}/100 — "
+                                  f"Dim A: {dim_a}/45 | B: {dim_b}/35 | "
+                                  f"C: {dim_c}/10 | D: {dim_d}/10"),
+                     ln=True)
         pdf.cell(0, 6,
                  _safe_latin1(f"Rekomendasi: {klasifikasi['rekomendasi']}"),
                  ln=True)
-    else:
-        pdf.set_font("Arial", "", 11)
-        for al in knockout_alasan:
-            pdf.cell(0, 6, _safe_latin1(f"  - {al}"), ln=True)
     pdf.ln(3)
 
     # Bagian 1: Riwayat & Metrik
@@ -954,10 +986,13 @@ def _generate_pdf(
         pdf.ln(3)
 
     # Bagian Skor HDY Detail
-    if not knockout_alasan and skor_hdy is not None:
+    if skor_hdy is not None:
         bagian_no = 3
         pdf.set_font("Arial", "B", 12)
-        pdf.cell(0, 7, f"{bagian_no}. Detail Skor HDY", ln=True)
+        header_skor = (f"{bagian_no}. Detail Skor HDY (Referensi)"
+                       if knockout_alasan
+                       else f"{bagian_no}. Detail Skor HDY")
+        pdf.cell(0, 7, header_skor, ln=True)
         pdf.set_font("Arial", "", 10)
 
         def _row(label, val, poin, maks):
@@ -1014,26 +1049,32 @@ def _generate_pdf(
                          ln=True)
         pdf.ln(3)
 
-        if forward:
-            pdf.set_font("Arial", "B", 12)
-            pdf.cell(0, 7, f"{bagian_no + 1}. Proyeksi Forward Dividend Yield", ln=True)
-            pdf.set_font("Arial", "", 11)
-            pdf.cell(0, 6,
-                     _safe_latin1(f"  EPS Forward: Rp {forward['eps_fwd']:,.2f}"),
-                     ln=True)
-            pdf.cell(0, 6,
-                     _safe_latin1(f"  DPS Forward: Rp {forward['dps_fwd']:,.2f}"),
-                     ln=True)
-            pdf.cell(0, 6,
-                     _safe_latin1(f"  Forward DY: {forward['dy_fwd']:.2f}% "
-                                  f"— {forward['label']}"),
-                     ln=True)
-            pdf.set_font("Arial", "I", 9)
-            pdf.cell(0, 5,
-                     _safe_latin1("  *Proyeksi berbasis asumsi mekanis "
-                                  "dari data historis — bukan jaminan."),
-                     ln=True)
-            pdf.ln(3)
+    if forward:
+        bagian_fwd = (4 if skor_hdy is not None else 3)
+        pdf.set_font("Arial", "B", 12)
+        pdf.cell(0, 7, f"{bagian_fwd}. Proyeksi Forward Dividend Yield", ln=True)
+        pdf.set_font("Arial", "", 11)
+        pdf.cell(0, 6,
+                 _safe_latin1(f"  EPS Forward: Rp {forward['eps_fwd']:,.2f}"),
+                 ln=True)
+        pdf.cell(0, 6,
+                 _safe_latin1(f"  DPS Forward: Rp {forward['dps_fwd']:,.2f}"),
+                 ln=True)
+        # Strip emoji dari label forward yield sebelum masuk FPDF
+        label_fwd_clean = (forward['label']
+                           .replace("🟢", "[+]")
+                           .replace("🟡", "[~]")
+                           .replace("🔴", "[-]"))
+        pdf.cell(0, 6,
+                 _safe_latin1(f"  Forward DY: {forward['dy_fwd']:.2f}% "
+                              f"— {label_fwd_clean}"),
+                 ln=True)
+        pdf.set_font("Arial", "I", 9)
+        pdf.cell(0, 5,
+                 _safe_latin1("  *Proyeksi berbasis asumsi mekanis "
+                              "dari data historis — bukan jaminan."),
+                 ln=True)
+        pdf.ln(3)
 
     # Proyeksi Pendapatan
     if jumlah_lot > 0:
@@ -1244,195 +1285,205 @@ def _render_hasil(s: dict) -> None:
                         unsafe_allow_html=True,
                     )
                 st.markdown("---")
-                st.info(
-                    "Scoring HDY, DDM, dan Kalkulator Proyeksi tidak ditampilkan "
-                    "karena saham tidak memenuhi syarat minimum kelayakan dividen."
+                st.warning(
+                    "Data di bawah (scoring, DDM, proyeksi) ditampilkan hanya sebagai "
+                    "referensi. Keputusan investasi tetap tidak disarankan selama kondisi "
+                    "hard knockout belum teratasi."
                 )
-                # PDF tetap tersedia meski knockout — tombol render di bawah bersama main PDF
-                return  # stop render sisa expander (bukan return dari run_dividen)
+                # Tidak ada return — render semua section tetap dilanjutkan
 
-            if not is_liquid:
-                st.warning(
-                    "⚠️ Ticker tidak ada di daftar saham pilihan. Skor HDY dihitung "
-                    "dari data yfinance — akurasi tidak dijamin."
-                )
-            if detail_b.get("anomali_yield"):
-                st.warning(
-                    "⚠️ **Yield Anomaly:** Yield saat ini jauh di atas rata-rata "
-                    "historis 5 tahun. Verifikasi apakah ini disebabkan penurunan "
-                    "harga saham yang tajam — bukan kenaikan dividen."
-                )
-            if payout > 90:
-                st.warning(
-                    "⚠️ **Payout Ratio > 90%** — dividen berpotensi tidak "
-                    "berkelanjutan jika laba perusahaan turun."
-                )
-            if yield_val > 15:
-                st.warning(
-                    "⚠️ **Yield > 15%** — angka sangat tinggi. Verifikasi apakah "
-                    "ini anomali, pembagian dividen non-operasional, atau cerminan "
-                    "penurunan harga yang tajam."
-                )
-            if 0 < yield_val < 10:
-                st.info(
-                    "ℹ️ Yield saat ini di bawah 10% — belum memenuhi target "
-                    "minimum dividend investing aplikasi ini."
-                )
+            if not knockout_alasan:
+                if not is_liquid:
+                    st.warning(
+                        "⚠️ Ticker tidak ada di daftar saham pilihan. Skor HDY dihitung "
+                        "dari data yfinance — akurasi tidak dijamin."
+                    )
+                if detail_b.get("anomali_yield"):
+                    st.warning(
+                        "⚠️ **Yield Anomaly:** Yield saat ini jauh di atas rata-rata "
+                        "historis 5 tahun. Verifikasi apakah ini disebabkan penurunan "
+                        "harga saham yang tajam — bukan kenaikan dividen."
+                    )
+                if payout > 90:
+                    st.warning(
+                        "⚠️ **Payout Ratio > 90%** — dividen berpotensi tidak "
+                        "berkelanjutan jika laba perusahaan turun."
+                    )
+                if yield_val > 15:
+                    st.warning(
+                        "⚠️ **Yield > 15%** — angka sangat tinggi. Verifikasi apakah "
+                        "ini anomali, pembagian dividen non-operasional, atau cerminan "
+                        "penurunan harga yang tajam."
+                    )
+                if 0 < yield_val < 10:
+                    st.info(
+                        "ℹ️ Yield saat ini di bawah 10% — belum memenuhi target "
+                        "minimum dividend investing aplikasi ini."
+                    )
 
     # ── Expander: Detail Evaluasi 4 Dimensi ──────────────────────────────
-    with st.expander("📊 Detail Evaluasi 4 Dimensi (Skor Kelayakan HDY)", expanded=True):
+    label_dim = ("📊 Detail Evaluasi 4 Dimensi (Skor Kelayakan HDY — Referensi)"
+                 if knockout_alasan
+                 else "📊 Detail Evaluasi 4 Dimensi (Skor Kelayakan HDY)")
+    with st.expander(label_dim, expanded=not bool(knockout_alasan)):
 
-        warna_skor = ("#00C853" if skor_hdy >= 80
-                      else "#FFD600" if skor_hdy >= 65
-                      else "#FF9800" if skor_hdy >= 50
-                      else "#D50000")
-        st.markdown(
-            f"""
-            <div style="margin-bottom:12px;">
-                <div style="display:flex;justify-content:space-between;">
-                    <b style="color:white;">Skor HDY Total</b>
-                    <b style="color:{warna_skor};">{skor_hdy}/100</b>
+        if skor_hdy is None:
+            st.info(
+                "Skor HDY tidak dihitung karena saham terkena hard knockout. "
+                "Perbaiki kondisi knockout terlebih dahulu agar scoring tersedia."
+            )
+        else:
+            warna_skor = ("#00C853" if skor_hdy >= 80
+                          else "#FFD600" if skor_hdy >= 65
+                          else "#FF9800" if skor_hdy >= 50
+                          else "#D50000")
+            st.markdown(
+                f"""
+                <div style="margin-bottom:12px;">
+                    <div style="display:flex;justify-content:space-between;">
+                        <b style="color:white;">Skor HDY Total</b>
+                        <b style="color:{warna_skor};">{skor_hdy}/100</b>
+                    </div>
+                    <div style="background:#333;border-radius:6px;height:14px;margin-top:4px;">
+                        <div style="background:{warna_skor};width:{skor_hdy}%;
+                                    height:14px;border-radius:6px;"></div>
+                    </div>
                 </div>
-                <div style="background:#333;border-radius:6px;height:14px;margin-top:4px;">
-                    <div style="background:{warna_skor};width:{skor_hdy}%;
-                                height:14px;border-radius:6px;"></div>
-                </div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
+                """,
+                unsafe_allow_html=True,
+            )
 
-        label_map = {
-            (80, 101): ("⭐ Prima",       "Layak koleksi penuh"),
-            (65,  80): ("✅ Layak",        "Layak koleksi dengan monitoring rutin"),
-            (50,  65): ("⚠️ Perhatikan",  "Posisi kecil, pantau ketat"),
-            ( 0,  50): ("❌ Tidak Layak",  "Hindari; risiko dividend cut tinggi"),
-        }
-        for (lo, hi), (lbl, rek) in label_map.items():
-            if lo <= skor_hdy < hi:
-                st.markdown(
-                    f'<div style="padding:10px;background:#1E1E1E;border-radius:8px;'
-                    f'border-left:5px solid {warna_skor};margin-bottom:12px;">'
-                    f'<b style="color:{warna_skor};">{lbl}</b> — {rek}'
-                    f'</div>',
-                    unsafe_allow_html=True,
+            label_map = {
+                (80, 101): ("⭐ Prima",       "Layak koleksi penuh"),
+                (65,  80): ("✅ Layak",        "Layak koleksi dengan monitoring rutin"),
+                (50,  65): ("⚠️ Perhatikan",  "Posisi kecil, pantau ketat"),
+                ( 0,  50): ("❌ Tidak Layak",  "Hindari; risiko dividend cut tinggi"),
+            }
+            for (lo, hi), (lbl, rek) in label_map.items():
+                if lo <= skor_hdy < hi:
+                    st.markdown(
+                        f'<div style="padding:10px;background:#1E1E1E;border-radius:8px;'
+                        f'border-left:5px solid {warna_skor};margin-bottom:12px;">'
+                        f'<b style="color:{warna_skor};">{lbl}</b> — {rek}'
+                        f'</div>',
+                        unsafe_allow_html=True,
+                    )
+                    break
+
+            st.markdown("---")
+
+            tab_a, tab_b, tab_c, tab_d = st.tabs([
+                f"A: Earnings & FCF ({dim_a}/45)",
+                f"B: Track Record ({dim_b}/35)",
+                f"C: Momentum ({dim_c}/10)",
+                f"D: Balance Sheet ({dim_d}/10)",
+            ])
+
+            with tab_a:
+                rows_a = [
+                    ("EPS Predictability (R²)",
+                     f"{detail_a.get('r2', 'N/A')}%",
+                     detail_a.get("poin_r2", 0), 15,
+                     detail_a.get("r2_note", "")),
+                    ("AAGR EPS 5 Tahun",
+                     f"{detail_a.get('aagr_eps', 'N/A')}%",
+                     detail_a.get("poin_aagr", 0), 12, ""),
+                    ("FCF Positif",
+                     f"{detail_a.get('fcf_positif_tahun', 0)}/5 tahun",
+                     detail_a.get("poin_fcf", 0), 10, ""),
+                    ("FCF Payout Ratio (proxy)",
+                     f"{detail_a.get('fcf_pr', 'N/A')}%",
+                     detail_a.get("poin_fcf_pr", 0), 5, ""),
+                    ("Konsistensi Tumbuh EPS",
+                     f"{detail_a.get('eps_tumbuh_tahun', 0)} tahun",
+                     detail_a.get("poin_eps_tumbuh", 0), 3, ""),
+                ]
+                df_a = pd.DataFrame(rows_a,
+                                    columns=["Indikator", "Nilai", "Poin", "Maks", "Catatan"])
+                st.dataframe(
+                    df_a.drop(columns="Catatan"),
+                    column_config={
+                        "Poin": st.column_config.ProgressColumn(
+                            min_value=0, max_value=15, format="%d"),
+                    },
+                    use_container_width=True, hide_index=True,
                 )
-                break
+                for row in rows_a:
+                    if row[4]:
+                        st.caption(f"ℹ️ {row[0]}: {row[4]}")
 
-        st.markdown("---")
-
-        tab_a, tab_b, tab_c, tab_d = st.tabs([
-            f"A: Earnings & FCF ({dim_a}/45)",
-            f"B: Track Record ({dim_b}/35)",
-            f"C: Momentum ({dim_c}/10)",
-            f"D: Balance Sheet ({dim_d}/10)",
-        ])
-
-        with tab_a:
-            rows_a = [
-                ("EPS Predictability (R²)",
-                 f"{detail_a.get('r2', 'N/A')}%",
-                 detail_a.get("poin_r2", 0), 15,
-                 detail_a.get("r2_note", "")),
-                ("AAGR EPS 5 Tahun",
-                 f"{detail_a.get('aagr_eps', 'N/A')}%",
-                 detail_a.get("poin_aagr", 0), 12, ""),
-                ("FCF Positif",
-                 f"{detail_a.get('fcf_positif_tahun', 0)}/5 tahun",
-                 detail_a.get("poin_fcf", 0), 10, ""),
-                ("FCF Payout Ratio (proxy)",
-                 f"{detail_a.get('fcf_pr', 'N/A')}%",
-                 detail_a.get("poin_fcf_pr", 0), 5, ""),
-                ("Konsistensi Tumbuh EPS",
-                 f"{detail_a.get('eps_tumbuh_tahun', 0)} tahun",
-                 detail_a.get("poin_eps_tumbuh", 0), 3, ""),
-            ]
-            df_a = pd.DataFrame(rows_a,
-                                columns=["Indikator", "Nilai", "Poin", "Maks", "Catatan"])
-            st.dataframe(
-                df_a.drop(columns="Catatan"),
-                column_config={
-                    "Poin": st.column_config.ProgressColumn(
-                        min_value=0, max_value=15, format="%d"),
-                },
-                use_container_width=True, hide_index=True,
-            )
-            for row in rows_a:
-                if row[4]:
-                    st.caption(f"ℹ️ {row[0]}: {row[4]}")
-
-        with tab_b:
-            rows_b = [
-                ("Rata-rata DY 5 Tahun",
-                 f"{detail_b.get('dy_avg', 'N/A')}%",
-                 detail_b.get("poin_dy", 0), 12),
-                ("Rata-rata Payout Ratio",
-                 f"{detail_b.get('pr_avg', 'N/A')}%",
-                 detail_b.get("poin_pr", 0), 10),
-                ("Frekuensi Dividen",
-                 f"{detail_b.get('frekuensi_div', 0)}/5 tahun",
-                 detail_b.get("poin_freq", 0), 8),
-                ("AEPD",
-                 str(detail_b.get("aepd", "N/A")),
-                 detail_b.get("poin_aepd", 0), 5),
-            ]
-            df_b = pd.DataFrame(rows_b,
-                                columns=["Indikator", "Nilai", "Poin", "Maks"])
-            st.dataframe(
-                df_b,
-                column_config={
-                    "Poin": st.column_config.ProgressColumn(
-                        min_value=0, max_value=12, format="%d"),
-                },
-                use_container_width=True, hide_index=True,
-            )
-
-        with tab_c:
-            eps_yoy_val = detail_c.get("eps_yoy")
-            poin_c_val  = detail_c.get("poin_c", 0)
-            st.metric("EPS Growth YoY",
-                      f"{eps_yoy_val:.1f}%" if eps_yoy_val is not None else "N/A",
-                      delta=f"{poin_c_val}/10 poin")
-
-        with tab_d:
-            sektor_upper = sektor.strip().title()
-            rows_d = []
-            if sektor_upper in SEKTOR_BANK:
-                rows_d = [
-                    ("CAR", detail_d.get("car"), detail_d.get("poin_car", 0), 5),
-                    ("NPL", detail_d.get("npl"), detail_d.get("poin_npl", 0), 5),
+            with tab_b:
+                rows_b = [
+                    ("Rata-rata DY 5 Tahun",
+                     f"{detail_b.get('dy_avg', 'N/A')}%",
+                     detail_b.get("poin_dy", 0), 12),
+                    ("Rata-rata Payout Ratio",
+                     f"{detail_b.get('pr_avg', 'N/A')}%",
+                     detail_b.get("poin_pr", 0), 10),
+                    ("Frekuensi Dividen",
+                     f"{detail_b.get('frekuensi_div', 0)}/5 tahun",
+                     detail_b.get("poin_freq", 0), 8),
+                    ("AEPD",
+                     str(detail_b.get("aepd", "N/A")),
+                     detail_b.get("poin_aepd", 0), 5),
                 ]
-            elif sektor_upper in SEKTOR_INFRA:
-                rows_d = [
-                    ("Debt/EBITDA", detail_d.get("debt_ebitda"),
-                     detail_d.get("poin_de", 0), 5),
-                    ("ICR", detail_d.get("icr"), detail_d.get("poin_icr", 0), 5),
-                ]
-            else:
-                rows_d = [
-                    ("DER", detail_d.get("der"), detail_d.get("poin_der", 0), 5),
-                    ("ICR", detail_d.get("icr"), detail_d.get("poin_icr", 0), 5),
-                ]
-            df_d = pd.DataFrame(
-                [(r[0],
-                  f"{r[1]:.2f}" if r[1] is not None else "N/A",
-                  r[2], r[3])
-                 for r in rows_d],
-                columns=["Indikator", "Nilai", "Poin", "Maks"],
-            )
-            st.dataframe(
-                df_d,
-                column_config={
-                    "Poin": st.column_config.ProgressColumn(
-                        min_value=0, max_value=5, format="%d"),
-                },
-                use_container_width=True, hide_index=True,
-            )
-            if not is_liquid and sektor_upper in (SEKTOR_BANK | SEKTOR_INFRA):
-                st.caption(
-                    "ℹ️ Data CAR/NPL/Debt-EBITDA tidak tersedia dari yfinance. "
-                    "Dimensi D dihitung dengan data yang ada saja."
+                df_b = pd.DataFrame(rows_b,
+                                    columns=["Indikator", "Nilai", "Poin", "Maks"])
+                st.dataframe(
+                    df_b,
+                    column_config={
+                        "Poin": st.column_config.ProgressColumn(
+                            min_value=0, max_value=12, format="%d"),
+                    },
+                    use_container_width=True, hide_index=True,
                 )
+
+            with tab_c:
+                eps_yoy_val = detail_c.get("eps_yoy")
+                poin_c_val  = detail_c.get("poin_c", 0)
+                st.metric("EPS Growth YoY",
+                          f"{eps_yoy_val:.1f}%" if eps_yoy_val is not None else "N/A",
+                          delta=f"{poin_c_val}/10 poin")
+
+            with tab_d:
+                sektor_upper = sektor.strip().title()
+                rows_d = []
+                if sektor_upper in SEKTOR_BANK:
+                    rows_d = [
+                        ("CAR", detail_d.get("car"), detail_d.get("poin_car", 0), 5),
+                        ("NPL", detail_d.get("npl"), detail_d.get("poin_npl", 0), 5),
+                    ]
+                elif sektor_upper in SEKTOR_INFRA:
+                    rows_d = [
+                        ("Debt/EBITDA", detail_d.get("debt_ebitda"),
+                         detail_d.get("poin_de", 0), 5),
+                        ("ICR", detail_d.get("icr"), detail_d.get("poin_icr", 0), 5),
+                    ]
+                else:
+                    rows_d = [
+                        ("DER", detail_d.get("der"), detail_d.get("poin_der", 0), 5),
+                        ("ICR", detail_d.get("icr"), detail_d.get("poin_icr", 0), 5),
+                    ]
+                df_d = pd.DataFrame(
+                    [(r[0],
+                      f"{r[1]:.2f}" if r[1] is not None else "N/A",
+                      r[2], r[3])
+                     for r in rows_d],
+                    columns=["Indikator", "Nilai", "Poin", "Maks"],
+                )
+                st.dataframe(
+                    df_d,
+                    column_config={
+                        "Poin": st.column_config.ProgressColumn(
+                            min_value=0, max_value=5, format="%d"),
+                    },
+                    use_container_width=True, hide_index=True,
+                )
+                if not is_liquid and sektor_upper in (SEKTOR_BANK | SEKTOR_INFRA):
+                    st.caption(
+                        "ℹ️ Data CAR/NPL/Debt-EBITDA tidak tersedia dari yfinance. "
+                        "Dimensi D dihitung dengan data yang ada saja."
+                    )
 
     # ── Expander: Harga Wajar DDM ─────────────────────────────────────────
     with st.expander("🏦 Harga Wajar — Two-Stage DDM", expanded=False):
