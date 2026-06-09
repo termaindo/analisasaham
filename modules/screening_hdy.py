@@ -1092,7 +1092,7 @@ def run_screening_hdy() -> None:
             completed = 0
             for future in concurrent.futures.as_completed(futures):
                 completed += 1
-                status_text.text(f"Memeriksa {completed}/{total_saham} saham...")
+                status_text.text(f"Memeriksa {completed} saham...")
                 progress_bar.progress(completed / total_saham)
                 result = future.result()
                 if result is not None:
