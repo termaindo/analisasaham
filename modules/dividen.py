@@ -123,22 +123,56 @@ def _parse_json_col(val) -> list:
 
 
 def _get_identitas(ticker_bersih: str, liquid_df: pd.DataFrame) -> dict:
-    """Ambil Sektor dan Syariah via fallback chain: liquid_dividend → pre_liquid → default."""
+    """
+    Ambil Sektor dan Syariah via fallback chain:
+      liquid_dividend_stocks.csv → pre_liquid_stocks.csv → default "Tidak Diketahui"
+
+    Bug fix: pd.Series.get(key, default) TIDAK mengembalikan default jika nilai ada
+    tapi NaN — hanya mengembalikan default kalau key tidak ada di Series. Akibatnya
+    str(NaN) = "nan" yang lolos validasi tapi salah di UI. Perbaikan: cek pd.isna()
+    eksplisit setelah .get(), dan jangan return dini jika nilai masih "nan"/NaN —
+    lanjutkan ke fallback pre_liquid.
+    """
+    def _clean_val(raw) -> str | None:
+        """Kembalikan string bersih, atau None jika kosong/NaN/tidak valid."""
+        if raw is None:
+            return None
+        try:
+            if pd.isna(raw):
+                return None
+        except (TypeError, ValueError):
+            pass
+        s = str(raw).strip()
+        return None if s.lower() in ("", "nan", "none", "tidak diketahui") else s
+
     result = {"sektor": "Tidak Diketahui", "syariah": "Tidak Diketahui"}
 
-    if is_ticker_liquid(ticker_bersih, liquid_df):
-        row = get_ticker_row(ticker_bersih, liquid_df)
-        if row is not None:
-            result["sektor"]  = str(row.get("Sektor", "Tidak Diketahui"))
-            result["syariah"] = str(row.get("Syariah", "Tidak Diketahui"))
+    # Tahap 1: cari di liquid_dividend_stocks.csv
+    row = get_ticker_row(ticker_bersih, liquid_df)
+    if row is not None:
+        sektor_val  = _clean_val(row.get("Sektor"))
+        syariah_val = _clean_val(row.get("Syariah"))
+        if sektor_val:
+            result["sektor"] = sektor_val
+        if syariah_val:
+            result["syariah"] = syariah_val
+        # Return hanya jika KEDUA nilai sudah terisi dari liquid
+        if result["sektor"] != "Tidak Diketahui" and result["syariah"] != "Tidak Diketahui":
             return result
 
+    # Tahap 2: fallback ke pre_liquid_stocks.csv untuk nilai yang masih kosong
     try:
-        df_pre  = pd.read_csv(PRE_LIQUID_PATH)
+        df_pre  = pd.read_csv(PRE_LIQUID_PATH, sep=None, engine="python")
         row_pre = get_ticker_row(ticker_bersih, df_pre)
         if row_pre is not None:
-            result["sektor"]  = str(row_pre.get("Sektor", "Tidak Diketahui"))
-            result["syariah"] = str(row_pre.get("Syariah", "Tidak Diketahui"))
+            if result["sektor"] == "Tidak Diketahui":
+                sektor_pre = _clean_val(row_pre.get("Sektor"))
+                if sektor_pre:
+                    result["sektor"] = sektor_pre
+            if result["syariah"] == "Tidak Diketahui":
+                syariah_pre = _clean_val(row_pre.get("Syariah"))
+                if syariah_pre:
+                    result["syariah"] = syariah_pre
     except Exception:
         pass
 
