@@ -1912,7 +1912,19 @@ def run_dividen():
         history = stock_data.get("history", pd.DataFrame())
 
         if history.empty:
-            st.warning("⚠️ Data tidak tersedia untuk ticker ini. Coba ticker lain.")
+            nama = info.get("longName", "")
+            if not nama and not info:
+                st.error(
+                    f"⚠️ Ticker **{ticker_bersih}** tidak ditemukan di Yahoo Finance. "
+                    f"Pastikan kode saham benar. Saham sangat kecil atau tidak likuid "
+                    f"mungkin tidak tersedia di Yahoo Finance."
+                )
+            else:
+                st.warning(
+                    f"⚠️ Data harga tidak tersedia untuk **{ticker_bersih}**. "
+                    f"Kemungkinan saham baru listing, suspended, atau data yfinance "
+                    f"belum tersedia. Coba beberapa saat lagi."
+                )
             st.stop()
 
         curr_price = float(info.get("currentPrice") or history["Close"].iloc[-1] or 0)
