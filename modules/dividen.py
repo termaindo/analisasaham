@@ -989,7 +989,7 @@ def _generate_pdf(
     # Bagian DDM
     if ddm and ddm.get("intrinsic_value") is not None:
         pdf.set_font("Arial", "B", 12)
-        pdf.cell(0, 7, "2. Harga Wajar — Two-Stage DDM", ln=True)
+        pdf.cell(0, 7, _safe_latin1("2. Harga Wajar - Two-Stage DDM"), ln=True)
         pdf.set_font("Arial", "", 11)
         pdf.cell(0, 6,
                  _safe_latin1(f"  DPS Dasar: Rp {ddm['dps_0']:,.2f} | "
@@ -1026,7 +1026,7 @@ def _generate_pdf(
         header_skor = (f"{bagian_no}. Detail Skor HDY (Referensi)"
                        if knockout_alasan
                        else f"{bagian_no}. Detail Skor HDY")
-        pdf.cell(0, 7, header_skor, ln=True)
+        pdf.cell(0, 7, _safe_latin1(header_skor), ln=True)
         pdf.set_font("Arial", "", 10)
 
         def _row(label, val, poin, maks):
@@ -1034,9 +1034,9 @@ def _generate_pdf(
             pdf.cell(0, 5, _safe_latin1(line), ln=True)
 
         pdf.set_font("Arial", "B", 11)
-        pdf.cell(0, 6, f"  Dimensi A — Earnings & FCF: {dim_a}/45", ln=True)
+        pdf.cell(0, 6, _safe_latin1(f"  Dimensi A - Earnings & FCF: {dim_a}/45"), ln=True)
         pdf.set_font("Arial", "", 10)
-        _row("EPS Predictability R²",
+        _row("EPS Predictability R2",
              f"{detail_a.get('r2', 'N/A')}%", detail_a.get("poin_r2", 0), 15)
         _row("AAGR EPS 5 Tahun",
              f"{detail_a.get('aagr_eps', 'N/A')}%", detail_a.get("poin_aagr", 0), 12)
@@ -1051,7 +1051,7 @@ def _generate_pdf(
 
         pdf.ln(2)
         pdf.set_font("Arial", "B", 11)
-        pdf.cell(0, 6, f"  Dimensi B — Track Record Dividen: {dim_b}/35", ln=True)
+        pdf.cell(0, 6, _safe_latin1(f"  Dimensi B - Track Record Dividen: {dim_b}/35"), ln=True)
         pdf.set_font("Arial", "", 10)
         _row("Rata-rata DY 5 Tahun",
              f"{detail_b.get('dy_avg', 'N/A')}%", detail_b.get("poin_dy", 0), 12)
@@ -1065,14 +1065,14 @@ def _generate_pdf(
 
         pdf.ln(2)
         pdf.set_font("Arial", "B", 11)
-        pdf.cell(0, 6, f"  Dimensi C — Momentum Terkini: {dim_c}/10", ln=True)
+        pdf.cell(0, 6, _safe_latin1(f"  Dimensi C - Momentum Terkini: {dim_c}/10"), ln=True)
         pdf.set_font("Arial", "", 10)
         _row("EPS Growth YoY",
              f"{detail_c.get('eps_yoy', 'N/A')}%", detail_c.get("poin_c", 0), 10)
 
         pdf.ln(2)
         pdf.set_font("Arial", "B", 11)
-        pdf.cell(0, 6, f"  Dimensi D — Kesehatan Balance Sheet: {dim_d}/10", ln=True)
+        pdf.cell(0, 6, _safe_latin1(f"  Dimensi D - Kesehatan Balance Sheet: {dim_d}/10"), ln=True)
         pdf.set_font("Arial", "", 10)
         for k, v in detail_d.items():
             if not k.startswith("poin"):
@@ -1086,7 +1086,7 @@ def _generate_pdf(
     if forward:
         bagian_fwd = (4 if skor_hdy is not None else 3)
         pdf.set_font("Arial", "B", 12)
-        pdf.cell(0, 7, f"{bagian_fwd}. Proyeksi Forward Dividend Yield", ln=True)
+        pdf.cell(0, 7, _safe_latin1(f"{bagian_fwd}. Proyeksi Forward Dividend Yield"), ln=True)
         pdf.set_font("Arial", "", 11)
         pdf.cell(0, 6,
                  _safe_latin1(f"  EPS Forward: Rp {forward['eps_fwd']:,.2f}"),
@@ -1151,9 +1151,11 @@ def _generate_pdf(
 
     try:
         out = pdf.output(dest="S")
-        return out.encode("latin-1") if isinstance(out, str) else bytes(out)
+        if isinstance(out, str):
+            return out.encode("latin-1", "replace")
+        return bytes(out)
     except Exception:
-        return bytes(pdf.output())
+        return b""
 
 
 # ─────────────────────────────────────────────────────────────────────────────
