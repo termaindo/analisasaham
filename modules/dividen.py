@@ -280,19 +280,26 @@ def _hitung_konsistensi_berturut(divs: pd.Series) -> int:
     """Hitung jumlah tahun berturut-turut membagi dividen (dihitung mundur dari tahun ini)."""
     if divs is None or len(divs) == 0:
         return 0
-    df_d         = divs.to_frame(name="DPS")
-    df_d.index   = pd.to_datetime(df_d.index).tz_localize(None)
-    df_d["year"] = df_d.index.year
-    annual       = df_d.groupby("year")["DPS"].sum()
-    tahun_div    = set(annual[annual > 0].index)
-    tahun_ini    = datetime.now().year
-    count        = 0
-    for y in range(tahun_ini - 1, tahun_ini - 20, -1):
-        if y in tahun_div:
-            count += 1
-        else:
-            break
-    return count
+    try:
+        idx = pd.to_datetime(divs.index)
+        # Normalise: buang tz-info jika ada, hindari double-localize
+        if idx.tz is not None:
+            idx = idx.tz_convert("UTC").tz_localize(None)
+        df_d         = divs.to_frame(name="DPS")
+        df_d.index   = idx
+        df_d["year"] = df_d.index.year
+        annual       = df_d.groupby("year")["DPS"].sum()
+        tahun_div    = set(annual[annual > 0].index)
+        tahun_ini    = datetime.now().year
+        count        = 0
+        for y in range(tahun_ini - 1, tahun_ini - 20, -1):
+            if y in tahun_div:
+                count += 1
+            else:
+                break
+        return count
+    except Exception:
+        return 0
 
 
 def _hitung_dy_avg(divs: pd.Series, history: pd.DataFrame,
@@ -783,9 +790,14 @@ def _score_dimensi_d(arrays: dict, info: dict,
 # KLASIFIKASI GABUNGAN
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _klasifikasi_gabungan(skor_hdy: int | None, konsistensi: int,
-                          payout: float, knockout: bool) -> dict:
+def _klasifikasi_gabungan(skor_hdy: int | None, konsistensi: int | None,
+                          payout: float | None, knockout: bool) -> dict:
     """Klasifikasi gabungan track record konsistensi + skor HDY."""
+    # Guard: pastikan semua nilai numerik tidak None sebelum perbandingan
+    if konsistensi is None:
+        konsistensi = 0
+    if payout is None:
+        payout = 0.0
     if knockout or skor_hdy is None:
         return {
             "label": "Tidak Layak", "emoji": "🚫",
@@ -1363,19 +1375,21 @@ def _render_hasil(s: dict) -> None:
                  else "📊 Detail Evaluasi 4 Dimensi (Skor Kelayakan HDY)")
     with st.expander(label_dim, expanded=not bool(knockout_alasan)):
 
-        warna_skor = ("#00C853" if skor_hdy >= 80
-                      else "#FFD600" if skor_hdy >= 65
-                      else "#FF9800" if skor_hdy >= 50
+        # Guard: skor_hdy bisa None jika data sangat minim
+        _skor_display = skor_hdy if skor_hdy is not None else 0
+        warna_skor = ("#00C853" if _skor_display >= 80
+                      else "#FFD600" if _skor_display >= 65
+                      else "#FF9800" if _skor_display >= 50
                       else "#D50000")
         st.markdown(
             f"""
             <div style="margin-bottom:12px;">
                 <div style="display:flex;justify-content:space-between;">
                     <b style="color:white;">Skor HDY Total</b>
-                    <b style="color:{warna_skor};">{skor_hdy}/100</b>
+                    <b style="color:{warna_skor};">{_skor_display}/100</b>
                 </div>
                 <div style="background:#333;border-radius:6px;height:14px;margin-top:4px;">
-                    <div style="background:{warna_skor};width:{skor_hdy}%;
+                    <div style="background:{warna_skor};width:{_skor_display}%;
                                 height:14px;border-radius:6px;"></div>
                 </div>
             </div>
@@ -1390,7 +1404,7 @@ def _render_hasil(s: dict) -> None:
             ( 0,  50): ("❌ Tidak Layak",  "Hindari; risiko dividend trap tinggi"),
         }
         for (lo, hi), (lbl, rek) in label_map.items():
-            if lo <= skor_hdy < hi:
+            if lo <= _skor_display < hi:
                 st.markdown(
                     f'<div style="padding:10px;background:#1E1E1E;border-radius:8px;'
                     f'border-left:5px solid {warna_skor};margin-bottom:12px;">'
@@ -2033,6 +2047,10 @@ def run_dividen():
         dim_d, detail_d = _score_dimensi_d(arrays, info, sektor, liquid_df_row)
         skor_hdy        = min(100, max(0, dim_a + dim_b + dim_c + dim_d))
         forward         = _hitung_forward_yield(arrays, info, curr_price)
+
+        # Guard: pastikan konsistensi dan payout tidak None sebelum masuk klasifikasi
+        konsistensi = konsistensi if isinstance(konsistensi, int) else 0
+        payout      = payout      if isinstance(payout, (int, float)) and not np.isnan(payout) else 0.0
 
         ddm = _hitung_two_stage_ddm(
             arrays          = arrays,
