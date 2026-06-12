@@ -1231,7 +1231,7 @@ def _render_hasil(s: dict) -> None:
             f"<p style='margin:0;'>"
             f"💰 Harga: <b>Rp {curr_price:,.0f}</b> &nbsp;|&nbsp; "
             f"📅 DPS Terakhir: <b>{dps_str}</b> &nbsp;|&nbsp; "
-            f"⏰ Ex-Div berikutnya: <b>{ex_date_str}</b>"
+            f"⏰ Ex-Div terdekat: <b>{ex_date_str}</b>"
             f"</p>",
             unsafe_allow_html=True,
         )
