@@ -14,6 +14,38 @@ Profil enrichment:
   - "trading"  : Value_MA20 >= 2M, ROE >= 10%, tanpa enrichment HDY
   - "dividen"  : Value_MA20 >= 500jt, ROE >= 5%, dengan enrichment HDY
     (EPS_5Y, DPS_5Y, FCF_5Y, PR_5Y, DY_5Y, ICR, DebtEBITDA)
+
+─────────────────────────────────────────────────────────────────────────────
+CHANGELOG FIX (19 Jun 2026):
+  Bug terkait: screening_hdy.py menampilkan DY Terakhir = 0% dan Ex-Date =
+  N/A secara massal untuk banyak ticker pada sesi tertentu, padahal sesi
+  sebelumnya (beberapa hari lalu) data itu lengkap.
+
+  Root cause: get_full_stock_data() di-cache TTL 1 jam. Yahoo Finance
+  (via yfinance .info) terkadang mengembalikan dict info yang PARSIAL —
+  field seperti dividendYield, exDividendDate, currentPrice bisa kosong
+  bersamaan karena berasal dari blok quoteSummary yang sama, akibat
+  rate-limit/throttling sesaat di sisi Yahoo. Sebelumnya, hasil fetch
+  parsial ini langsung di-cache "as-is" selama 1 jam tanpa deteksi —
+  artinya data rusak terkunci dan dipakai oleh SEMUA modul yang membaca
+  ticker tersebut selama jam itu.
+
+  Fix di file ini:
+    1. Tambah _is_info_suspicious() — deteksi indikasi fetch info parsial
+       (harga kosong padahal seharusnya selalu ada untuk saham aktif).
+    2. get_full_stock_data() sekarang melakukan retry terbatas (default
+       2x percobaan tambahan, dengan backoff singkat) KHUSUS saat info
+       dan/atau dividends terdeteksi parsial — bukan retry buta untuk
+       semua ticker, supaya tidak memperlambat proses screening massal
+       yang sebagian besar fetch-nya normal.
+    3. Tambah flag "_info_incomplete" di dict hasil agar modul lain bisa
+       tahu (opsional) bahwa data yang dipakai adalah hasil retry yang
+       tetap parsial setelah semua percobaan habis — bukan jaminan
+       lengkap, tapi sudah upaya terbaik.
+  Fallback lanjutan (DY TTM dari riwayat dividends, estimasi dari CSV)
+  tetap ditangani di screening_hdy.py — perbaikan di sini mengurangi
+  FREKUENSI fallback itu diperlukan, bukan menggantikannya.
+─────────────────────────────────────────────────────────────────────────────
 """
 
 import streamlit as st
@@ -23,6 +55,7 @@ import numpy as np
 import requests
 import json
 import os
+import time
 from bs4 import BeautifulSoup
 
 # ── Path konstanta ────────────────────────────────────────────────────────────
@@ -43,6 +76,14 @@ _SEKTOR_DEBT_EBITDA = {"Infrastruktur", "Utilitas"}
 # Sektor Bank/Finansial untuk CAR/NPL
 _SEKTOR_BANK = {"Bank", "Finansial", "Financial Services"}
 
+# ── Retry untuk fetch info/dividends parsial (FIX 19 Jun 2026) ───────────────
+# Jumlah percobaan TAMBAHAN (di luar percobaan pertama) saat info terdeteksi
+# mencurigakan/parsial. Total percobaan = 1 + _INFO_RETRY_COUNT.
+_INFO_RETRY_COUNT = 2
+# Delay antar percobaan dalam detik. Dibuat singkat agar tidak terlalu
+# memperlambat proses screening massal (worker ThreadPoolExecutor).
+_INFO_RETRY_DELAY = 1.5
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # HELPER UMUM
@@ -54,6 +95,28 @@ def hitung_div_yield_normal(info: dict) -> float:
     if raw_yield is None:
         return 0.0
     return float(raw_yield) if raw_yield > 1 else float(raw_yield * 100)
+
+
+def _is_info_suspicious(info: dict) -> bool:
+    """
+    Deteksi indikasi bahwa info dict dari yfinance adalah hasil fetch
+    PARSIAL (blok quoteSummary Yahoo gagal/timeout/throttled), bukan
+    karena saham tersebut benar-benar tidak memiliki data tersebut.
+
+    Heuristik: untuk saham yang masih aktif diperdagangkan, field harga
+    (currentPrice / regularMarketPrice) HARUS selalu terisi. Jika kosong
+    sama sekali, kemungkinan besar seluruh blok info gagal di-fetch —
+    yang turut menyeret field lain seperti dividendYield dan
+    exDividendDate menjadi kosong juga (root cause bug DY 0% massal).
+
+    Catatan: ini heuristik, bukan kepastian 100% — ada kasus langka saham
+    suspend/delisting di mana harga benar-benar tidak tersedia. Karena itu
+    retry dibatasi (lihat _INFO_RETRY_COUNT), tidak diulang tanpa batas.
+    """
+    if not info:
+        return True
+    has_price = info.get("currentPrice") or info.get("regularMarketPrice")
+    return not has_price
 
 
 def scrape_local_financial_data(ticker: str) -> dict:
@@ -114,12 +177,64 @@ def _safe_float(val) -> float | None:
 # SATU PINTU DATA YFINANCE  (dipakai semua modul)
 # ─────────────────────────────────────────────────────────────────────────────
 
+def _fetch_info_and_dividends_with_retry(stock: "yf.Ticker", ticker: str) -> tuple[dict, "pd.Series"]:
+    """
+    Fetch info + dividends dari objek yf.Ticker dengan retry terbatas
+    KHUSUS jika hasil pertama terdeteksi parsial (lihat _is_info_suspicious).
+
+    Tidak melakukan retry buta untuk semua ticker — hanya saat ada sinyal
+    kegagalan fetch, supaya proses screening massal (ratusan ticker via
+    ThreadPoolExecutor) tidak ikut melambat untuk ticker yang fetch-nya
+    sudah normal di percobaan pertama.
+
+    Return: (info_dict, dividends_series, info_incomplete_flag)
+    """
+    last_info: dict = {}
+    last_divs: "pd.Series" = pd.Series(dtype="float64")
+    info_incomplete = True
+
+    total_attempts = 1 + _INFO_RETRY_COUNT
+    for attempt in range(total_attempts):
+        try:
+            info = stock.info
+        except Exception:
+            info = {}
+
+        try:
+            divs = stock.dividends
+            if (divs is None or divs.empty) and hasattr(stock, "actions"):
+                actions = stock.actions
+                if isinstance(actions, pd.DataFrame) and "Dividends" in actions.columns:
+                    divs = actions["Dividends"]
+        except Exception:
+            divs = pd.Series(dtype="float64")
+
+        last_info = info if info else last_info
+        if divs is not None and not divs.empty:
+            last_divs = divs
+
+        if not _is_info_suspicious(info):
+            info_incomplete = False
+            break
+
+        # Info masih mencurigakan — coba lagi jika masih ada kesempatan
+        if attempt < total_attempts - 1:
+            time.sleep(_INFO_RETRY_DELAY)
+
+    return last_info, last_divs, info_incomplete
+
+
 @st.cache_data(ttl=3600, show_spinner=False)
 def get_full_stock_data(ticker: str, interval: str = "1d") -> dict:
     """
     Ambil semua data yfinance sekaligus untuk satu ticker.
     Cache TTL 1 jam — mencegah rate-limit.
-    Mengembalikan dict: info, history, financials, balance_sheet, cashflow, dividends.
+    Mengembalikan dict: info, history, financials, balance_sheet, cashflow,
+    dividends, dan flag internal "_info_incomplete".
+
+    FIX 19 Jun 2026: info & dividends di-fetch via retry terbatas jika
+    terdeteksi parsial (lihat _fetch_info_and_dividends_with_retry), supaya
+    hasil yang di-cache selama 1 jam bukan hasil fetch yang gagal sebagian.
     """
     _period_map = {
         "1m":  "7d",   "2m":  "60d",  "5m":  "60d",
@@ -132,12 +247,13 @@ def get_full_stock_data(ticker: str, interval: str = "1d") -> dict:
     stock  = yf.Ticker(ticker)
 
     data: dict = {
-        "info":          {},
-        "history":       pd.DataFrame(),
-        "financials":    pd.DataFrame(),
-        "balance_sheet": pd.DataFrame(),
-        "cashflow":      pd.DataFrame(),
-        "dividends":     pd.Series(dtype="float64"),
+        "info":              {},
+        "history":           pd.DataFrame(),
+        "financials":        pd.DataFrame(),
+        "balance_sheet":     pd.DataFrame(),
+        "cashflow":          pd.DataFrame(),
+        "dividends":         pd.Series(dtype="float64"),
+        "_info_incomplete":  False,
     }
 
     try:
@@ -149,7 +265,8 @@ def get_full_stock_data(ticker: str, interval: str = "1d") -> dict:
         pass
 
     try:
-        info     = stock.info
+        info, divs, info_incomplete = _fetch_info_and_dividends_with_retry(stock, ticker)
+
         industry = info.get("industry", "")
         sector   = info.get("sector", "")
         if "Bank" in industry or sector == "Financial Services":
@@ -160,12 +277,18 @@ def get_full_stock_data(ticker: str, interval: str = "1d") -> dict:
             info["nonPerformingLoan"] = (
                 local["NPL"] if local["NPL"] is not None else 2.5
             )
-        data["info"] = info
 
-        divs = stock.dividends
-        if divs.empty and "Dividends" in stock.actions:
-            divs = stock.actions["Dividends"]
-        data["dividends"] = divs
+        data["info"]             = info
+        data["dividends"]        = divs
+        data["_info_incomplete"] = info_incomplete
+
+        if info_incomplete:
+            print(
+                f"[get_full_stock_data] PERINGATAN: info untuk {ticker} masih "
+                f"parsial setelah {1 + _INFO_RETRY_COUNT} percobaan fetch. "
+                f"Field seperti dividendYield/exDividendDate/currentPrice "
+                f"kemungkinan kosong — kemungkinan throttle Yahoo Finance."
+            )
     except Exception:
         pass
 
@@ -512,6 +635,7 @@ def enrich_and_filter(
     is_dividen = profil.lower() == "dividen"
     records    = []
     total      = len(df_pre)
+    info_incomplete_tickers: list[str] = []
 
     for i, row in enumerate(df_pre.itertuples(index=False), start=1):
         ticker_raw = str(row.Ticker).strip().replace(".JK", "")
@@ -555,6 +679,9 @@ def enrich_and_filter(
             hist = data["history"]
             fin  = data["financials"]
             bs   = data["balance_sheet"]
+
+            if data.get("_info_incomplete"):
+                info_incomplete_tickers.append(ticker_raw)
 
             # ── Value MA20 ────────────────────────────────────────────────────
             if not hist.empty and "Close" in hist.columns and "Volume" in hist.columns:
@@ -612,6 +739,14 @@ def enrich_and_filter(
             print(f"[enrich] Gagal fetch {ticker}: {e}")
 
         records.append(rec)
+
+    if info_incomplete_tickers:
+        print(
+            f"[enrich_and_filter] PERINGATAN: {len(info_incomplete_tickers)} ticker "
+            f"masih memiliki info parsial setelah retry: {info_incomplete_tickers}. "
+            f"Data ROE/ROA/CAR/NPL/HDY untuk ticker ini mungkin tidak lengkap — "
+            f"pertimbangkan menjalankan enrichment ulang khusus ticker tersebut."
+        )
 
     df = pd.DataFrame(records)
 
