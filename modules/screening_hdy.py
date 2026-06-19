@@ -19,6 +19,35 @@ dari skor tertinggi. Dilengkapi info jarak hari ke ex-dividend date
 untuk mitigasi dividend trap.
 
 Stale warning: >= 2 hari dari candle valid terakhir.
+
+─────────────────────────────────────────────────────────────────────────────
+CHANGELOG FIX (19 Jun 2026):
+  Bug: DY Terakhir (curr_dy) dan Ex-Date sering kembali 0% / "N/A" secara
+  bersamaan untuk banyak ticker, padahal beberapa hari sebelumnya terisi
+  normal untuk ticker yang sama.
+
+  Root cause: curr_dy (via hitung_div_yield_normal) dan exdate (via
+  _get_exdate_info) KEDUANYA membaca field dari blok quoteSummary
+  (summaryDetail / calendarEvents) yang sama di info dict yfinance/Yahoo.
+  Saat Yahoo gagal mengembalikan blok tersebut (throttling / perubahan
+  schema / rate-limit), KEDUA field kosong bersamaan — bukan independen.
+  Ini bukan bug logika scoring, tapi kerapuhan karena 100% bergantung pada
+  satu sumber live tanpa fallback.
+
+  Fix: tambahkan fallback chain 3 lapis untuk DY saat ini:
+    1) info.dividendYield (live) — dipakai jika tersedia dan > 0
+    2) Hitung TTM yield manual dari riwayat stock_data["dividends"]
+       (total dividen 12 bulan terakhir / harga sekarang) — independen
+       dari bug blok info di atas
+    3) Fallback ke nilai terakhir DY_5Y dari liquid_dividend_stocks.csv
+       (ditandai sebagai estimasi, bisa stale)
+  Begitu juga Ex-Date: jika exDividendDate kosong, fallback ke tanggal
+  pembayaran dividen terakhir dari riwayat dividends (diberi label
+  berbeda — bukan ex-date resmi, hanya estimasi tanggal dividen terakhir).
+
+  Field baru "DY_Source" ditambahkan ke hasil agar transparan ke user
+  apakah angka DY itu live, estimasi TTM, atau estimasi dari CSV.
+─────────────────────────────────────────────────────────────────────────────
 """
 
 import json
@@ -67,6 +96,9 @@ SCORE_MIN_ENTRY      = 50    # minimum skor untuk masuk watchlist
 # Ex-date warning windows
 EXDATE_WARN_BEFORE   = 7     # hari sebelum ex-date = waspada dividend trap
 EXDATE_WARN_AFTER    = 14    # hari setelah ex-date = harga mungkin masih terkoreksi
+
+# TTM dividend yield fallback
+TTM_MONTHS_LOOKBACK  = 12    # bulan ke belakang untuk hitung yield TTM manual
 
 # Sektor
 SEKTOR_BANK   = {"Bank", "Finansial", "Keuangan", "Perbankan", "Financial Services"}
@@ -154,6 +186,65 @@ def _safe_latin1(text: str) -> str:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# HELPER — FALLBACK DY SAAT INI (TTM dari riwayat dividends aktual)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _hitung_dy_ttm_dari_dividends(
+    divs: pd.Series | None,
+    curr_price: float | None,
+    bulan_lookback: int = TTM_MONTHS_LOOKBACK,
+) -> float | None:
+    """
+    Fallback independen dari blok info Yahoo: hitung dividend yield trailing
+    N bulan terakhir (default 12) langsung dari riwayat pembayaran dividen
+    aktual (stock_data["dividends"]), dibagi harga saat ini.
+
+    Dipakai ketika info.get("dividendYield") kosong/0 — kondisi ini sering
+    terjadi bersamaan dengan exDividendDate kosong, karena keduanya berasal
+    dari blok quoteSummary yang sama di sisi Yahoo, bukan karena saham
+    benar-benar tidak membagi dividen.
+
+    Return: yield dalam PERSEN (mis. 7.5 untuk 7.5%), atau None jika data
+    tidak cukup.
+    """
+    if divs is None or len(divs) == 0:
+        return None
+    if curr_price is None or curr_price <= 0:
+        return None
+    try:
+        idx = pd.to_datetime(divs.index)
+        if idx.tz is not None:
+            idx = idx.tz_convert("UTC").tz_localize(None)
+
+        divs_clean = divs.copy()
+        divs_clean.index = idx
+
+        now    = pd.Timestamp.now()
+        cutoff = now - pd.DateOffset(months=bulan_lookback)
+
+        ttm_sum = float(divs_clean[divs_clean.index >= cutoff].sum())
+        if ttm_sum <= 0:
+            return None
+
+        return round((ttm_sum / curr_price) * 100, 2)
+    except Exception:
+        return None
+
+
+def _tanggal_dividen_terakhir(divs: pd.Series | None) -> pd.Timestamp | None:
+    """Ambil tanggal pembayaran dividen paling baru dari riwayat dividends."""
+    if divs is None or len(divs) == 0:
+        return None
+    try:
+        idx = pd.to_datetime(divs.index)
+        if idx.tz is not None:
+            idx = idx.tz_convert("UTC").tz_localize(None)
+        return idx.max()
+    except Exception:
+        return None
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # LOAD UNIVERSE
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -214,21 +305,46 @@ def _get_row_val(row, key, default=None):
 # HELPER — INFO EX-DATE
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _get_exdate_info(info: dict) -> dict:
+def _get_exdate_info(info: dict, divs: pd.Series | None = None) -> dict:
     """
     Ambil ex-dividend date dari yfinance info dan hitung jarak ke hari ini.
-    Return dict: {ex_date_str, days_diff, status, warna, pesan}
+
+    FIX: exDividendDate sering kosong bersamaan dengan dividendYield kosong
+    (keduanya dari blok quoteSummary yang sama di Yahoo). Jika kosong,
+    fallback ke tanggal pembayaran dividen terakhir dari riwayat dividends
+    sebagai ESTIMASI — diberi label & status berbeda agar tidak disalah-
+    artikan sebagai ex-date resmi.
+
+    Return dict: {ex_date_str, days_diff, status, warna, pesan, is_estimasi}
     """
     today = datetime.now(_TZ_WIB).date()
     ex_ts = info.get("exDividendDate")
 
     if not ex_ts:
+        # ── Fallback: pakai tanggal dividen terakhir dari riwayat aktual ──
+        tgl_terakhir = _tanggal_dividen_terakhir(divs)
+        if tgl_terakhir is not None:
+            tgl_str = tgl_terakhir.strftime("%d %b %Y")
+            diff_hari = (today - tgl_terakhir.date()).days
+            return {
+                "ex_date_str": f"{tgl_str} (est.)",
+                "days_diff":   -diff_hari,
+                "status":      "estimasi_dari_riwayat",
+                "warna":       "#90A4AE",
+                "pesan": (
+                    f"ℹ️ Ex-date resmi tidak tersedia dari Yahoo saat ini. "
+                    f"Estimasi dari tanggal pembayaran dividen terakhir: "
+                    f"{tgl_str} ({diff_hari} hari lalu)."
+                ),
+                "is_estimasi": True,
+            }
         return {
             "ex_date_str": "N/A",
             "days_diff":   None,
             "status":      "unknown",
             "warna":       "#9E9E9E",
             "pesan":       "Ex-date tidak tersedia",
+            "is_estimasi": False,
         }
 
     try:
@@ -266,6 +382,7 @@ def _get_exdate_info(info: dict) -> dict:
             "status":      status,
             "warna":       warna,
             "pesan":       pesan,
+            "is_estimasi": False,
         }
     except Exception:
         return {
@@ -274,6 +391,7 @@ def _get_exdate_info(info: dict) -> dict:
             "status":      "unknown",
             "warna":       "#9E9E9E",
             "pesan":       "Ex-date tidak dapat diparsing",
+            "is_estimasi": False,
         }
 
 
@@ -746,10 +864,11 @@ def process_single_hdy(
             "debt_ebitda": _safe_float(_get_row_val(ticker_row, "DebtEBITDA")),
         }
 
-        # ── Ambil data live (harga, ex-date, yield current) ───────────────
+        # ── Ambil data live (harga, ex-date, yield current, dividends) ────
         stock_data = get_full_stock_data(ticker, interval="1d")
         info       = stock_data.get("info", {})
         history    = stock_data.get("history", pd.DataFrame())
+        divs       = stock_data.get("dividends", pd.Series(dtype="float64"))
 
         if history.empty:
             return None
@@ -770,8 +889,30 @@ def process_single_hdy(
         today           = datetime.now(_TZ_WIB).date()
         stale_days      = max((today - last_valid_date).days, 0)
 
-        # ── Dividend yield saat ini ───────────────────────────────────────
-        curr_dy = hitung_div_yield_normal(info)  # dalam %
+        # ── Dividend yield saat ini — FALLBACK CHAIN 3 LAPIS ──────────────
+        # Bug fix 19 Jun 2026: info.get("dividendYield") dan
+        # info.get("exDividendDate") berasal dari blok quoteSummary yang
+        # sama di Yahoo. Saat blok itu kosong (throttle/rate-limit), KEDUA
+        # field hilang bersamaan — bukan berarti saham tidak bayar dividen.
+        # Lapis 1: live dari info (paling akurat jika tersedia)
+        curr_dy   = hitung_div_yield_normal(info)  # dalam %
+        dy_source = "live_info"
+
+        if not curr_dy or curr_dy <= 0:
+            # Lapis 2: hitung TTM manual dari riwayat dividends aktual
+            dy_ttm = _hitung_dy_ttm_dari_dividends(divs, curr_price)
+            if dy_ttm is not None and dy_ttm > 0:
+                curr_dy   = dy_ttm
+                dy_source = "ttm_calculated"
+            else:
+                # Lapis 3: fallback ke nilai terakhir DY_5Y dari CSV (estimasi)
+                dy_valid_csv = _valid_floats(arrays["dy_5y"])
+                if dy_valid_csv:
+                    curr_dy   = round(dy_valid_csv[-1] * 100, 2)
+                    dy_source = "csv_estimate"
+                else:
+                    curr_dy   = 0.0
+                    dy_source = "unavailable"
 
         # ── Hard Knockout ─────────────────────────────────────────────────
         ko_alasan = check_hard_knockout(arrays, info, sektor, ticker_row)
@@ -787,7 +928,7 @@ def process_single_hdy(
 
         label_kls, warna_kls = _label_kelayakan(skor_total)
         forward = _hitung_forward_yield(arrays, info, curr_price)
-        exdate  = _get_exdate_info(info)
+        exdate  = _get_exdate_info(info, divs)
 
         # ── DPS terakhir ──────────────────────────────────────────────────
         dps_valid = _valid_floats(arrays["dps_5y"])
@@ -806,6 +947,7 @@ def process_single_hdy(
             "Warna":          warna_kls,
             "Harga":          int(curr_price),
             "DY_Curr":        round(curr_dy, 2),
+            "DY_Source":      dy_source,
             "DY_Avg5":        round(dy_avg5, 2) if dy_avg5 else None,
             "DPS_Terakhir":   round(dps_terakhir, 2) if dps_terakhir else None,
             "Forward":        forward,
@@ -946,7 +1088,15 @@ def export_to_pdf_hdy(
     pdf.cell(190, 8, "  A. TOP 5 PRIORITAS DIVIDEN", 0, ln=True, fill=True)
     pdf.ln(2)
 
+    _DY_SOURCE_LABEL = {
+        "live_info":       "",
+        "ttm_calculated":  " (TTM est.)",
+        "csv_estimate":    " (CSV est.)",
+        "unavailable":     " (N/A)",
+    }
+
     for item in top5:
+        dy_suffix = _DY_SOURCE_LABEL.get(item.get("DY_Source", ""), "")
         pdf.set_font("Arial", "B", 10)
         fwd_str = (f"| FwdDY: {item['Forward']['dy_fwd']:.1f}%"
                    if item.get("Forward") else "")
@@ -958,7 +1108,7 @@ def export_to_pdf_hdy(
         pdf.cell(60, 5, _safe_latin1(f"Harga: Rp {format_rp(item['Harga'])}"), 0)
         pdf.set_text_color(0, 128, 0)
         pdf.cell(65, 5, _safe_latin1(
-            f"DY Terakhir: {item['DY_Curr']:.2f}%"
+            f"DY Terakhir: {item['DY_Curr']:.2f}%{dy_suffix}"
             + (f" | Avg5Y: {item['DY_Avg5']:.2f}%" if item['DY_Avg5'] else "")
         ), 0)
         pdf.set_text_color(0, 0, 0)
@@ -983,10 +1133,11 @@ def export_to_pdf_hdy(
         pdf.cell(190, 8, "  B. WATCHLIST (RANK 6-20)", 0, ln=True, fill=True)
         pdf.ln(2)
         for w in watchlist:
+            dy_suffix_w = _DY_SOURCE_LABEL.get(w.get("DY_Source", ""), "")
             pdf.set_font("Arial", "B", 9)
             pdf.cell(190, 5, _safe_latin1(
                 f"{w['Ticker']} ({w['Sektor'][:20]}) | {w['Label']} | "
-                f"Skor: {w['Skor']} | DY: {w['DY_Curr']:.1f}%"
+                f"Skor: {w['Skor']} | DY: {w['DY_Curr']:.1f}%{dy_suffix_w}"
                 + (f" | Avg5Y: {w['DY_Avg5']:.1f}%" if w['DY_Avg5'] else "")
             ), ln=True)
             pdf.set_font("Arial", "I", 7)
@@ -1004,7 +1155,9 @@ def export_to_pdf_hdy(
         "Laporan ini dihasilkan secara otomatis menggunakan algoritma scoring HDY. "
         "Bukan merupakan ajakan, rekomendasi pasti, atau paksaan untuk membeli/menjual saham. "
         "Keputusan investasi sepenuhnya menjadi tanggung jawab pribadi investor. "
-        "Selalu lakukan DYOR dan terapkan manajemen risiko."
+        "Selalu lakukan DYOR dan terapkan manajemen risiko. "
+        "Nilai DY yang ditandai (TTM est.) atau (CSV est.) adalah estimasi karena data "
+        "live dari penyedia data sedang tidak lengkap — bukan indikasi saham tidak membagi dividen."
     ))
 
     try:
@@ -1065,6 +1218,14 @@ def run_screening_hdy() -> None:
 
         **Label Kelayakan:**
         ⭐ Prima (≥80) | ✅ Layak (65-79) | ⚠️ Perhatikan (50-64) | ❌ Tidak Layak (<50)
+
+        **Sumber DY Terakhir:**
+        DY Terakhir diambil dari data live Yahoo Finance jika tersedia. Jika Yahoo sedang
+        tidak mengembalikan data tersebut (umum terjadi karena rate-limit/throttling),
+        sistem otomatis menghitung yield trailing 12 bulan dari riwayat pembayaran dividen
+        aktual, lalu jika itu pun tidak tersedia, memakai estimasi dari data historis
+        `liquid_dividend_stocks.csv`. Nilai yang bukan dari sumber live akan ditandai
+        **"(estimasi)"** pada kartu hasil.
 
         **Ex-Date Warning:**
         Beli saham *sebelum* cum-date (1 hari bursa sebelum ex-date) untuk mendapat dividen.
@@ -1127,6 +1288,17 @@ def run_screening_hdy() -> None:
                     f"⚠️ Data {max_stale} hari tertinggal — kemungkinan libur bursa. "
                     f"Harga dan DY yang ditampilkan adalah data candle terakhir yang valid."
                 )
+
+        # ── Peringatan jika banyak ticker pakai DY estimasi (bukan live) ──
+        n_estimasi = sum(1 for r in raw_results if r.get("DY_Source") != "live_info")
+        if raw_results and n_estimasi / len(raw_results) >= 0.3:
+            st.warning(
+                f"⚠️ **{n_estimasi} dari {len(raw_results)} saham** menggunakan DY hasil "
+                f"estimasi (TTM/CSV), bukan data live Yahoo Finance. Ini biasanya terjadi "
+                f"saat Yahoo Finance melakukan rate-limit/throttling pada sesi fetch ini. "
+                f"Nilai estimasi tetap dihitung dari data dividen aktual, tapi disarankan "
+                f"jalankan ulang screening beberapa saat lagi untuk konfirmasi data live."
+            )
 
         st.session_state["hdy_results"]      = final_results
         st.session_state["hdy_raw_results"]  = raw_results
@@ -1192,6 +1364,13 @@ def run_screening_hdy() -> None:
     # ═══════════════════════════════════════════════════════════════════════
     st.header("🏆 Top 5 Prioritas Dividend Investing")
 
+    _DY_SOURCE_BADGE = {
+        "live_info":      None,
+        "ttm_calculated": ("📡 Estimasi TTM", "#FF9800"),
+        "csv_estimate":   ("🗃️ Estimasi CSV", "#9E9E9E"),
+        "unavailable":    ("❓ Tidak tersedia", "#D50000"),
+    }
+
     cols = st.columns(min(len(top5), 5))
     for idx, item in enumerate(top5):
         with cols[idx]:
@@ -1229,6 +1408,16 @@ def run_screening_hdy() -> None:
             # Metrik utama
             st.metric("Harga",        f"Rp {format_rp(item['Harga'])}")
             st.metric("DY Terakhir",   f"{item['DY_Curr']:.2f}%")
+
+            badge = _DY_SOURCE_BADGE.get(item.get("DY_Source", "live_info"))
+            if badge:
+                label_b, warna_b = badge
+                st.markdown(
+                    f"<div style='font-size:0.72em;color:{warna_b};margin-top:-8px;"
+                    f"margin-bottom:6px;'>{label_b}</div>",
+                    unsafe_allow_html=True,
+                )
+
             if item["DY_Avg5"]:
                 st.metric("DY Rata-rata 5Y", f"{item['DY_Avg5']:.2f}%")
             if fwd:
@@ -1247,7 +1436,7 @@ def run_screening_hdy() -> None:
                 f"</div>",
                 unsafe_allow_html=True,
             )
-            if exdate["status"] in ("menjelang", "hari_ini", "baru_lewat"):
+            if exdate["status"] in ("menjelang", "hari_ini", "baru_lewat", "estimasi_dari_riwayat"):
                 st.markdown(
                     f"<div style='font-size:0.75em;color:{exdate['warna']};margin-top:4px;'>"
                     f"{exdate['pesan']}</div>",
@@ -1272,6 +1461,13 @@ def run_screening_hdy() -> None:
         st.markdown("---")
         st.subheader(f"📋 Watchlist HDY — Rank 6 s.d. {min(20, 5 + len(watchlist))}")
 
+        _DY_SOURCE_SUFFIX = {
+            "live_info":      "",
+            "ttm_calculated": " (TTM est.)",
+            "csv_estimate":   " (CSV est.)",
+            "unavailable":    " (N/A)",
+        }
+
         df_watch = pd.DataFrame([{
             "Rank":           idx + 6,
             "Ticker":         w["Ticker"],
@@ -1281,10 +1477,9 @@ def run_screening_hdy() -> None:
             "Skor":           w["Skor"],
             "Harga (Rp)":     w["Harga"],
             "DY Terakhir (%)":w["DY_Curr"],
-            # FIX: gunakan None (bukan string "N/A") agar kolom tetap numerik
-            # dan format NumberColumn "%.2f%%" di bawah benar-benar diterapkan.
-            "DY Avg 5Y (%)":  w["DY_Avg5"] if w["DY_Avg5"] is not None else None,
-            "Fwd DY (%)":     w["Forward"]["dy_fwd"] if w.get("Forward") else None,
+            "Sumber DY":      _DY_SOURCE_SUFFIX.get(w.get("DY_Source", ""), ""),
+            "DY Avg 5Y (%)":  w["DY_Avg5"] if w["DY_Avg5"] else "N/A",
+            "Fwd DY (%)":     w["Forward"]["dy_fwd"] if w.get("Forward") else "N/A",
             "Fwd Label":      w["Forward"]["label"] if w.get("Forward") else "N/A",
             "Ex-Date":        w["Exdate"]["ex_date_str"],
             "Ex Note":        w["Exdate"]["pesan"],
@@ -1310,11 +1505,15 @@ def run_screening_hdy() -> None:
                     min_value=0, max_value=100, format="%d",
                 ),
                 "DY Terakhir (%)": st.column_config.NumberColumn(format="%.2f%%"),
-                "DY Avg 5Y (%)":   st.column_config.NumberColumn(format="%.2f%%"),
-                "Fwd DY (%)":      st.column_config.NumberColumn(format="%.2f%%"),
             },
             use_container_width=True,
             hide_index=True,
+        )
+        st.caption(
+            "Kolom **Sumber DY**: kosong = data live Yahoo Finance. "
+            "(TTM est.) = dihitung dari riwayat dividen aktual 12 bulan terakhir. "
+            "(CSV est.) = estimasi dari data historis liquid_dividend_stocks.csv. "
+            "(N/A) = tidak ada data dividen sama sekali yang bisa dipakai."
         )
 
     # ═══════════════════════════════════════════════════════════════════════
