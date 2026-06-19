@@ -859,7 +859,7 @@ def apply_sidebar_filters_hdy(
         pilihan_mktcap = []
 
     dy_min = st.sidebar.slider(
-        "Minimum DY Saat Ini (%)", min_value=0.0, max_value=20.0, value=0.0, step=0.5,
+        "Minimum DY Terakhir (%)", min_value=0.0, max_value=20.0, value=0.0, step=0.5,
     )
     score_min = st.sidebar.slider(
         "Minimum Skor HDY", min_value=0, max_value=100, value=50, step=5,
@@ -958,7 +958,7 @@ def export_to_pdf_hdy(
         pdf.cell(60, 5, _safe_latin1(f"Harga: Rp {format_rp(item['Harga'])}"), 0)
         pdf.set_text_color(0, 128, 0)
         pdf.cell(65, 5, _safe_latin1(
-            f"DY Saat Ini: {item['DY_Curr']:.2f}%"
+            f"DY Terakhir: {item['DY_Curr']:.2f}%"
             + (f" | Avg5Y: {item['DY_Avg5']:.2f}%" if item['DY_Avg5'] else "")
         ), 0)
         pdf.set_text_color(0, 0, 0)
@@ -1228,7 +1228,7 @@ def run_screening_hdy() -> None:
 
             # Metrik utama
             st.metric("Harga",        f"Rp {format_rp(item['Harga'])}")
-            st.metric("DY Saat Ini",   f"{item['DY_Curr']:.2f}%")
+            st.metric("DY Terakhir",   f"{item['DY_Curr']:.2f}%")
             if item["DY_Avg5"]:
                 st.metric("DY Rata-rata 5Y", f"{item['DY_Avg5']:.2f}%")
             if fwd:
@@ -1280,7 +1280,7 @@ def run_screening_hdy() -> None:
             "Label":          w["Label"],
             "Skor":           w["Skor"],
             "Harga (Rp)":     w["Harga"],
-            "DY Saat Ini (%)":w["DY_Curr"],
+            "DY Terakhir (%)":w["DY_Curr"],
             # FIX: gunakan None (bukan string "N/A") agar kolom tetap numerik
             # dan format NumberColumn "%.2f%%" di bawah benar-benar diterapkan.
             "DY Avg 5Y (%)":  w["DY_Avg5"] if w["DY_Avg5"] is not None else None,
@@ -1309,7 +1309,7 @@ def run_screening_hdy() -> None:
                 "Skor": st.column_config.ProgressColumn(
                     min_value=0, max_value=100, format="%d",
                 ),
-                "DY Saat Ini (%)": st.column_config.NumberColumn(format="%.2f%%"),
+                "DY Terakhir (%)": st.column_config.NumberColumn(format="%.2f%%"),
                 "DY Avg 5Y (%)":   st.column_config.NumberColumn(format="%.2f%%"),
                 "Fwd DY (%)":      st.column_config.NumberColumn(format="%.2f%%"),
             },
