@@ -1281,8 +1281,10 @@ def run_screening_hdy() -> None:
             "Skor":           w["Skor"],
             "Harga (Rp)":     w["Harga"],
             "DY Saat Ini (%)":w["DY_Curr"],
-            "DY Avg 5Y (%)":  w["DY_Avg5"] if w["DY_Avg5"] else "N/A",
-            "Fwd DY (%)":     w["Forward"]["dy_fwd"] if w.get("Forward") else "N/A",
+            # FIX: gunakan None (bukan string "N/A") agar kolom tetap numerik
+            # dan format NumberColumn "%.2f%%" di bawah benar-benar diterapkan.
+            "DY Avg 5Y (%)":  w["DY_Avg5"] if w["DY_Avg5"] is not None else None,
+            "Fwd DY (%)":     w["Forward"]["dy_fwd"] if w.get("Forward") else None,
             "Fwd Label":      w["Forward"]["label"] if w.get("Forward") else "N/A",
             "Ex-Date":        w["Exdate"]["ex_date_str"],
             "Ex Note":        w["Exdate"]["pesan"],
@@ -1308,6 +1310,8 @@ def run_screening_hdy() -> None:
                     min_value=0, max_value=100, format="%d",
                 ),
                 "DY Saat Ini (%)": st.column_config.NumberColumn(format="%.2f%%"),
+                "DY Avg 5Y (%)":   st.column_config.NumberColumn(format="%.2f%%"),
+                "Fwd DY (%)":      st.column_config.NumberColumn(format="%.2f%%"),
             },
             use_container_width=True,
             hide_index=True,
