@@ -1,158 +1,280 @@
 """
-screening_hdy.py
-================
-Modul Screening High Dividend Yield (HDY).
+screening.py
+============
+Modul Screening Day Trade & Swing Trade.
 
-Universe saham: dibaca dari liquid_dividend_stocks.csv via
-get_liquid_dividend_stocks(). Scoring menggunakan pendekatan dua tahap:
-  1. Hard Knockout Filter — eliminasi cepat atas kondisi fatal
-  2. Simplified 100-Point Scoring — penilaian mendalam per dimensi
+Universe saham: dibaca dari liquid_stocks.csv (prioritas) atau
+pre_liquid_stocks.csv (fallback) via get_liquid_stocks().
 
-Scoring 100 Poin:
-  Dimensi A — Keberlanjutan Earnings & FCF  : 40 poin
-  Dimensi B — Track Record Distribusi       : 40 poin
-  Dimensi C — Momentum Terkini             : 10 poin
-  Dimensi D — Kesehatan Balance Sheet      : 10 poin
+Versi ini disesuaikan penuh dengan MODUL_SCREENING.md:
+─────────────────────────────────────────────────────────
+Pre-filter:
+- OBV Divergence negatif = gugur mandiri
+  (OBV[-1] <= rata-rata OBV 5 candle sebelumnya — lebih robust dari titik tunggal)
+- CMF(20) <= -0.15 = gugur mandiri (diperlunak dari -0.1)
 
-Output: Top 5 kartu prioritas + Watchlist sampai rank 20, diurutkan
-dari skor tertinggi. Dilengkapi info jarak hari ke ex-dividend date
-untuk mitigasi dividend trap.
+Day Trade scoring (interval 15m):
+1. RVOL tier: >=2.5 -> 20 poin; >=1.2 -> 10 poin; <1.2 -> 0
+2. Harga vs VWAP: Close > VWAP DAN VWAP[i] > VWAP[i-1] -> 20 poin
+3. Supertrend (10,2) tier: fresh cross -> 20; sustained >3 (window 10 candle) -> 15; bearish -> 0
+4. MACD Golden Cross (dalam 3 candle) -> 5 poin
+5. MACD Histogram naik -> 5 poin
+6. RSI(9) Momentum range 45-70 -> 7.5 poin
+7. RSI(9) Trend: naik konsisten 3 candle berturut -> 7.5 poin
+8. PSAR bullish -> 5 poin
+9. VPT Trend: slope EMA(10) VPT positif >= 3 dari 5 candle terakhir -> 10 poin
+MTF Bonus: daily MA check (+10/+5/-15)
+Bonus Sektor Hot: +10 (post-processing)
 
-Stale warning: >= 2 hari dari candle valid terakhir.
+Swing Trade scoring (interval 1d):
+1. Supertrend (10,3) tier: fresh cross -> 20; sustained >3 (window 10 candle) -> 15; bearish -> 0
+2. MA Structure: Close>EMA20>EMA50>EMA200 -> 20; Close>EMA50 & EMA20>EMA50 -> 10; else -> 0
+3. MACD Golden Cross (dalam 5 candle) -> 7.5 poin
+4. MACD Histogram naik -> 7.5 poin
+5. RVOL tier: >=2.5 -> 15; >=1.2 -> 10; <1.2 -> 0
+6. RSI(14) Momentum range 45-70 -> 10 poin
+7. RSI(14) Trend: naik konsisten 3 candle berturut -> 10 poin
+8. PSAR bullish -> 5 poin
+9. VPT Trend: slope EMA(10) VPT positif >= 3 dari 5 candle terakhir -> 5 poin
+Bonus MACD Early Recovery: Hist > 0 tapi MACD < Signal -> +10
+Penalti RSI Overbought (>75): -15
+Bonus Sektor Hot: +10 (post-processing)
 
-─────────────────────────────────────────────────────────────────────────────
-CHANGELOG FIX (19 Jun 2026):
-  Bug: DY Terakhir (curr_dy) dan Ex-Date sering kembali 0% / "N/A" secara
-  bersamaan untuk banyak ticker, padahal beberapa hari sebelumnya terisi
-  normal untuk ticker yang sama.
-
-  Root cause: curr_dy (via hitung_div_yield_normal) dan exdate (via
-  _get_exdate_info) KEDUANYA membaca field dari blok quoteSummary
-  (summaryDetail / calendarEvents) yang sama di info dict yfinance/Yahoo.
-  Saat Yahoo gagal mengembalikan blok tersebut (throttling / perubahan
-  schema / rate-limit), KEDUA field kosong bersamaan — bukan independen.
-  Ini bukan bug logika scoring, tapi kerapuhan karena 100% bergantung pada
-  satu sumber live tanpa fallback.
-
-  Fix: tambahkan fallback chain 3 lapis untuk DY saat ini:
-    1) info.dividendYield (live) — dipakai jika tersedia dan > 0
-    2) Hitung TTM yield manual dari riwayat stock_data["dividends"]
-       (total dividen 12 bulan terakhir / harga sekarang) — independen
-       dari bug blok info di atas
-    3) Fallback ke nilai terakhir DY_5Y dari liquid_dividend_stocks.csv
-       (ditandai sebagai estimasi, bisa stale)
-  Begitu juga Ex-Date: jika exDividendDate kosong, fallback ke tanggal
-  pembayaran dividen terakhir dari riwayat dividends (diberi label
-  berbeda — bukan ex-date resmi, hanya estimasi tanggal dividen terakhir).
-
-  Field baru "DY_Source" ditambahkan ke hasil agar transparan ke user
-  apakah angka DY itu live, estimasi TTM, atau estimasi dari CSV.
-─────────────────────────────────────────────────────────────────────────────
+Stale warning: >= 2 hari.
 """
 
-import json
-import os
-import concurrent.futures
-from datetime import datetime, date
-
-import numpy as np
-import pandas as pd
-import plotly.express as px
-import plotly.graph_objects as go
-import pytz
 import streamlit as st
+import pandas as pd
+import numpy as np
+import pytz
+import os
+import holidays
+import plotly.express as px
+import concurrent.futures
+from datetime import datetime
 from fpdf import FPDF
 
 from utils.data_loader import (
     get_full_stock_data,
-    get_liquid_dividend_stocks,
+    get_liquid_stocks,
+    get_value_ma20,
     is_ticker_liquid,
     get_ticker_row,
     PRE_LIQUID_PATH,
-    LIQUID_DIVIDEND_PATH,
-    hitung_div_yield_normal,
+    LIQUID_PATH,
 )
 
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # KONSTANTA
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 
-# Hard knockout thresholds
-DER_MAX_GENERAL      = 3.0
-CAR_MIN_BANK         = 8.0
-NPL_MAX_BANK         = 5.0
-DEBT_EBITDA_MAX_INFRA= 5.0
-PAYOUT_RATIO_MAX_KO  = 1.0   # > 100% = knockout
-FREQ_MIN_DIVIDEN     = 3     # minimum 3x dalam 5 tahun
+RSI_PERIOD_DAY      = 9
+RSI_PERIOD_SWING    = 14
+RSI_OVERBOUGHT      = 75
+RSI_MOM_LOW         = 45
+RSI_MOM_HIGH        = 70
 
-# Warning thresholds
-PAYOUT_WARNING       = 0.90  # > 90%
-YIELD_ANOMALY        = 15.0  # > 15% (dalam %)
-YIELD_ANOMALY_MULT   = 1.5   # DY_now > 1.5 * DY_avg_5y
+MACD_FAST           = 12
+MACD_SLOW           = 26
+MACD_SIGNAL_PERIOD  = 9
 
-# Score thresholds
-SCORE_MIN_ENTRY      = 50    # minimum skor untuk masuk watchlist
+EMA_SHORT           = 20
+EMA_MID             = 50
+EMA_LONG            = 200
 
-# Ex-date warning windows
-EXDATE_WARN_BEFORE   = 7     # hari sebelum ex-date = waspada dividend trap
-EXDATE_WARN_AFTER    = 14    # hari setelah ex-date = harga mungkin masih terkoreksi
+RVOL_HIGH           = 2.5
+RVOL_MID            = 1.2
 
-# TTM dividend yield fallback
-TTM_MONTHS_LOOKBACK  = 12    # bulan ke belakang untuk hitung yield TTM manual
+MC_MIN_IDR          = 500_000_000_000
+USD_TO_IDR          = 16_000
+MC_MIN_USD          = MC_MIN_IDR / USD_TO_IDR
 
-# Sektor
-SEKTOR_BANK   = {"Bank", "Finansial", "Keuangan", "Perbankan", "Financial Services"}
-SEKTOR_INFRA  = {"Infrastruktur", "Utilitas", "Infrastructure", "Utilities"}
+# Pre-filter thresholds (diperlunak agar tidak terlalu agresif saat pasar koreksi)
+CMF_THRESHOLD       = -0.15   # semula -0.1
+OBV_LOOKBACK        = 5       # jumlah candle untuk rata-rata OBV referensi
+
+SL_MULT_DAY         = 1.8
+SL_MULT_SWING       = 2.5
+MAX_LOSS_PCT_DAY    = 0.03
+MAX_LOSS_PCT_SWING  = 0.08
+RR_MIN_DAY          = 1.5
+RR_MIN_SWING        = 2.0
+MAX_ALLOC_PCT       = 0.15
+
+SCORE_MIN_ENTRY     = 70
+RRR_MIN_ENTRY       = 1.4
+SECTOR_HOT_THRESHOLD = 70
+
+# Window untuk deteksi candles_above Supertrend (Sustained vs Fresh Cross)
+ST_SUSTAINED_WINDOW = 10   # semula 4 (sama dengan window fresh-cross), sekarang dipisah
 
 _TZ_WIB = pytz.timezone("Asia/Jakarta")
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# HELPER — PARSE DATA
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
+# LOAD UNIVERSE
+# -----------------------------------------------------------------------------
 
-def _parse_json_col(val) -> list:
-    """Parse kolom JSON array dari CSV; kembalikan list atau []."""
-    if val is None or (isinstance(val, float) and np.isnan(val)):
-        return []
-    if isinstance(val, list):
-        return val
+# Threshold filter universe trading — harus konsisten dengan admin_panel.py profil "trading"
+_TRADING_MIN_VALUE_MA20 = 2_000_000_000
+_TRADING_MIN_ROE        = 10.0
+
+
+@st.cache_data(ttl=60 * 60 * 24, show_spinner=False)
+def load_universe() -> tuple[list[str], pd.DataFrame]:
+    """
+    Muat universe saham dari liquid_stocks.csv (prioritas) atau
+    pre_liquid_stocks.csv (fallback).
+    Return: (saham_list, df_universe)
+    """
+    df_liquid = get_liquid_stocks()
+    if not df_liquid.empty:
+        df = _normalize_universe_columns(df_liquid)
+
+        # Filter trading: hanya ticker dengan Value_MA20 >= 2M dan ROE >= 10%.
+        # Dilakukan di sini (bukan di process_single_stock) agar saham profil
+        # dividen yang lolos threshold lebih rendah tidak masuk antrian API call.
+        # Filter hanya aktif jika kolom tersedia — agar tidak crash saat
+        # liquid_stocks.csv belum di-enrich ulang.
+        if "Value_MA20" in df.columns:
+            df = df[
+                df["Value_MA20"].notna() &
+                (pd.to_numeric(df["Value_MA20"], errors="coerce") >= _TRADING_MIN_VALUE_MA20)
+            ]
+        if "ROE" in df.columns:
+            df = df[
+                df["ROE"].notna() &
+                (pd.to_numeric(df["ROE"], errors="coerce") >= _TRADING_MIN_ROE)
+            ]
+
+        saham_list = [
+            (t if t.endswith(".JK") else t + ".JK")
+            for t in df["Kode Saham"].astype(str).str.strip().tolist()
+        ]
+        return saham_list, df
+
     try:
-        parsed = json.loads(str(val))
-        return parsed if isinstance(parsed, list) else []
-    except Exception:
-        return []
+        df = pd.read_csv(PRE_LIQUID_PATH, sep=None, engine="python")
+        df = _normalize_universe_columns(df)
+        saham_list = [
+            (t if t.endswith(".JK") else t + ".JK")
+            for t in df["Kode Saham"].astype(str).str.strip().tolist()
+        ]
+        st.sidebar.warning(
+            "liquid_stocks.csv belum tersedia. "
+            "Menggunakan pre_liquid_stocks.csv sebagai fallback — "
+            "data enrichment (Value_MA20, ROE, dll) tidak tersedia."
+        )
+        return saham_list, df
+    except FileNotFoundError:
+        st.error(f"File universe tidak ditemukan: {PRE_LIQUID_PATH}")
+        return [], pd.DataFrame()
+    except Exception as e:
+        st.error(f"Gagal membaca universe saham: {e}")
+        return [], pd.DataFrame()
 
 
-def _valid_floats(arr: list) -> list[float]:
-    """Ambil nilai tidak None dan bukan NaN dari list; kembalikan list float."""
-    result = []
-    for v in arr:
-        if v is None:
-            continue
-        try:
-            f = float(v)
-            if not np.isnan(f):
-                result.append(f)
-        except (TypeError, ValueError):
-            continue
+def clear_load_universe_cache() -> None:
+    """
+    Clear cache load_universe().
+    Dipanggil dari admin_panel.py setelah admin upload liquid_stocks.csv baru ke GitHub
+    dan menekan tombol 'Clear cache' — agar screening langsung membaca file terbaru
+    tanpa harus menunggu TTL 24 jam habis.
+    """
+    load_universe.clear()
+
+
+def _normalize_universe_columns(df: pd.DataFrame) -> pd.DataFrame:
+    """Normalisasi nama kolom DataFrame universe ke standar liquid_stocks.csv."""
+    df = df.copy()
+    df.columns = df.columns.str.strip()
+    rename_map: dict = {}
+    for col in df.columns:
+        c = col.lower().strip().lstrip("\ufeff")
+        if c in ("ticker", "kode saham", "kode", "saham"):
+            rename_map[col] = "Kode Saham"
+        elif c in ("sektor", "sector"):
+            rename_map[col] = "Sektor"
+        elif c == "syariah":
+            rename_map[col] = "Syariah"
+        elif c in ("mktcap", "mkt cap", "mkt_cap", "market cap", "market_cap"):
+            rename_map[col] = "MktCap"
+        elif c.startswith("roe"):
+            rename_map[col] = "ROE"
+        elif c.startswith("roa"):
+            rename_map[col] = "ROA"
+        elif c.startswith("npm") or "profit margin" in c:
+            rename_map[col] = "NPM"
+        elif "value_ma20" in c or "value ma20" in c:
+            rename_map[col] = "Value_MA20"
+        elif "median_per_3y" in c or "median per 3y" in c:
+            rename_map[col] = "Median_PER_3Y"
+        elif "median_pbv_3y" in c or "median pbv 3y" in c:
+            rename_map[col] = "Median_PBV_3Y"
+    df = df.rename(columns=rename_map)
+    if "Kode Saham" in df.columns:
+        df["Kode Saham"] = (
+            df["Kode Saham"].astype(str).str.strip().str.replace(".JK", "", regex=False)
+        )
+    return df
+
+
+# -----------------------------------------------------------------------------
+# LOOKUP HELPERS
+# -----------------------------------------------------------------------------
+
+def get_sector_from_universe(ticker_bersih: str, df_universe: pd.DataFrame) -> str:
+    """Ambil nama sektor ticker dari df_universe."""
+    if df_universe.empty or "Sektor" not in df_universe.columns:
+        return "Lainnya"
+    mask = df_universe["Kode Saham"].astype(str).str.strip() == ticker_bersih
+    rows = df_universe[mask]
+    return rows.iloc[0]["Sektor"] if not rows.empty else "Lainnya"
+
+
+def is_syariah_from_universe(ticker_bersih: str, df_universe: pd.DataFrame) -> bool:
+    """Cek apakah ticker masuk daftar saham syariah."""
+    if df_universe.empty or "Syariah" not in df_universe.columns:
+        return False
+    mask = df_universe["Kode Saham"].astype(str).str.strip() == ticker_bersih
+    rows = df_universe[mask]
+    if rows.empty:
+        return False
+    return str(rows.iloc[0]["Syariah"]).strip().lower() in ("ya", "yes", "true", "1")
+
+
+def get_fundamental_from_universe(ticker_bersih: str, df_universe: pd.DataFrame) -> dict:
+    """Ambil ROE, ROA, NPM, Value_MA20 dari df_universe jika tersedia."""
+    result = {
+        "ROE": None, "ROA": None, "NPM": None, "Value_MA20": None,
+        "Median_PER_3Y": None, "Median_PBV_3Y": None,
+    }
+    if df_universe.empty:
+        return result
+    mask = df_universe["Kode Saham"].astype(str).str.strip() == ticker_bersih
+    rows = df_universe[mask]
+    if rows.empty:
+        return result
+    row = rows.iloc[0]
+    for key in ("ROE", "ROA", "NPM"):
+        if key in row.index:
+            try:
+                val = str(row[key]).replace("%", "").replace(",", ".").strip()
+                result[key] = float(val)
+            except Exception:
+                pass
+    for key in ("Value_MA20", "Median_PER_3Y", "Median_PBV_3Y"):
+        if key in row.index:
+            try:
+                result[key] = float(row[key])
+            except Exception:
+                pass
     return result
 
 
-def _safe_float(val, default=None):
-    """Konversi ke float aman; return default jika gagal atau NaN."""
-    if val is None:
-        return default
-    try:
-        f = float(val)
-        return default if np.isnan(f) else f
-    except (TypeError, ValueError):
-        return default
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# HELPER — FORMAT RUPIAH
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
+# FORMAT RUPIAH
+# -----------------------------------------------------------------------------
 
 def format_rp(angka) -> str:
     """Format angka ke string Rupiah dengan pemisah ribuan titik."""
@@ -164,829 +286,891 @@ def format_rp(angka) -> str:
         return str(angka)
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# HELPER — SAFE LATIN-1 UNTUK PDF
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
+# HELPER PDF: SANITASI STRING NON-LATIN-1
+# -----------------------------------------------------------------------------
 
 _LATIN1_MAP = {
-    "\u2013": "-", "\u2014": "-", "\u2018": "'", "\u2019": "'",
-    "\u201c": '"', "\u201d": '"', "\u2022": "*", "\u2026": "...",
-    "\u2192": "->", "\u00d7": "x", "\u00b0": " deg",
-    "\u2605": "*", "\u2713": "v", "\u2715": "x",
-    "\u26a0": "[!]", "\u2705": "[OK]", "\u274c": "[X]",
+    "\u2013": "-",    # en-dash
+    "\u2014": "-",    # em-dash
+    "\u2192": "->",   # arrow kanan
+    "\u2190": "<-",   # arrow kiri
+    "\u2191": "^",    # arrow atas
+    "\u2193": "v",    # arrow bawah
+    "\u2018": "'",    # left single quote
+    "\u2019": "'",    # right single quote
+    "\u201c": '"',    # left double quote
+    "\u201d": '"',    # right double quote
+    "\u2026": "...",  # ellipsis
+    "\u00d7": "x",    # multiplication sign
+    "\u00b0": " deg", # degree sign
 }
 
 def _safe_latin1(text: str) -> str:
-    """Sanitasi string agar aman untuk FPDF latin-1."""
-    if not isinstance(text, str):
-        text = str(text)
-    for ch, repl in _LATIN1_MAP.items():
-        text = text.replace(ch, repl)
+    """
+    Sanitasi string agar aman untuk FPDF (latin-1).
+    Ganti karakter Unicode umum ke ASCII, lalu strip sisanya.
+    """
+    for char, repl in _LATIN1_MAP.items():
+        text = text.replace(char, repl)
     return text.encode("latin-1", "ignore").decode("latin-1")
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# HELPER — FALLBACK DY SAAT INI (TTM dari riwayat dividends aktual)
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
+# AUDIO ALERT
+# -----------------------------------------------------------------------------
 
-def _hitung_dy_ttm_dari_dividends(
-    divs: pd.Series | None,
-    curr_price: float | None,
-    bulan_lookback: int = TTM_MONTHS_LOOKBACK,
-) -> float | None:
+def play_alert_sound() -> None:
+    """Putar suara notifikasi saat ada sinyal kuat (skor >= 85)."""
+    audio_html = """
+    <audio autoplay>
+      <source src="https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3"
+              type="audio/mpeg">
+    </audio>
     """
-    Fallback independen dari blok info Yahoo: hitung dividend yield trailing
-    N bulan terakhir (default 12) langsung dari riwayat pembayaran dividen
-    aktual (stock_data["dividends"]), dibagi harga saat ini.
+    st.components.v1.html(audio_html, height=0)
 
-    Dipakai ketika info.get("dividendYield") kosong/0 — kondisi ini sering
-    terjadi bersamaan dengan exDividendDate kosong, karena keduanya berasal
-    dari blok quoteSummary yang sama di sisi Yahoo, bukan karena saham
-    benar-benar tidak membagi dividen.
 
-    Return: yield dalam PERSEN (mis. 7.5 untuk 7.5%), atau None jika data
-    tidak cukup.
+# -----------------------------------------------------------------------------
+# ANALISA ROTASI SEKTOR
+# -----------------------------------------------------------------------------
+
+def analyze_sector_momentum(full_results_df: pd.DataFrame) -> tuple[pd.DataFrame, list]:
     """
-    if divs is None or len(divs) == 0:
-        return None
-    if curr_price is None or curr_price <= 0:
-        return None
-    try:
-        idx = pd.to_datetime(divs.index)
-        if idx.tz is not None:
-            idx = idx.tz_convert("UTC").tz_localize(None)
-
-        divs_clean = divs.copy()
-        divs_clean.index = idx
-
-        now    = pd.Timestamp.now()
-        cutoff = now - pd.DateOffset(months=bulan_lookback)
-
-        ttm_sum = float(divs_clean[divs_clean.index >= cutoff].sum())
-        if ttm_sum <= 0:
-            return None
-
-        return round((ttm_sum / curr_price) * 100, 2)
-    except Exception:
-        return None
-
-
-def _tanggal_dividen_terakhir(divs: pd.Series | None) -> pd.Timestamp | None:
-    """Ambil tanggal pembayaran dividen paling baru dari riwayat dividends."""
-    if divs is None or len(divs) == 0:
-        return None
-    try:
-        idx = pd.to_datetime(divs.index)
-        if idx.tz is not None:
-            idx = idx.tz_convert("UTC").tz_localize(None)
-        return idx.max()
-    except Exception:
-        return None
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# LOAD UNIVERSE
-# ─────────────────────────────────────────────────────────────────────────────
-
-@st.cache_data(ttl=60 * 60 * 24, show_spinner=False)
-def load_universe_hdy() -> tuple[list[str], pd.DataFrame]:
+    Hitung rata-rata skor per sektor dari seluruh ticker yang lolos pre-filter.
+    Sektor dengan Avg_Score >= 70 ditetapkan sebagai leading_sectors (Sector Hot).
     """
-    Muat universe saham dari liquid_dividend_stocks.csv.
-    Return: (ticker_list, df_universe)
-    """
-    df = get_liquid_dividend_stocks()
-    if df.empty:
-        return [], pd.DataFrame()
-
-    df = _normalize_universe_cols(df)
-    if "Kode Saham" not in df.columns:
-        return [], pd.DataFrame()
-
-    ticker_list = [
-        (t if t.endswith(".JK") else t + ".JK")
-        for t in df["Kode Saham"].astype(str).str.strip().tolist()
-        if t and t.lower() not in ("nan", "none", "")
-    ]
-    return ticker_list, df
+    if full_results_df.empty:
+        return pd.DataFrame(), []
+    sector_summary = (
+        full_results_df.groupby("Sektor")
+        .agg({"Skor": "mean", "Ticker": "count"})
+        .rename(columns={"Ticker": "Jumlah_Saham", "Skor": "Avg_Score"})
+        .sort_values("Avg_Score", ascending=False)
+    )
+    leading_sectors = sector_summary[
+        sector_summary["Avg_Score"] >= SECTOR_HOT_THRESHOLD
+    ].index.tolist()
+    return sector_summary, leading_sectors
 
 
-def _normalize_universe_cols(df: pd.DataFrame) -> pd.DataFrame:
-    """Normalisasi nama kolom DataFrame universe."""
-    df = df.copy()
-    df.columns = df.columns.str.strip()
-    rename_map = {}
-    for col in df.columns:
-        c = col.lower().strip().lstrip("\ufeff")
-        if c in ("ticker", "kode saham", "kode", "saham"):
-            rename_map[col] = "Kode Saham"
-        elif c in ("sektor", "sector"):
-            rename_map[col] = "Sektor"
-        elif c == "syariah":
-            rename_map[col] = "Syariah"
-        elif c in ("mktcap", "mkt cap", "market cap", "market_cap"):
-            rename_map[col] = "MktCap"
-        elif c.startswith("roe"):
-            rename_map[col] = "ROE"
-    return df.rename(columns=rename_map)
+# -----------------------------------------------------------------------------
+# GENERATOR PDF
+# -----------------------------------------------------------------------------
 
+def export_to_pdf(
+    hasil_lolos: list,
+    trade_mode: str,
+    session: str,
+    sector_report: pd.DataFrame,
+    logo_path: str = "assets/logo_expert_stock_pro.png",
+) -> bytes:
+    """Generate laporan PDF dari hasil screening."""
+    pdf = FPDF()
+    pdf.add_page()
 
-def _get_row_val(row, key, default=None):
-    """Ambil nilai dari Series row secara aman."""
-    try:
-        v = row.get(key, default)
-        if v is None or (isinstance(v, float) and np.isnan(v)):
-            return default
-        return v
-    except Exception:
-        return default
+    pdf.set_fill_color(20, 20, 20)
+    pdf.rect(0, 0, 210, 25, "F")
+    if os.path.exists(logo_path):
+        pdf.image(logo_path, x=10, y=3, w=18, h=18)
+    pdf.set_text_color(255, 255, 255)
+    pdf.set_font("Arial", "B", 16)
+    pdf.set_xy(35, 8)
+    pdf.cell(0, 10, _safe_latin1("Expert Stock Pro - Screening Saham Harian Pro"), ln=True)
+    pdf.set_y(28)
+    pdf.set_font("Arial", "I", 10)
+    pdf.set_text_color(0, 0, 255)
+    pdf.cell(0, 5, "Sumber: https://s.id/pintarsaham", ln=True, align="C",
+             link="https://s.id/pintarsaham")
+    pdf.ln(3)
+    pdf.set_text_color(0, 0, 0)
+    pdf.set_font("Arial", "B", 12)
+    pdf.cell(190, 8, _safe_latin1(f"Strategi: {trade_mode} | Sesi: {session}"), ln=True, align="C")
+    waktu_cetak = datetime.now(_TZ_WIB).strftime("%d-%m-%Y %H:%M WIB")
+    pdf.set_font("Arial", "I", 8)
+    pdf.cell(0, 5, _safe_latin1(f"Dicetak: {waktu_cetak}"), ln=True, align="R")
+    pdf.ln(2)
 
+    if not sector_report.empty:
+        pdf.set_fill_color(220, 235, 255)
+        pdf.set_font("Arial", "B", 10)
+        pdf.cell(190, 7, "  MARKET OVERVIEW (SEKTOR TERKUAT HARI INI)", 0, ln=True, fill=True)
+        pdf.set_font("Arial", "", 9)
+        top_sectors = ", ".join(sector_report.index[:3].tolist())
+        pdf.multi_cell(190, 6, _safe_latin1(f" Aliran dana terbesar: {top_sectors}"))
+        pdf.ln(3)
 
-# ─────────────────────────────────────────────────────────────────────────────
-# HELPER — INFO EX-DATE
-# ─────────────────────────────────────────────────────────────────────────────
+    pdf.set_fill_color(240, 240, 240)
+    pdf.set_font("Arial", "B", 11)
+    pdf.cell(190, 8, "A. TOP 3 PRIORITAS TRANSAKSI", 0, ln=True, fill=True)
+    pdf.ln(2)
 
-def _get_exdate_info(info: dict, divs: pd.Series | None = None) -> dict:
-    """
-    Ambil ex-dividend date dari yfinance info dan hitung jarak ke hari ini.
+    for item in hasil_lolos[:3]:
+        pdf.set_font("Arial", "B", 10)
+        pdf.cell(
+            190, 6,
+            _safe_latin1(
+                f"{item['Ticker']} - {item['Sektor']} | Syariah: {item['Syariah']} | "
+                f"Quality: {item['Quality']} | Score: {item['Skor']}/100"
+            ),
+            ln=True,
+        )
+        pdf.set_font("Arial", "", 9)
+        pdf.cell(60, 5, _safe_latin1(f"Entry: {item['Entry']}"), 0)
+        pdf.set_text_color(0, 128, 0)
+        pdf.cell(65, 5, _safe_latin1(f"TP Target: Rp {format_rp(item['TP'])} ({item['Pct_Reward']})"), 0)
+        pdf.set_text_color(200, 0, 0)
+        pdf.cell(65, 5, _safe_latin1(f"Stop Loss: Rp {format_rp(item['SL'])} ({item['Pct_Risk']})"), ln=True)
+        pdf.set_text_color(0, 0, 0)
+        status_pdf = _safe_latin1(
+            item["Status"].replace("\U0001f525", "").replace("\U0001f3af", "").strip()
+        )
+        pdf.set_font("Arial", "B", 8)
+        pdf.cell(190, 5, _safe_latin1(f"Batas Alokasi Maksimal: {item['Lot_Maks']} ({status_pdf})"), ln=True)
+        pdf.set_font("Arial", "I", 8)
+        pdf.multi_cell(190, 4, _safe_latin1(f"Logic: {item['Logic']}"))
+        pdf.ln(2)
+        pdf.line(10, pdf.get_y(), 200, pdf.get_y())
+        pdf.ln(2)
 
-    FIX: exDividendDate sering kosong bersamaan dengan dividendYield kosong
-    (keduanya dari blok quoteSummary yang sama di Yahoo). Jika kosong,
-    fallback ke tanggal pembayaran dividen terakhir dari riwayat dividends
-    sebagai ESTIMASI — diberi label & status berbeda agar tidak disalah-
-    artikan sebagai ex-date resmi.
-
-    Return dict: {ex_date_str, days_diff, status, warna, pesan, is_estimasi}
-    """
-    today = datetime.now(_TZ_WIB).date()
-    ex_ts = info.get("exDividendDate")
-
-    if not ex_ts:
-        # ── Fallback: pakai tanggal dividen terakhir dari riwayat aktual ──
-        tgl_terakhir = _tanggal_dividen_terakhir(divs)
-        if tgl_terakhir is not None:
-            tgl_str = tgl_terakhir.strftime("%d %b %Y")
-            diff_hari = (today - tgl_terakhir.date()).days
-            return {
-                "ex_date_str": f"{tgl_str} (est.)",
-                "days_diff":   -diff_hari,
-                "status":      "estimasi_dari_riwayat",
-                "warna":       "#90A4AE",
-                "pesan": (
-                    f"ℹ️ Ex-date resmi tidak tersedia dari Yahoo saat ini. "
-                    f"Estimasi dari tanggal pembayaran dividen terakhir: "
-                    f"{tgl_str} ({diff_hari} hari lalu)."
+    watchlist = hasil_lolos[3:10]
+    if watchlist:
+        pdf.ln(3)
+        pdf.set_font("Arial", "B", 11)
+        pdf.cell(190, 8, "B. RADAR WATCHLIST (RANK 4-10)", 0, ln=True, fill=True)
+        pdf.ln(2)
+        for w in watchlist:
+            pdf.set_font("Arial", "B", 9)
+            pdf.cell(
+                190, 5,
+                _safe_latin1(
+                    f"{w['Ticker']} ({w['Sektor'][:20]}) | Syariah: {w['Syariah']} | "
+                    f"Quality: {w['Quality']} | Skor: {w['Skor']}"
                 ),
-                "is_estimasi": True,
-            }
-        return {
-            "ex_date_str": "N/A",
-            "days_diff":   None,
-            "status":      "unknown",
-            "warna":       "#9E9E9E",
-            "pesan":       "Ex-date tidak tersedia",
-            "is_estimasi": False,
-        }
+                ln=True,
+            )
+            pdf.set_font("Arial", "", 8)
+            pdf.cell(40, 5, _safe_latin1(f"Entry: {w['Entry']}"), 0)
+            pdf.set_text_color(0, 128, 0)
+            pdf.cell(50, 5, _safe_latin1(f"TP: Rp {format_rp(w['TP'])} ({w['Pct_Reward']})"), 0)
+            pdf.set_text_color(200, 0, 0)
+            pdf.cell(50, 5, _safe_latin1(f"SL: Rp {format_rp(w['SL'])} ({w['Pct_Risk']})"), 0)
+            pdf.set_text_color(0, 0, 0)
+            pdf.cell(50, 5, _safe_latin1(f"Maks: {w['Lot_Maks']}"), ln=True)
+            pdf.set_font("Arial", "I", 7)
+            pdf.multi_cell(190, 4, _safe_latin1(f"Logic: {w['Logic']}"))
+            pdf.line(10, pdf.get_y(), 200, pdf.get_y())
+            pdf.ln(2)
 
+    pdf.ln(5)
+    pdf.set_font("Arial", "B", 8)
+    pdf.cell(190, 5, "DISCLAIMER:", ln=True)
+    pdf.set_font("Arial", "I", 7)
+    pdf.multi_cell(
+        190, 4,
+        "Laporan analisa ini dihasilkan secara otomatis menggunakan perhitungan algoritma "
+        "indikator teknikal dan fundamental. Bukan merupakan ajakan, rekomendasi pasti, atau "
+        "paksaan untuk membeli/menjual saham. Keputusan investasi sepenuhnya menjadi tanggung "
+        "jawab pribadi investor. Selalu terapkan manajemen risiko yang baik dan DYOR.",
+    )
+    return pdf.output(dest="S").encode("latin-1", "ignore")
+
+
+# -----------------------------------------------------------------------------
+# HELPER: HAPUS CANDLE KOSONG
+# -----------------------------------------------------------------------------
+
+def drop_empty_candles(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Hapus baris dengan Close <= 0, Volume <= 0, atau salah satunya NaN.
+    Dipanggil untuk semua interval SEBELUM calculate_indicators().
+    """
+    mask = (
+        df["Close"].notna() & (df["Close"] > 0) &
+        df["Volume"].notna() & (df["Volume"] > 0)
+    )
+    return df[mask].copy()
+
+
+# -----------------------------------------------------------------------------
+# HELPER: CARI VALID ILOC
+# -----------------------------------------------------------------------------
+
+def find_valid_last_iloc(
+    df: pd.DataFrame,
+    indicator_cols: list[str] | None = None,
+) -> int | None:
+    """Scan mundur; kembalikan iloc candle terakhir yang valid dan sudah warm-up."""
+    if indicator_cols is None:
+        indicator_cols = []
+    for i in range(len(df) - 1, -1, -1):
+        row = df.iloc[i]
+        if row["Close"] <= 0 or row["Volume"] <= 0:
+            continue
+        if any(pd.isna(row.get(col, np.nan)) for col in indicator_cols):
+            continue
+        return i
+    return None
+
+
+def find_valid_prev_iloc(
+    df: pd.DataFrame,
+    from_iloc: int,
+    indicator_cols: list[str] | None = None,
+) -> int:
+    """Scan mundur dari from_iloc - 1; kembalikan iloc candle valid sebelumnya."""
+    if indicator_cols is None:
+        indicator_cols = []
+    for i in range(from_iloc - 1, -1, -1):
+        row = df.iloc[i]
+        if row["Close"] <= 0 or row["Volume"] <= 0:
+            continue
+        if any(pd.isna(row.get(col, np.nan)) for col in indicator_cols):
+            continue
+        return i
+    return from_iloc
+
+
+# -----------------------------------------------------------------------------
+# HELPER: HITUNG STALE DAYS
+# -----------------------------------------------------------------------------
+
+def compute_stale_days(df: pd.DataFrame, valid_iloc: int, interval: str) -> int:
+    """Hitung berapa hari kalender candle valid terakhir tertinggal dari hari ini (WIB)."""
     try:
-        ex_date = pd.Timestamp(ex_ts, unit="s").date()
-        diff    = (ex_date - today).days   # positif = belum, negatif = sudah lewat
-
-        ex_date_str = ex_date.strftime("%d %b %Y")
-
-        if diff > 0 and diff <= EXDATE_WARN_BEFORE:
-            status = "menjelang"
-            warna  = "#FF9800"
-            pesan  = (f"⚠️ Ex-date {ex_date_str} ({diff} hari lagi) — "
-                      f"waspada dividend trap: harga sering terkoreksi setelah ex-date")
-        elif diff > EXDATE_WARN_BEFORE:
-            status = "jauh"
-            warna  = "#00C853"
-            pesan  = f"Ex-date {ex_date_str} ({diff} hari lagi)"
-        elif diff == 0:
-            status = "hari_ini"
-            warna  = "#FF5252"
-            pesan  = f"🚨 Hari ini adalah Ex-date! Tidak dapat dividen jika beli hari ini."
-        elif diff < 0 and abs(diff) <= EXDATE_WARN_AFTER:
-            status = "baru_lewat"
-            warna  = "#FF6D00"
-            pesan  = (f"⚠️ Ex-date sudah lewat {abs(diff)} hari lalu ({ex_date_str}) — "
-                      f"harga mungkin masih dalam fase koreksi pasca ex-date")
+        candle_ts = df.index[valid_iloc]
+        if candle_ts.tzinfo is None:
+            candle_ts = candle_ts.tz_localize("UTC").tz_convert(_TZ_WIB)
         else:
-            status = "sudah_lewat"
-            warna  = "#9E9E9E"
-            pesan  = f"Ex-date terakhir: {ex_date_str} ({abs(diff)} hari lalu)"
-
-        return {
-            "ex_date_str": ex_date_str,
-            "days_diff":   diff,
-            "status":      status,
-            "warna":       warna,
-            "pesan":       pesan,
-            "is_estimasi": False,
-        }
+            candle_ts = candle_ts.tz_convert(_TZ_WIB)
+        today_wib  = pd.Timestamp.now(tz=_TZ_WIB)
+        delta_days = (today_wib.normalize() - candle_ts.normalize()).days
+        return max(delta_days, 0)
     except Exception:
-        return {
-            "ex_date_str": "N/A",
-            "days_diff":   None,
-            "status":      "unknown",
-            "warna":       "#9E9E9E",
-            "pesan":       "Ex-date tidak dapat diparsing",
-            "is_estimasi": False,
-        }
+        return 0
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# TAHAP 1 — HARD KNOCKOUT
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
+# KALKULASI VPT TREND (EMA slope)
+# -----------------------------------------------------------------------------
 
-def check_hard_knockout(arrays: dict, info: dict, sektor: str,
-                        ticker_row) -> list[str]:
+def compute_vpt_trend(df: pd.DataFrame, valid_iloc: int) -> bool:
     """
-    Periksa semua kondisi hard knockout.
-    Return list alasan; kosong = lolos semua.
+    Hitung VPT Trend sesuai spesifikasi:
+      VPT[i] = VPT[i-1] + Volume[i] * (Close[i] - Close[i-1]) / Close[i-1]
+      EMA_VPT = EMA(10) dari series VPT
+      slope[i] = EMA_VPT[i] - EMA_VPT[i-1]
+      VPT_Trend = True jika >= 3 dari 5 slope terakhir positif.
     """
-    alasan = []
-    fcf_5y = arrays.get("fcf_5y", [])
-    pr_5y  = arrays.get("pr_5y",  [])
-    dps_5y = arrays.get("dps_5y", [])
+    try:
+        vpt = (df["Close"].pct_change() * df["Volume"]).cumsum()
+        ema_vpt = vpt.ewm(span=10, adjust=False).mean()
+        slope = ema_vpt.diff()
+        # Ambil 5 slope terakhir s.d. valid_iloc
+        start = max(valid_iloc - 4, 1)
+        recent_slopes = slope.iloc[start : valid_iloc + 1]
+        return int((recent_slopes > 0).sum()) >= 3
+    except Exception:
+        return False
 
-    # ── FCF negatif ≥ 2 tahun berturut-turut ──────────────────────────────
-    fcf_valid = _valid_floats(fcf_5y)
-    if len(fcf_valid) >= 2:
-        negatif_berturut = 0
-        for v in reversed(fcf_valid):
-            if v < 0:
-                negatif_berturut += 1
+
+# -----------------------------------------------------------------------------
+# KALKULASI RSI TREND (3 CANDLE CONSECUTIVE)
+# -----------------------------------------------------------------------------
+
+def compute_rsi_trend_3(df: pd.DataFrame, rsi_col: str, valid_iloc: int) -> bool:
+    """
+    Return True jika RSI naik di setiap candle selama 3 candle terakhir
+    (slope positif konsisten): RSI[i-2] < RSI[i-1] < RSI[i].
+    """
+    try:
+        if valid_iloc < 2:
+            return False
+        r0 = df[rsi_col].iloc[valid_iloc - 2]
+        r1 = df[rsi_col].iloc[valid_iloc - 1]
+        r2 = df[rsi_col].iloc[valid_iloc]
+        return bool(r0 < r1 < r2)
+    except Exception:
+        return False
+
+
+# -----------------------------------------------------------------------------
+# HELPER: SUPERTREND TIER
+# -----------------------------------------------------------------------------
+
+def compute_supertrend_score(
+    df: pd.DataFrame,
+    valid_iloc: int,
+    score_fresh: float,
+    score_sustained: float,
+) -> tuple[float, str]:
+    """
+    Hitung skor Supertrend tier dan alasan teksnya.
+
+    Logika:
+    - Fresh cross: window 4 candle (valid_iloc-3 s.d. valid_iloc).
+      Bullish saat ini DAN ada candle bearish di window tersebut -> fresh cross.
+    - Sustained bullish: window ST_SUSTAINED_WINDOW candle.
+      Bullish saat ini, tidak ada fresh cross, dan candles_above > 3 di window lebar.
+    - Bearish / tidak memenuhi: 0 poin.
+
+    Return: (poin, alasan_string)
+    """
+    if int(df["Supertrend_Dir"].iloc[valid_iloc]) != 1:
+        return 0.0, ""
+
+    # Deteksi fresh cross: window sempit 4 candle
+    fc_start  = max(valid_iloc - 3, 0)
+    fc_series = df["Supertrend_Dir"].iloc[fc_start : valid_iloc + 1]
+    is_fresh  = bool((fc_series == -1).any())
+
+    if is_fresh:
+        return score_fresh, f"Supertrend Fresh Cross Bullish +{int(score_fresh)}"
+
+    # Deteksi sustained: window lebar ST_SUSTAINED_WINDOW candle
+    sw_start      = max(valid_iloc - (ST_SUSTAINED_WINDOW - 1), 0)
+    sw_series     = df["Supertrend_Dir"].iloc[sw_start : valid_iloc + 1]
+    candles_above = int((sw_series == 1).sum())
+    if candles_above > 3:
+        return score_sustained, f"Supertrend Sustained Bullish +{int(score_sustained)}"
+
+    return 0.0, ""
+
+
+# -----------------------------------------------------------------------------
+# KALKULASI SUPERTREND
+# -----------------------------------------------------------------------------
+
+def calculate_supertrend(
+    df: pd.DataFrame, period: int = 10, multiplier: float = 2.0
+) -> pd.DataFrame:
+    """Hitung Supertrend; tambahkan kolom Supertrend + Supertrend_Dir ke df."""
+    hl2        = (df["High"] + df["Low"]) / 2
+    high_low   = df["High"] - df["Low"]
+    high_close = np.abs(df["High"] - df["Close"].shift())
+    low_close  = np.abs(df["Low"]  - df["Close"].shift())
+    tr         = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
+    atr        = tr.rolling(period).mean()
+
+    upper_band = hl2 + (multiplier * atr)
+    lower_band = hl2 - (multiplier * atr)
+    supertrend = pd.Series(index=df.index, dtype=float)
+    direction  = pd.Series(index=df.index, dtype=int)
+
+    for i in range(1, len(df)):
+        if df["Close"].iloc[i] > upper_band.iloc[i - 1]:
+            direction.iloc[i] = 1
+        elif df["Close"].iloc[i] < lower_band.iloc[i - 1]:
+            direction.iloc[i] = -1
+        else:
+            direction.iloc[i] = direction.iloc[i - 1]
+            if direction.iloc[i] == 1 and lower_band.iloc[i] < lower_band.iloc[i - 1]:
+                lower_band.iloc[i] = lower_band.iloc[i - 1]
+            if direction.iloc[i] == -1 and upper_band.iloc[i] > upper_band.iloc[i - 1]:
+                upper_band.iloc[i] = upper_band.iloc[i - 1]
+        supertrend.iloc[i] = (
+            lower_band.iloc[i] if direction.iloc[i] == 1 else upper_band.iloc[i]
+        )
+
+    df = df.copy()
+    df["Supertrend"]     = supertrend
+    df["Supertrend_Dir"] = direction
+    return df
+
+
+# -----------------------------------------------------------------------------
+# KALKULASI PSAR
+# -----------------------------------------------------------------------------
+
+def calculate_psar(
+    df: pd.DataFrame,
+    af_start: float = 0.02,
+    af_step: float  = 0.02,
+    af_max: float   = 0.2,
+) -> pd.DataFrame:
+    """Hitung Parabolic SAR; tambahkan kolom PSAR + PSAR_Bull ke df."""
+    high  = df["High"].values
+    low   = df["Low"].values
+    close = df["Close"].values
+    n     = len(df)
+    psar  = close.copy()
+    bull  = True
+    af    = af_start
+    hp    = high[0]
+    lp    = low[0]
+
+    for i in range(2, n):
+        if bull:
+            psar[i] = psar[i - 1] + af * (hp - psar[i - 1])
+            psar[i] = min(psar[i], low[i - 1], low[max(0, i - 2)])
+            if low[i] < psar[i]:
+                bull    = False
+                psar[i] = hp
+                lp      = low[i]
+                af      = af_start
             else:
-                break
-        if negatif_berturut >= 2:
-            alasan.append("FCF negatif ≥ 2 tahun berturut-turut (dividen dibayar dari utang/cadangan)")
+                if high[i] > hp:
+                    hp = high[i]
+                    af = min(af + af_step, af_max)
+        else:
+            psar[i] = psar[i - 1] + af * (lp - psar[i - 1])
+            psar[i] = max(psar[i], high[i - 1], high[max(0, i - 2)])
+            if high[i] > psar[i]:
+                bull    = True
+                psar[i] = lp
+                hp      = high[i]
+                af      = af_start
+            else:
+                if low[i] < lp:
+                    lp = low[i]
+                    af = min(af + af_step, af_max)
 
-    # ── Payout Ratio > 100% dalam 2 tahun terakhir ────────────────────────
-    pr_valid = _valid_floats(pr_5y)
-    if len(pr_valid) >= 2:
-        pr_2_terakhir = pr_valid[-2:]
-        if all(v > PAYOUT_RATIO_MAX_KO for v in pr_2_terakhir):
-            alasan.append("Payout Ratio > 100% dalam 2 tahun terakhir (membayar melebihi yang diperoleh)")
-
-    # ── Frekuensi dividen < 3x dalam 5 tahun ──────────────────────────────
-    dps_valid = _valid_floats(dps_5y)
-    frekuensi = sum(1 for v in dps_valid if v > 0)
-    if frekuensi < FREQ_MIN_DIVIDEN:
-        alasan.append(f"Frekuensi dividen hanya {frekuensi}x dalam 5 tahun (minimum {FREQ_MIN_DIVIDEN}x)")
-
-    sektor_title = str(sektor).strip().title()
-
-    if sektor_title in SEKTOR_BANK:
-        # ── CAR & NPL untuk Bank ──────────────────────────────────────────
-        car = _safe_float(_get_row_val(ticker_row, "CAR") if ticker_row is not None else None)
-        if car is None:
-            car = _safe_float(info.get("capitalAdequacyRatio"))
-        if car is not None and car < CAR_MIN_BANK:
-            alasan.append(f"CAR {car:.1f}% di bawah minimum OJK 8%")
-
-        npl = _safe_float(_get_row_val(ticker_row, "NPL") if ticker_row is not None else None)
-        if npl is None:
-            npl = _safe_float(info.get("nonPerformingLoan"))
-        if npl is not None and npl > NPL_MAX_BANK:
-            alasan.append(f"NPL {npl:.1f}% melampaui batas kritis 5%")
-
-    elif sektor_title in SEKTOR_INFRA:
-        # ── Debt/EBITDA untuk Infrastruktur ──────────────────────────────
-        de = _safe_float(arrays.get("debt_ebitda"))
-        if de is None and ticker_row is not None:
-            de = _safe_float(_get_row_val(ticker_row, "DebtEBITDA"))
-        if de is not None and de > DEBT_EBITDA_MAX_INFRA:
-            alasan.append(f"Debt/EBITDA {de:.1f}x melampaui batas aman 5x")
-
-    else:
-        # ── DER untuk sektor umum ─────────────────────────────────────────
-        der_raw = _safe_float(info.get("debtToEquity"))
-        if der_raw is not None:
-            der = der_raw / 100.0
-            if der > DER_MAX_GENERAL:
-                alasan.append(f"DER {der:.2f}x melampaui batas ekstrem 3.0x")
-
-    return alasan
+    df = df.copy()
+    df["PSAR"]      = psar
+    df["PSAR_Bull"] = df["Close"] > df["PSAR"]
+    return df
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# TAHAP 2 — SCORING 100 POIN
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
+# KALKULASI INDIKATOR TEKNIKAL
+# -----------------------------------------------------------------------------
 
-def _score_dim_a(arrays: dict) -> tuple[int, dict]:
+def calculate_indicators(df: pd.DataFrame, trade_mode: str) -> pd.DataFrame:
     """
-    Dimensi A — Keberlanjutan Earnings & FCF · maks 40 poin.
-    Indikator:
-      1. AAGR EPS 5 Tahun          (12 poin)
-      2. Riwayat FCF Positif       (10 poin)
-      3. FCF Payout Ratio rata-rata (5 poin)
-      4. Konsistensi Tumbuh EPS    ( 3 poin)
-      5. DPS Stability Score       (10 poin)
+    Hitung semua indikator teknikal sesuai mode trading.
+    df harus sudah melalui drop_empty_candles() terlebih dahulu.
     """
-    detail = {}
-    total  = 0
+    df = df.copy()
 
-    eps_5y  = arrays.get("eps_5y", [])
-    fcf_5y  = arrays.get("fcf_5y", [])
-    dps_5y  = arrays.get("dps_5y", [])
-    pr_5y   = arrays.get("pr_5y",  [])
+    # ATR
+    high_low   = df["High"] - df["Low"]
+    high_close = np.abs(df["High"] - df["Close"].shift())
+    low_close  = np.abs(df["Low"]  - df["Close"].shift())
+    df["ATR"]  = (
+        pd.concat([high_low, high_close, low_close], axis=1)
+        .max(axis=1)
+        .rolling(14)
+        .mean()
+    )
 
-    eps_valid = _valid_floats(eps_5y)
-    fcf_valid = _valid_floats(fcf_5y)
-    dps_valid = _valid_floats(dps_5y)
-    pr_valid  = _valid_floats(pr_5y)
+    # MACD
+    ema12             = df["Close"].ewm(span=MACD_FAST,          adjust=False).mean()
+    ema26             = df["Close"].ewm(span=MACD_SLOW,          adjust=False).mean()
+    df["MACD"]        = ema12 - ema26
+    df["MACD_Signal"] = df["MACD"].ewm(span=MACD_SIGNAL_PERIOD, adjust=False).mean()
+    df["MACD_Hist"]   = df["MACD"] - df["MACD_Signal"]
 
-    # ── 1. AAGR EPS (12 poin) ─────────────────────────────────────────────
-    aagr = None
-    if len(eps_valid) >= 2:
-        growths = []
-        for i in range(1, len(eps_valid)):
-            prev = eps_valid[i - 1]
-            curr = eps_valid[i]
-            if prev > 0 and curr is not None:
-                growths.append((curr - prev) / prev)
-        if growths:
-            aagr = float(np.mean(growths)) * 100
-    if aagr is not None:
-        poin_aagr = (12 if aagr >= 10 else 9 if aagr >= 7
-                     else 6 if aagr >= 5 else 3 if aagr >= 2 else 0)
+    if trade_mode == "Day Trading":
+        # Supertrend (10, 2)
+        df = calculate_supertrend(df, period=10, multiplier=2.0)
+        # VWAP rolling 5 candle (intraday proxy)
+        df["VWAP"] = (
+            (df["Close"] * df["Volume"]).rolling(5).sum()
+            / df["Volume"].rolling(5).sum()
+        )
+        # RSI periode 9
+        delta     = df["Close"].diff()
+        gain      = delta.where(delta > 0, 0).rolling(RSI_PERIOD_DAY).mean()
+        loss      = (-delta.where(delta < 0, 0)).rolling(RSI_PERIOD_DAY).mean()
+        df["RSI"] = 100 - (100 / (1 + (gain / loss)))
+        df = calculate_psar(df)
+
+    else:  # Swing Trading
+        # Supertrend (10, 3)
+        df = calculate_supertrend(df, period=10, multiplier=3.0)
+        # EMA 20, 50, 200
+        df["EMA20"]  = df["Close"].ewm(span=EMA_SHORT, adjust=False).mean()
+        df["EMA50"]  = df["Close"].ewm(span=EMA_MID,   adjust=False).mean()
+        df["EMA200"] = df["Close"].ewm(span=EMA_LONG,  adjust=False).mean()
+        # RSI periode 14
+        delta     = df["Close"].diff()
+        gain      = delta.where(delta > 0, 0).rolling(RSI_PERIOD_SWING).mean()
+        loss      = (-delta.where(delta < 0, 0)).rolling(RSI_PERIOD_SWING).mean()
+        df["RSI"] = 100 - (100 / (1 + (gain / loss)))
+        df = calculate_psar(df)
+
+    return df
+
+
+# -----------------------------------------------------------------------------
+# MARKET SESSION
+# -----------------------------------------------------------------------------
+
+def get_market_session() -> tuple[str, str]:
+    """Return (label_sesi, deskripsi_status) berdasarkan waktu WIB saat ini."""
+    now = datetime.now(_TZ_WIB)
+    if now.weekday() >= 5:
+        return "AKHIR PEKAN", "Tutup."
+    if now.date() in holidays.ID(years=now.year):
+        return "LIBUR NASIONAL", "Tutup."
+    t = now.hour + now.minute / 60
+    if t < 9.0:
+        return "PRA-PASAR", "Wait."
+    elif t <= 16.0:
+        return "LIVE MARKET", "Trading."
     else:
-        poin_aagr = 0
-    detail["aagr_eps"]  = round(aagr, 2) if aagr is not None else None
-    detail["poin_aagr"] = poin_aagr
-    total += poin_aagr
-
-    # ── 2. Riwayat FCF Positif (10 poin) ──────────────────────────────────
-    fcf_positif = sum(1 for v in fcf_valid if v > 0)
-    n_fcf       = len(fcf_valid)
-    if n_fcf == 0:
-        poin_fcf = 0
-    elif fcf_positif == 5:
-        poin_fcf = 10
-    elif fcf_positif == 4:
-        poin_fcf = 8
-    elif fcf_positif == 3:
-        poin_fcf = 4
-    else:
-        poin_fcf = 0
-    detail["fcf_positif"] = fcf_positif
-    detail["poin_fcf"]    = poin_fcf
-    total += poin_fcf
-
-    # ── 3. FCF Payout Ratio rata-rata (5 poin) ────────────────────────────
-    # Proxy: rata-rata PR_5Y sebagai aproksimasi FCF PR karena
-    # shares outstanding tidak tersedia langsung di kolom CSV
-    if pr_valid and fcf_valid:
-        fcf_pr    = float(np.mean(pr_valid))
-        poin_fpr  = (5 if fcf_pr <= 0.60 else 3 if fcf_pr <= 0.80 else 0)
-    else:
-        fcf_pr    = None
-        poin_fpr  = 0
-    detail["fcf_pr"]     = round(fcf_pr * 100, 1) if fcf_pr is not None else None
-    detail["poin_fpr"]   = poin_fpr
-    total += poin_fpr
-
-    # ── 4. Konsistensi Pertumbuhan EPS (3 poin) ───────────────────────────
-    eps_tumbuh = 0
-    if len(eps_valid) >= 2:
-        for i in range(1, len(eps_valid)):
-            if eps_valid[i] > eps_valid[i - 1]:
-                eps_tumbuh += 1
-    poin_konsisten = (3 if eps_tumbuh >= 4 else 1 if eps_tumbuh == 3 else 0)
-    detail["eps_tumbuh"]      = eps_tumbuh
-    detail["poin_konsisten"]  = poin_konsisten
-    total += poin_konsisten
-
-    # ── 5. DPS Stability Score (10 poin) ──────────────────────────────────
-    # Hitung jumlah sukses DPS[i] >= DPS[i-1] dari maksimal 4 perbandingan
-    dps_stability = 0
-    if len(dps_valid) >= 2:
-        checks = list(zip(dps_valid[:-1], dps_valid[1:]))[-4:]   # maks 4 perbandingan
-        dps_stability = sum(1 for prev, curr in checks if curr >= prev)
-    poin_dps_a = (10 if dps_stability == 4
-                  else 7 if dps_stability == 3
-                  else 4 if dps_stability == 2 else 0)
-    detail["dps_stability"]  = dps_stability
-    detail["poin_dps_a"]     = poin_dps_a
-    total += poin_dps_a
-
-    return min(total, 40), detail
+        return "PASCA-PASAR", "Analysis."
 
 
-def _score_dim_b(arrays: dict, curr_dy: float | None) -> tuple[int, dict]:
-    """
-    Dimensi B — Track Record Distribusi Dividen · maks 40 poin.
-    Indikator:
-      1. Rata-rata DY 5 Tahun   (15 poin)
-      2. Rata-rata PR 5 Tahun   (10 poin)
-      3. Frekuensi Dividen      ( 5 poin)
-      4. AEPD                   ( 5 poin)
-      5. DPS Stability B        ( 5 poin)
-    """
-    detail = {}
-    total  = 0
+# -----------------------------------------------------------------------------
+# COLS UNTUK WARM-UP CHECK
+# -----------------------------------------------------------------------------
 
-    dy_5y  = arrays.get("dy_5y",  [])
-    pr_5y  = arrays.get("pr_5y",  [])
-    dps_5y = arrays.get("dps_5y", [])
-
-    dy_valid  = _valid_floats(dy_5y)
-    pr_valid  = _valid_floats(pr_5y)
-    dps_valid = _valid_floats(dps_5y)
-
-    # ── 1. Rata-rata DY 5 tahun (15 poin) ─────────────────────────────────
-    dy_avg = float(np.mean(dy_valid)) * 100 if dy_valid else None
-    if dy_avg is not None:
-        poin_dy = (15 if dy_avg >= 8
-                   else 11 if dy_avg >= 6
-                   else 7  if dy_avg >= 4
-                   else 3  if dy_avg >= 2 else 0)
-    else:
-        poin_dy = 0
-
-    # Yield anomaly flag
-    anomali_yield = False
-    if dy_avg is not None and curr_dy is not None and dy_avg > 0:
-        if curr_dy > YIELD_ANOMALY_MULT * dy_avg:
-            anomali_yield = True
-
-    detail["dy_avg"]       = round(dy_avg, 2) if dy_avg is not None else None
-    detail["poin_dy"]      = poin_dy
-    detail["anomali_yield"]= anomali_yield
-    total += poin_dy
-
-    # ── 2. Rata-rata PR 5 tahun (10 poin) ─────────────────────────────────
-    pr_avg = float(np.mean(pr_valid)) * 100 if pr_valid else None
-    if pr_avg is not None:
-        poin_pr = (10 if 30 <= pr_avg <= 60
-                   else 7 if (20 <= pr_avg < 30 or 60 < pr_avg <= 80)
-                   else 3 if 80 < pr_avg <= 100
-                   else 0)
-    else:
-        poin_pr = 0
-    detail["pr_avg"]  = round(pr_avg, 1) if pr_avg is not None else None
-    detail["poin_pr"] = poin_pr
-    total += poin_pr
-
-    # ── 3. Frekuensi Dividen (5 poin) ─────────────────────────────────────
-    frekuensi = sum(1 for v in dps_valid if v > 0)
-    poin_freq = (5 if frekuensi >= 5 else 3 if frekuensi >= 3 else 0)
-    detail["frekuensi"]  = frekuensi
-    detail["poin_freq"]  = poin_freq
-    total += poin_freq
-
-    # ── 4. AEPD (5 poin) ──────────────────────────────────────────────────
-    aepd = None
-    if dy_avg is not None and pr_avg is not None and pr_avg > 0:
-        aepd = (10 * (dy_avg / 100)) / (pr_avg / 100)
-    poin_aepd = (5 if aepd is not None and aepd >= 2.0
-                 else 3 if aepd is not None and aepd >= 1.0 else 0)
-    detail["aepd"]      = round(aepd, 2) if aepd is not None else None
-    detail["poin_aepd"] = poin_aepd
-    total += poin_aepd
-
-    # ── 5. DPS Stability B (5 poin) — gunakan ulang stability count ────────
-    # DPS stability count sudah dihitung di Dimensi A; re-hitung di sini
-    # karena fungsi ini independen
-    dps_stability = 0
-    if len(dps_valid) >= 2:
-        checks = list(zip(dps_valid[:-1], dps_valid[1:]))[-4:]
-        dps_stability = sum(1 for prev, curr in checks if curr >= prev)
-    poin_dps_b = (5 if dps_stability == 4
-                  else 3 if dps_stability == 3 else 0)
-    detail["poin_dps_b"] = poin_dps_b
-    total += poin_dps_b
-
-    return min(total, 40), detail
+_INDICATOR_COLS_DAY   = ["ATR", "RSI", "MACD", "Supertrend_Dir", "VWAP"]
+_INDICATOR_COLS_SWING = ["ATR", "RSI", "MACD", "Supertrend_Dir", "EMA20", "EMA50", "EMA200"]
+_INDICATOR_COLS_DAILY = ["MA20_D", "MA50_D"]
 
 
-def _score_dim_c(arrays: dict, info: dict) -> tuple[int, dict]:
-    """Dimensi C — Momentum Terkini · maks 10 poin."""
-    detail   = {}
-    eps_5y   = arrays.get("eps_5y", [])
-    eps_valid = _valid_floats(eps_5y)
+# -----------------------------------------------------------------------------
+# WORKER MULTITHREADING — PROSES SATU TICKER
+# -----------------------------------------------------------------------------
 
-    eps_yoy = None
-    if len(eps_valid) >= 2:
-        e_curr = eps_valid[-1]
-        e_prev = eps_valid[-2]
-        if e_prev != 0:
-            eps_yoy = ((e_curr - e_prev) / abs(e_prev)) * 100
-
-    if eps_yoy is None:
-        eg = _safe_float(info.get("earningsGrowth"))
-        if eg is not None:
-            eps_yoy = eg * 100
-
-    if eps_yoy is not None:
-        poin_c = (10 if eps_yoy >= 10
-                  else 7 if eps_yoy >= 5
-                  else 4 if eps_yoy >= 0 else 0)
-    else:
-        poin_c = 0
-
-    detail["eps_yoy"] = round(eps_yoy, 1) if eps_yoy is not None else None
-    detail["poin_c"]  = poin_c
-    return poin_c, detail
-
-
-def _score_dim_d(arrays: dict, info: dict, sektor: str,
-                 ticker_row) -> tuple[int, dict]:
-    """Dimensi D — Kesehatan Balance Sheet · maks 10 poin."""
-    detail       = {}
-    total        = 0
-    sektor_title = str(sektor).strip().title()
-
-    if sektor_title in SEKTOR_BANK:
-        car = _safe_float(_get_row_val(ticker_row, "CAR") if ticker_row is not None else None)
-        if car is None:
-            car = _safe_float(info.get("capitalAdequacyRatio"))
-        poin_car = (5 if car is not None and car >= 17
-                    else 3 if car is not None and car >= 14
-                    else 1 if car is not None and car >= 8 else 0)
-        detail["car"]      = car
-        detail["poin_car"] = poin_car
-        total += poin_car
-
-        npl = _safe_float(_get_row_val(ticker_row, "NPL") if ticker_row is not None else None)
-        if npl is None:
-            npl = _safe_float(info.get("nonPerformingLoan"))
-        poin_npl = (5 if npl is not None and npl < 2
-                    else 3 if npl is not None and npl <= 5 else 0)
-        detail["npl"]      = npl
-        detail["poin_npl"] = poin_npl
-        total += poin_npl
-
-    elif sektor_title in SEKTOR_INFRA:
-        de = _safe_float(arrays.get("debt_ebitda"))
-        if de is None and ticker_row is not None:
-            de = _safe_float(_get_row_val(ticker_row, "DebtEBITDA"))
-        poin_de = (5 if de is not None and de <= 3
-                   else 3 if de is not None and de <= 5 else 0)
-        detail["debt_ebitda"] = de
-        detail["poin_de"]     = poin_de
-        total += poin_de
-
-        icr = _safe_float(arrays.get("icr"))
-        if icr is None and ticker_row is not None:
-            icr = _safe_float(_get_row_val(ticker_row, "ICR"))
-        if icr is None:
-            ebit    = _safe_float(info.get("ebit"))
-            int_exp = _safe_float(info.get("interestExpense"))
-            if ebit is not None and int_exp and int_exp != 0:
-                icr = abs(ebit / int_exp)
-        poin_icr = (5 if icr is not None and icr >= 3
-                    else 3 if icr is not None and icr >= 1.5 else 0)
-        detail["icr"]      = icr
-        detail["poin_icr"] = poin_icr
-        total += poin_icr
-
-    else:
-        der_raw = _safe_float(info.get("debtToEquity"))
-        der     = (der_raw / 100.0) if der_raw is not None else None
-        poin_der = (5 if der is not None and der <= 0.5
-                    else 3 if der is not None and der <= 1.5
-                    else 1 if der is not None and der <= 3.0 else 0)
-        detail["der"]      = round(der, 2) if der is not None else None
-        detail["poin_der"] = poin_der
-        total += poin_der
-
-        icr = _safe_float(arrays.get("icr"))
-        if icr is None and ticker_row is not None:
-            icr = _safe_float(_get_row_val(ticker_row, "ICR"))
-        if icr is None:
-            ebit    = _safe_float(info.get("ebit"))
-            int_exp = _safe_float(info.get("interestExpense"))
-            if ebit is not None and int_exp and int_exp != 0:
-                icr = abs(ebit / int_exp)
-        poin_icr = (5 if icr is not None and icr >= 5
-                    else 3 if icr is not None and icr >= 3
-                    else 1 if icr is not None and icr >= 1.5 else 0)
-        detail["icr"]      = icr
-        detail["poin_icr"] = poin_icr
-        total += poin_icr
-
-    return min(total, 10), detail
-
-
-def _hitung_forward_yield(arrays: dict, info: dict, curr_price: float) -> dict | None:
-    """Proyeksi forward DY berbasis blended AAGR + YoY EPS dan PR historis."""
-    eps_5y  = arrays.get("eps_5y", [])
-    pr_5y   = arrays.get("pr_5y",  [])
-    eps_valid = _valid_floats(eps_5y)
-    pr_valid  = _valid_floats(pr_5y)
-
-    if not eps_valid or not pr_valid or curr_price <= 0:
-        return None
-
-    eps_last = eps_valid[-1]
-    if eps_last <= 0:
-        return None
-
-    pr_avg = float(np.mean(pr_valid))
-
-    aagr = 0.0
-    if len(eps_valid) >= 2:
-        growths = []
-        for i in range(1, len(eps_valid)):
-            if eps_valid[i - 1] > 0:
-                growths.append((eps_valid[i] - eps_valid[i - 1]) / eps_valid[i - 1])
-        aagr = float(np.mean(growths)) if growths else 0.0
-
-    eps_yoy = 0.0
-    if len(eps_valid) >= 2 and eps_valid[-2] > 0:
-        eps_yoy = (eps_valid[-1] - eps_valid[-2]) / abs(eps_valid[-2])
-    else:
-        eg = _safe_float(info.get("earningsGrowth"))
-        if eg is not None:
-            eps_yoy = eg
-
-    eps_fwd = (eps_last * (1 + aagr) + eps_last * (1 + eps_yoy)) / 2
-    dps_fwd = eps_fwd * pr_avg
-    dy_fwd  = (dps_fwd / curr_price) * 100
-
-    label = ("🟢 Sangat Layak" if dy_fwd >= 10
-             else "🟡 Layak"   if dy_fwd >= 6
-             else "🔴 Kurang Layak")
-
-    return {
-        "eps_fwd": round(eps_fwd, 2),
-        "dps_fwd": round(dps_fwd, 2),
-        "dy_fwd":  round(dy_fwd, 2),
-        "label":   label,
-    }
-
-
-def _label_kelayakan(skor: int) -> tuple[str, str]:
-    """Return (label_teks, warna_hex) berdasarkan skor."""
-    if skor >= 80:
-        return "⭐ Prima",       "#FFD600"
-    elif skor >= 65:
-        return "✅ Layak",        "#00C853"
-    elif skor >= 50:
-        return "⚠️ Perhatikan",  "#FF9800"
-    else:
-        return "❌ Tidak Layak",  "#D50000"
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# WORKER — PROSES SATU TICKER
-# ─────────────────────────────────────────────────────────────────────────────
-
-def process_single_hdy(
+def process_single_stock(
     ticker: str,
+    trade_mode: str,
+    mtf_filter: bool,
     df_universe: pd.DataFrame,
 ) -> dict | None:
     """
-    Proses satu ticker untuk screening HDY.
-    Return dict hasil lengkap atau None jika tidak lolos / error.
+    Analisa satu ticker; kembalikan dict hasil atau None jika tidak lolos.
+
+    Pre-filter (interval 1d) dijalankan terlebih dahulu, baru scoring
+    per mode menggunakan interval yang sesuai.
     """
     ticker_bersih = ticker.replace(".JK", "")
 
     try:
-        # ── Ambil data dari universe ──────────────────────────────────────
-        ticker_row = get_ticker_row(ticker_bersih, df_universe)
-        if ticker_row is None:
+        # ── PRE-FILTER: selalu gunakan interval 1d ──────────────────────────
+        data_daily_pf = get_full_stock_data(ticker, interval="1d")
+        hist_pf = data_daily_pf.get("history", pd.DataFrame())
+        if hist_pf.empty:
             return None
 
-        sektor  = str(_get_row_val(ticker_row, "Sektor", "Lainnya"))
-        syariah = str(_get_row_val(ticker_row, "Syariah", "Tidak"))
-
-        # ── Build arrays HDY dari liquid_dividend_stocks ──────────────────
-        arrays = {
-            "eps_5y":      _parse_json_col(_get_row_val(ticker_row, "EPS_5Y")),
-            "dps_5y":      _parse_json_col(_get_row_val(ticker_row, "DPS_5Y")),
-            "fcf_5y":      _parse_json_col(_get_row_val(ticker_row, "FCF_5Y")),
-            "pr_5y":       _parse_json_col(_get_row_val(ticker_row, "PR_5Y")),
-            "dy_5y":       _parse_json_col(_get_row_val(ticker_row, "DY_5Y")),
-            "icr":         _safe_float(_get_row_val(ticker_row, "ICR")),
-            "debt_ebitda": _safe_float(_get_row_val(ticker_row, "DebtEBITDA")),
-        }
-
-        # ── Ambil data live (harga, ex-date, yield current, dividends) ────
-        stock_data = get_full_stock_data(ticker, interval="1d")
-        info       = stock_data.get("info", {})
-        history    = stock_data.get("history", pd.DataFrame())
-        divs       = stock_data.get("dividends", pd.Series(dtype="float64"))
-
-        if history.empty:
+        hist_pf = drop_empty_candles(hist_pf)
+        if len(hist_pf) < 30:
             return None
 
-        curr_price = _safe_float(
-            info.get("currentPrice")
-            or (history["Close"].iloc[-1] if not history.empty else None)
-        )
-        if curr_price is None or curr_price <= 0:
-            return None
-
-        # ── Harga terkini & stale days ────────────────────────────────────
-        hist_clean = history[(history["Close"] > 0) & (history["Volume"] > 0)]
-        if hist_clean.empty:
-            return None
-
-        last_valid_date = pd.to_datetime(hist_clean.index[-1]).date()
-        today           = datetime.now(_TZ_WIB).date()
-        stale_days      = max((today - last_valid_date).days, 0)
-
-        # ── Dividend yield saat ini — FALLBACK CHAIN 3 LAPIS ──────────────
-        # Bug fix 19 Jun 2026: info.get("dividendYield") dan
-        # info.get("exDividendDate") berasal dari blok quoteSummary yang
-        # sama di Yahoo. Saat blok itu kosong (throttle/rate-limit), KEDUA
-        # field hilang bersamaan — bukan berarti saham tidak bayar dividen.
-        # Lapis 1: live dari info (paling akurat jika tersedia)
-        curr_dy   = hitung_div_yield_normal(info)  # dalam %
-        dy_source = "live_info"
-
-        if not curr_dy or curr_dy <= 0:
-            # Lapis 2: hitung TTM manual dari riwayat dividends aktual
-            dy_ttm = _hitung_dy_ttm_dari_dividends(divs, curr_price)
-            if dy_ttm is not None and dy_ttm > 0:
-                curr_dy   = dy_ttm
-                dy_source = "ttm_calculated"
+        # --- OBV Divergence ---
+        # Gugur jika OBV candle terakhir <= rata-rata OBV 5 candle sebelumnya.
+        # Menggunakan rata-rata (bukan titik tunggal) agar lebih robust terhadap
+        # fluktuasi harian dan kondisi pasar koreksi sementara.
+        obv_vals = [0.0]
+        for i in range(1, len(hist_pf)):
+            c_now  = hist_pf["Close"].iloc[i]
+            c_prev = hist_pf["Close"].iloc[i - 1]
+            v_now  = hist_pf["Volume"].iloc[i]
+            if c_now > c_prev:
+                obv_vals.append(obv_vals[-1] + v_now)
+            elif c_now < c_prev:
+                obv_vals.append(obv_vals[-1] - v_now)
             else:
-                # Lapis 3: fallback ke nilai terakhir DY_5Y dari CSV (estimasi)
-                dy_valid_csv = _valid_floats(arrays["dy_5y"])
-                if dy_valid_csv:
-                    curr_dy   = round(dy_valid_csv[-1] * 100, 2)
-                    dy_source = "csv_estimate"
-                else:
-                    curr_dy   = 0.0
-                    dy_source = "unavailable"
+                obv_vals.append(obv_vals[-1])
 
-        # ── Hard Knockout ─────────────────────────────────────────────────
-        ko_alasan = check_hard_knockout(arrays, info, sektor, ticker_row)
-        if ko_alasan:
-            return None   # langsung gugur, tidak masuk hasil
+        if len(obv_vals) > OBV_LOOKBACK:
+            obv_ref_avg = float(np.mean(obv_vals[-(OBV_LOOKBACK + 1):-1]))
+            if obv_vals[-1] <= obv_ref_avg:
+                return None
 
-        # ── Scoring ───────────────────────────────────────────────────────
-        dim_a, detail_a = _score_dim_a(arrays)
-        dim_b, detail_b = _score_dim_b(arrays, curr_dy)
-        dim_c, detail_c = _score_dim_c(arrays, info)
-        dim_d, detail_d = _score_dim_d(arrays, info, sektor, ticker_row)
-        skor_total      = min(100, max(0, dim_a + dim_b + dim_c + dim_d))
+        # --- CMF(20) ---
+        # Threshold diperlunak ke CMF_THRESHOLD (-0.15) agar tidak terlalu agresif
+        # saat pasar sedang koreksi ringan.
+        hl   = hist_pf["High"] - hist_pf["Low"]
+        mfm  = (
+            ((hist_pf["Close"] - hist_pf["Low"]) - (hist_pf["High"] - hist_pf["Close"]))
+            / hl.replace(0, np.nan)
+        )
+        cmf  = (mfm * hist_pf["Volume"]).rolling(20).sum() / hist_pf["Volume"].rolling(20).sum()
+        cmf_last = cmf.dropna()
+        if cmf_last.empty or float(cmf_last.iloc[-1]) <= CMF_THRESHOLD:
+            return None
 
-        label_kls, warna_kls = _label_kelayakan(skor_total)
-        forward = _hitung_forward_yield(arrays, info, curr_price)
-        exdate  = _get_exdate_info(info, divs)
+        # --- Value_MA20 ---
+        sektor_nama    = get_sector_from_universe(ticker_bersih, df_universe)
+        syariah_status = "Ya" if is_syariah_from_universe(ticker_bersih, df_universe) else "Tidak"
+        fundamental    = get_fundamental_from_universe(ticker_bersih, df_universe)
 
-        # ── DPS terakhir ──────────────────────────────────────────────────
-        dps_valid = _valid_floats(arrays["dps_5y"])
-        dps_terakhir = dps_valid[-1] if dps_valid else None
+        value_ma20 = fundamental.get("Value_MA20")
+        if value_ma20 is None:
+            value_ma20 = float(
+                (hist_pf["Close"] * hist_pf["Volume"]).rolling(20).mean().iloc[-1]
+            )
+        if pd.isna(value_ma20) or value_ma20 <= 0:
+            return None
 
-        # ── Yield rata-rata 5 tahun ───────────────────────────────────────
-        dy_valid = _valid_floats(arrays["dy_5y"])
-        dy_avg5  = float(np.mean(dy_valid)) * 100 if dy_valid else None
+        # --- Market Cap ---
+        info = data_daily_pf.get("info", {})
+        market_cap_usd = info.get("marketCap")
+        if market_cap_usd is None or pd.isna(market_cap_usd):
+            return None
+        if market_cap_usd <= MC_MIN_USD:
+            return None
 
+        # --- ROE / ROA ---
+        roe = fundamental["ROE"]
+        roa = fundamental["ROA"]
+        if roe is None:
+            roe_raw = info.get("returnOnEquity")
+            roe = float(roe_raw) * 100 if roe_raw is not None else None
+        if roa is None:
+            roa_raw = info.get("returnOnAssets")
+            roa = float(roa_raw) * 100 if roa_raw is not None else None
+
+        roe_valid = roe is not None and not pd.isna(roe)
+        roa_valid = roa is not None and not pd.isna(roa)
+        if roe_valid and roe <= 0:
+            return None
+        if roa_valid and roa <= 0:
+            return None
+
+        quality_label = "Rated" if (roe_valid or roa_valid) else "Unrated"
+
+        # ── SCORING ──────────────────────────────────────────────────────────
+        interval = "15m" if trade_mode == "Day Trading" else "1d"
+        if trade_mode == "Day Trading":
+            data = get_full_stock_data(ticker, interval="15m")
+        else:
+            data = data_daily_pf  # sudah ada, tidak perlu fetch ulang
+
+        hist = data.get("history", pd.DataFrame())
+        if hist.empty:
+            return None
+
+        hist = drop_empty_candles(hist)
+        # Kebutuhan warm-up minimum: EMA200 dengan ewm(adjust=False) stabil di ~150 candle.
+        # 210 terlalu konservatif dan menggugurkan saham liquid yang candle bersihnya
+        # sedikit di bawah 210 akibat suspend atau libur bursa.
+        min_candles = 150 if trade_mode == "Swing Trading" else 55
+        if len(hist) < min_candles:
+            return None
+
+        ind_cols   = _INDICATOR_COLS_DAY if trade_mode == "Day Trading" else _INDICATOR_COLS_SWING
+        df         = calculate_indicators(hist, trade_mode)
+        valid_iloc = find_valid_last_iloc(df, indicator_cols=ind_cols)
+        if valid_iloc is None:
+            return None
+
+        stale_days = compute_stale_days(df, valid_iloc, interval)
+        last       = df.iloc[valid_iloc]
+        curr_price = float(last["Close"])
+        if curr_price <= 0:
+            return None
+
+        # Volume & RVOL
+        vol_sma20 = df["Volume"].rolling(20).mean().iloc[valid_iloc]
+        rvol      = float(last["Volume"]) / float(vol_sma20) if (vol_sma20 and vol_sma20 > 0) else 0.0
+
+        score  = 0.0
+        alasan = []
+
+        # ── SCORING: DAY TRADING ─────────────────────────────────────────────
+        if trade_mode == "Day Trading":
+
+            # MTF filter: gugur sebelum skor dihitung
+            if mtf_filter and int(last["Supertrend_Dir"]) != 1:
+                return None
+
+            # 1. RVOL tier
+            if rvol >= RVOL_HIGH:
+                score += 20; alasan.append(f"RVOL Tinggi ({rvol:.1f}x) +20")
+            elif rvol >= RVOL_MID:
+                score += 10; alasan.append(f"RVOL Moderat ({rvol:.1f}x) +10")
+
+            # 2. Harga vs VWAP: Close > VWAP DAN VWAP[i] > VWAP[i-1]
+            vwap_now  = float(last.get("VWAP", np.nan))
+            vwap_prev = float(df["VWAP"].iloc[valid_iloc - 1]) if valid_iloc >= 1 else np.nan
+            if (
+                not pd.isna(vwap_now)
+                and not pd.isna(vwap_prev)
+                and curr_price > vwap_now
+                and vwap_now > vwap_prev
+            ):
+                score += 20; alasan.append("Price > VWAP & VWAP Naik +20")
+
+            # 3. Supertrend (10,2) tier
+            st_pts, st_label = compute_supertrend_score(df, valid_iloc, 20.0, 15.0)
+            if st_pts > 0:
+                score += st_pts
+                alasan.append(f"{st_label} (10,2)")
+
+            # 4. MACD Golden Cross (dalam 3 candle terakhir)
+            macd_gc_window = max(valid_iloc - 2, 0)
+            macd_gc = False
+            for k in range(macd_gc_window, valid_iloc + 1):
+                if k == 0:
+                    continue
+                if df["MACD"].iloc[k] > df["MACD_Signal"].iloc[k] and \
+                   df["MACD"].iloc[k - 1] <= df["MACD_Signal"].iloc[k - 1]:
+                    macd_gc = True
+                    break
+            # juga lolos jika MACD > Signal pada candle terakhir (tanpa perlu baru cross)
+            if not macd_gc and float(last["MACD"]) > float(last["MACD_Signal"]):
+                macd_gc = True
+            if macd_gc:
+                score += 5; alasan.append("MACD Golden Cross +5")
+
+            # 5. MACD Histogram naik
+            if valid_iloc >= 1:
+                hist_now  = float(df["MACD_Hist"].iloc[valid_iloc])
+                hist_prev = float(df["MACD_Hist"].iloc[valid_iloc - 1])
+                if hist_now > hist_prev:
+                    score += 5; alasan.append("MACD Histogram Naik +5")
+
+            # 6. RSI(9) Momentum: 45 - 70
+            rsi_val = float(last["RSI"])
+            if RSI_MOM_LOW <= rsi_val <= RSI_MOM_HIGH:
+                score += 7.5; alasan.append(f"RSI Momentum ({rsi_val:.1f}) +7.5")
+
+            # 7. RSI(9) Trend: 3 candle consecutive naik
+            if compute_rsi_trend_3(df, "RSI", valid_iloc):
+                score += 7.5; alasan.append("RSI Trend 3 Candle Naik +7.5")
+
+            # 8. PSAR bullish
+            if bool(last.get("PSAR_Bull", False)):
+                score += 5; alasan.append("PSAR Bullish +5")
+
+            # 9. VPT Trend (EMA slope)
+            if compute_vpt_trend(df, valid_iloc):
+                score += 10; alasan.append("VPT Trend Naik +10")
+
+            # MTF Bonus: daily candle check
+            try:
+                data_daily_mtf = get_full_stock_data(ticker, interval="1d")
+                df_daily       = data_daily_mtf.get("history", pd.DataFrame())
+                if not df_daily.empty:
+                    df_daily = drop_empty_candles(df_daily)
+                if not df_daily.empty and len(df_daily) >= 55:
+                    df_daily        = df_daily.copy()
+                    df_daily["MA50_D"] = df_daily["Close"].rolling(50).mean()
+                    df_daily["MA20_D"] = df_daily["Close"].rolling(20).mean()
+                    vi_d = find_valid_last_iloc(df_daily, indicator_cols=_INDICATOR_COLS_DAILY)
+                    if vi_d is not None:
+                        ld = df_daily.iloc[vi_d]
+                        if ld["Close"] > ld["MA50_D"] and ld["MA20_D"] > ld["MA50_D"]:
+                            score += 10; alasan.append("Daily Uptrend (>MA50 & MA20>MA50) +10")
+                        elif ld["Close"] > ld["MA50_D"]:
+                            score += 5;  alasan.append("Daily Sideways (>MA50) +5")
+                        # Downtrend harian: tidak beri bonus, tapi tidak aktif menghukum.
+                        # Pre-filter OBV+CMF sudah menyaring tren — penalti -15 di sini
+                        # adalah double punishment yang membunuh skor di pasar bearish.
+            except Exception:
+                pass
+
+        # ── SCORING: SWING TRADING ───────────────────────────────────────────
+        else:
+
+            # MTF filter: Supertrend_Dir != 1 ATAU Close <= EMA50 -> gugur
+            if mtf_filter:
+                if int(last["Supertrend_Dir"]) != 1 or curr_price <= float(last["EMA50"]):
+                    return None
+
+            # 1. Supertrend (10,3) tier
+            st_pts, st_label = compute_supertrend_score(df, valid_iloc, 20.0, 15.0)
+            if st_pts > 0:
+                score += st_pts
+                alasan.append(f"{st_label} (10,3)")
+
+            # 2. MA Structure tier
+            ema20  = float(last["EMA20"])
+            ema50  = float(last["EMA50"])
+            ema200 = float(last["EMA200"])
+            if curr_price > ema20 and ema20 > ema50 and ema50 > ema200:
+                score += 20; alasan.append("MA Structure Tier 1 (Price>EMA20>EMA50>EMA200) +20")
+            elif curr_price > ema50 and ema20 > ema50:
+                score += 10; alasan.append("MA Structure Tier 2 (Price>EMA50 & EMA20>EMA50) +10")
+
+            # 3. MACD Golden Cross (dalam 5 candle terakhir)
+            macd_gc_window = max(valid_iloc - 4, 0)
+            macd_gc = False
+            for k in range(macd_gc_window, valid_iloc + 1):
+                if k == 0:
+                    continue
+                if df["MACD"].iloc[k] > df["MACD_Signal"].iloc[k] and \
+                   df["MACD"].iloc[k - 1] <= df["MACD_Signal"].iloc[k - 1]:
+                    macd_gc = True
+                    break
+            if not macd_gc and float(last["MACD"]) > float(last["MACD_Signal"]):
+                macd_gc = True
+            if macd_gc:
+                score += 7.5; alasan.append("MACD Golden Cross +7.5")
+
+            # 4. MACD Histogram naik
+            if valid_iloc >= 1:
+                hist_now  = float(df["MACD_Hist"].iloc[valid_iloc])
+                hist_prev = float(df["MACD_Hist"].iloc[valid_iloc - 1])
+                if hist_now > hist_prev:
+                    score += 7.5; alasan.append("MACD Histogram Naik +7.5")
+
+            # 5. RVOL tier
+            if rvol >= RVOL_HIGH:
+                score += 15; alasan.append(f"RVOL Tinggi ({rvol:.1f}x) +15")
+            elif rvol >= RVOL_MID:
+                score += 10; alasan.append(f"RVOL Moderat ({rvol:.1f}x) +10")
+
+            # 6. RSI(14) Momentum: 45 - 70
+            rsi_val = float(last["RSI"])
+            if RSI_MOM_LOW <= rsi_val <= RSI_MOM_HIGH:
+                score += 10; alasan.append(f"RSI Momentum ({rsi_val:.1f}) +10")
+
+            # 7. RSI(14) Trend: 3 candle consecutive naik
+            if compute_rsi_trend_3(df, "RSI", valid_iloc):
+                score += 10; alasan.append("RSI Trend 3 Candle Naik +10")
+
+            # 8. PSAR bullish
+            if bool(last.get("PSAR_Bull", False)):
+                score += 5; alasan.append("PSAR Bullish +5")
+
+            # 9. VPT Trend (EMA slope)
+            if compute_vpt_trend(df, valid_iloc):
+                score += 5; alasan.append("VPT Trend Naik +5")
+
+            # Bonus: MACD Early Recovery
+            # Histogram sudah berbalik positif (Hist > 0) TAPI MACD Line masih < Signal Line
+            if valid_iloc >= 1:
+                hist_now = float(df["MACD_Hist"].iloc[valid_iloc])
+                macd_now = float(last["MACD"])
+                sig_now  = float(last["MACD_Signal"])
+                if hist_now > 0 and macd_now < sig_now:
+                    score += 10; alasan.append("MACD Early Recovery (Hist>0, MACD<Signal) +10")
+
+            # Penalti: RSI Overbought
+            if rsi_val > RSI_OVERBOUGHT:
+                score -= 15; alasan.append(f"RSI Overbought ({rsi_val:.1f}) -15")
+
+        # Floor 0 dan cap 100 diterapkan di sini — mencegah skor negatif masuk raw_results
+        score = min(max(round(score), 0), 100)
         return {
-            "Ticker":         ticker_bersih,
-            "Sektor":         sektor,
-            "Syariah":        syariah,
-            "Skor":           skor_total,
-            "Label":          label_kls,
-            "Warna":          warna_kls,
-            "Harga":          int(curr_price),
-            "DY_Curr":        round(curr_dy, 2),
-            "DY_Source":      dy_source,
-            "DY_Avg5":        round(dy_avg5, 2) if dy_avg5 else None,
-            "DPS_Terakhir":   round(dps_terakhir, 2) if dps_terakhir else None,
-            "Forward":        forward,
-            "Exdate":         exdate,
-            "StaleDays":      stale_days,
-            "AnomalyYield":   detail_b.get("anomali_yield", False),
-            "DimA":           dim_a,
-            "DimB":           dim_b,
-            "DimC":           dim_c,
-            "DimD":           dim_d,
-            "DetailA":        detail_a,
-            "DetailB":        detail_b,
-            "DetailC":        detail_c,
-            "DetailD":        detail_d,
-            "Arrays":         arrays,
-            "Info":           info,
+            "Ticker":    ticker_bersih,
+            "Sektor":    sektor_nama,
+            "Syariah":   syariah_status,
+            "Quality":   quality_label,
+            "Skor":      score,
+            "Harga":     int(curr_price),
+            "ATR":       float(last["ATR"]),
+            "Alasan":    alasan,
+            "RSI":       float(last["RSI"]),
+            "StaleDays": stale_days,
+            "Interval":  interval,
         }
 
     except Exception:
         return None
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# SIDEBAR FILTER
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
+# SIDEBAR FILTER UNIVERSE
+# -----------------------------------------------------------------------------
 
-def apply_sidebar_filters_hdy(
-    ticker_list: list[str],
+def apply_sidebar_filters(
+    saham_list: list[str],
     df_universe: pd.DataFrame,
 ) -> list[str]:
-    """Terapkan filter sektor, syariah, MktCap dari sidebar."""
+    """Terapkan filter sektor, syariah, MktCap dari sidebar; return list terfilter."""
     if df_universe.empty:
-        return ticker_list
+        return saham_list
 
     if "Sektor" in df_universe.columns:
         semua_sektor   = sorted(df_universe["Sektor"].dropna().unique().tolist())
-        pilihan_sektor = st.sidebar.multiselect(
-            "Filter Sektor", semua_sektor, default=semua_sektor,
-        )
+        pilihan_sektor = st.sidebar.multiselect("Filter Sektor", semua_sektor, default=semua_sektor)
     else:
         pilihan_sektor = []
 
@@ -994,21 +1178,12 @@ def apply_sidebar_filters_hdy(
 
     if "MktCap" in df_universe.columns:
         semua_mktcap   = sorted(df_universe["MktCap"].dropna().unique().tolist())
-        pilihan_mktcap = st.sidebar.multiselect(
-            "Filter Market Cap", semua_mktcap, default=semua_mktcap,
-        )
+        pilihan_mktcap = st.sidebar.multiselect("Filter Market Cap", semua_mktcap, default=semua_mktcap)
     else:
         pilihan_mktcap = []
 
-    dy_min = st.sidebar.slider(
-        "Minimum DY Terakhir (%)", min_value=0.0, max_value=20.0, value=0.0, step=0.5,
-    )
-    score_min = st.sidebar.slider(
-        "Minimum Skor HDY", min_value=0, max_value=100, value=50, step=5,
-    )
-
     filtered = []
-    for ticker_jk in ticker_list:
+    for ticker_jk in saham_list:
         t    = ticker_jk.replace(".JK", "")
         mask = df_universe["Kode Saham"].astype(str).str.strip() == t
         rows = df_universe[mask]
@@ -1027,228 +1202,177 @@ def apply_sidebar_filters_hdy(
                 continue
         filtered.append(ticker_jk)
 
-    # Simpan filter skor & DY ke session state untuk dipakai post-processing
-    st.session_state["hdy_filter_score_min"] = score_min
-    st.session_state["hdy_filter_dy_min"]    = dy_min
-
     return filtered
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# PDF EXPORT
-# ─────────────────────────────────────────────────────────────────────────────
-
-def export_to_pdf_hdy(
-    top5: list[dict],
-    watchlist: list[dict],
-    logo_path: str = "logo_expert_stock_pro.png",
-) -> bytes:
-    """Generate laporan PDF screening HDY."""
-    pdf = FPDF()
-    pdf.add_page()
-    pdf.set_auto_page_break(auto=True, margin=15)
-
-    # ── Header ──────────────────────────────────────────────────────────────
-    pdf.set_fill_color(20, 20, 20)
-    pdf.rect(0, 0, 210, 25, "F")
-
-    if not os.path.exists(logo_path):
-        logo_path = "../logo_expert_stock_pro.png"
-    if os.path.exists(logo_path):
-        pdf.set_fill_color(218, 165, 32)
-        pdf.rect(10, 3, 19, 19, "F")
-        pdf.image(logo_path, x=10.5, y=3.5, w=18, h=18)
-
-    pdf.set_text_color(255, 255, 255)
-    pdf.set_font("Arial", "B", 15)
-    pdf.set_xy(35, 8)
-    pdf.cell(0, 10, "Expert Stock Pro - Screening HDY Pro", ln=True)
-    pdf.set_y(28)
-
-    pdf.set_font("Arial", "I", 10)
-    pdf.set_text_color(0, 0, 255)
-    pdf.cell(0, 5, "Sumber: https://s.id/pintarsaham", ln=True, align="C",
-             link="https://s.id/pintarsaham")
-    pdf.ln(2)
-
-    waktu_cetak = datetime.now(_TZ_WIB).strftime("%d-%m-%Y %H:%M WIB")
-    pdf.set_text_color(0, 0, 0)
-    pdf.set_font("Arial", "B", 11)
-    pdf.cell(0, 6, _safe_latin1(f"Dicetak: {waktu_cetak}"), ln=True, align="R")
-    pdf.set_font("Arial", "I", 9)
-    pdf.cell(0, 5,
-             "Strategi: High Dividend Yield (HDY) | Sumber: liquid_dividend_stocks.csv",
-             ln=True, align="C")
-    pdf.line(10, pdf.get_y() + 2, 200, pdf.get_y() + 2)
-    pdf.ln(5)
-
-    # ── Top 5 ──────────────────────────────────────────────────────────────
-    pdf.set_fill_color(220, 235, 255)
-    pdf.set_font("Arial", "B", 11)
-    pdf.cell(190, 8, "  A. TOP 5 PRIORITAS DIVIDEN", 0, ln=True, fill=True)
-    pdf.ln(2)
-
-    _DY_SOURCE_LABEL = {
-        "live_info":       "",
-        "ttm_calculated":  " (TTM est.)",
-        "csv_estimate":    " (CSV est.)",
-        "unavailable":     " (N/A)",
-    }
-
-    for item in top5:
-        dy_suffix = _DY_SOURCE_LABEL.get(item.get("DY_Source", ""), "")
-        pdf.set_font("Arial", "B", 10)
-        fwd_str = (f"| FwdDY: {item['Forward']['dy_fwd']:.1f}%"
-                   if item.get("Forward") else "")
-        pdf.cell(190, 6, _safe_latin1(
-            f"{item['Ticker']} - {item['Sektor']} | {item['Label']} | "
-            f"Skor: {item['Skor']}/100 {fwd_str}"
-        ), ln=True)
-        pdf.set_font("Arial", "", 9)
-        pdf.cell(60, 5, _safe_latin1(f"Harga: Rp {format_rp(item['Harga'])}"), 0)
-        pdf.set_text_color(0, 128, 0)
-        pdf.cell(65, 5, _safe_latin1(
-            f"DY Terakhir: {item['DY_Curr']:.2f}%{dy_suffix}"
-            + (f" | Avg5Y: {item['DY_Avg5']:.2f}%" if item['DY_Avg5'] else "")
-        ), 0)
-        pdf.set_text_color(0, 0, 0)
-        pdf.cell(65, 5,
-                 _safe_latin1(f"Ex-Date: {item['Exdate']['ex_date_str']}"), ln=True)
-        pdf.set_font("Arial", "I", 8)
-        pdf.cell(190, 4,
-                 _safe_latin1(f"Ex-Date Note: {item['Exdate']['pesan']}"), ln=True)
-        if item.get("AnomalyYield"):
-            pdf.set_text_color(200, 100, 0)
-            pdf.cell(190, 4,
-                     "Yield Anomaly: Yield saat ini jauh di atas rata-rata historis",
-                     ln=True)
-            pdf.set_text_color(0, 0, 0)
-        pdf.line(10, pdf.get_y() + 1, 200, pdf.get_y() + 1)
-        pdf.ln(3)
-
-    # ── Watchlist ─────────────────────────────────────────────────────────
-    if watchlist:
-        pdf.ln(3)
-        pdf.set_font("Arial", "B", 11)
-        pdf.cell(190, 8, "  B. WATCHLIST (RANK 6-20)", 0, ln=True, fill=True)
-        pdf.ln(2)
-        for w in watchlist:
-            dy_suffix_w = _DY_SOURCE_LABEL.get(w.get("DY_Source", ""), "")
-            pdf.set_font("Arial", "B", 9)
-            pdf.cell(190, 5, _safe_latin1(
-                f"{w['Ticker']} ({w['Sektor'][:20]}) | {w['Label']} | "
-                f"Skor: {w['Skor']} | DY: {w['DY_Curr']:.1f}%{dy_suffix_w}"
-                + (f" | Avg5Y: {w['DY_Avg5']:.1f}%" if w['DY_Avg5'] else "")
-            ), ln=True)
-            pdf.set_font("Arial", "I", 7)
-            pdf.cell(190, 4,
-                     _safe_latin1(f"Ex-Date: {w['Exdate']['pesan']}"), ln=True)
-            pdf.line(10, pdf.get_y(), 200, pdf.get_y())
-            pdf.ln(2)
-
-    # ── Disclaimer ────────────────────────────────────────────────────────
-    pdf.ln(5)
-    pdf.set_font("Arial", "B", 8)
-    pdf.cell(190, 5, "DISCLAIMER:", ln=True)
-    pdf.set_font("Arial", "I", 7)
-    pdf.multi_cell(190, 4, _safe_latin1(
-        "Laporan ini dihasilkan secara otomatis menggunakan algoritma scoring HDY. "
-        "Bukan merupakan ajakan, rekomendasi pasti, atau paksaan untuk membeli/menjual saham. "
-        "Keputusan investasi sepenuhnya menjadi tanggung jawab pribadi investor. "
-        "Selalu lakukan DYOR dan terapkan manajemen risiko. "
-        "Nilai DY yang ditandai (TTM est.) atau (CSV est.) adalah estimasi karena data "
-        "live dari penyedia data sedang tidak lengkap — bukan indikasi saham tidak membagi dividen."
-    ))
-
-    try:
-        out = pdf.output(dest="S")
-        return out.encode("latin-1") if isinstance(out, str) else bytes(out)
-    except Exception:
-        return bytes(pdf.output())
-
-
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # ENTRY POINT
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 
-def run_screening_hdy() -> None:
-    """Entry point modul Screening HDY — dipanggil dari app.py."""
-
-    # ── Load universe ─────────────────────────────────────────────────────
-    ticker_list, df_universe = load_universe_hdy()
-
-    if not ticker_list:
-        st.error(
-            "❌ `liquid_dividend_stocks.csv` tidak ditemukan atau kosong. "
-            "Jalankan enrichment profil **Dividen** di Panel Admin terlebih dahulu, "
-            "lalu upload hasilnya ke folder `/data` di GitHub."
-        )
+def run_screening() -> None:
+    """Entry point modul screening — dipanggil dari app.py."""
+    saham_list, df_universe = load_universe()
+    if not saham_list:
         st.stop()
 
-    # ── Sidebar info & filter ─────────────────────────────────────────────
-    st.sidebar.success(
-        f"Universe HDY: **{len(ticker_list)} saham** dari `liquid_dividend_stocks.csv`"
-    )
-    ticker_list = apply_sidebar_filters_hdy(ticker_list, df_universe)
+    liquid_aktif = not get_liquid_stocks().empty
+    if liquid_aktif:
+        st.sidebar.success(
+            f"Universe: **{len(saham_list)} saham** dari `liquid_stocks.csv`"
+        )
+    else:
+        st.sidebar.warning(
+            f"Universe: **{len(saham_list)} saham** dari `pre_liquid_stocks.csv` "
+            f"(liquid_stocks.csv tidak tersedia atau kosong)"
+        )
 
-    if not ticker_list:
+    saham_list = apply_sidebar_filters(saham_list, df_universe)
+    if not saham_list:
         st.warning("Tidak ada saham yang cocok dengan filter yang dipilih.")
         st.stop()
 
-    # ── Judul ─────────────────────────────────────────────────────────────
-    st.markdown(
-        "<h1 style='text-align:center;'>💰 Screening Saham High Dividend Yield Pro</h1>",
-        unsafe_allow_html=True,
-    )
-    st.markdown(
-        "<p style='text-align:center;color:#90CAF9;'>"
-        "Menyaring saham terbaik untuk strategi dividend investing jangka panjang."
-        "</p>",
-        unsafe_allow_html=True,
+    st.markdown("<h4 style='text-align: center;'>Pilih Mode Aplikasi</h4>",
+                unsafe_allow_html=True)
+    ui_mode = st.radio(
+        "Tampilan Aplikasi:",
+        ["🌱 Mode Praktis (Untuk Pemula)", "💼 Mode Pro (Indikator Lengkap)"],
+        horizontal=True,
+        label_visibility="collapsed",
     )
     st.markdown("---")
 
-    with st.expander("📖 Cara Membaca Hasil Screening HDY"):
+    if "Praktis" in ui_mode:
+        st.markdown(
+            "<h1 style='text-align: center;'>🔍 Asisten Saham Pintar</h1>",
+            unsafe_allow_html=True,
+        )
+        st.markdown(
+            "<p style='text-align: center; color: gray;'>"
+            "Mencarikan saham potensial secara otomatis.</p>",
+            unsafe_allow_html=True,
+        )
+    else:
+        st.markdown(
+            "<h1 style='text-align: center;'>🔍 Screening Saham Harian Pro</h1>",
+            unsafe_allow_html=True,
+        )
+
+    st.markdown("---")
+
+    with st.expander("📖 Glosarium Istilah (Kamus Trader)"):
         st.markdown("""
-        **Skor HDY 100 Poin** dihitung dari 4 dimensi:
-        - **Dimensi A (40 poin):** Keberlanjutan Earnings & FCF — apakah laba dan arus kas cukup untuk membiayai dividen ke depan
-        - **Dimensi B (40 poin):** Track Record Distribusi — rekam jejak pembayaran dividen historis
-        - **Dimensi C (10 poin):** Momentum Terkini — pertumbuhan EPS tahun terakhir
-        - **Dimensi D (10 poin):** Kesehatan Balance Sheet — leverage dan kemampuan bayar utang
-
-        **Label Kelayakan:**
-        ⭐ Prima (≥80) | ✅ Layak (65-79) | ⚠️ Perhatikan (50-64) | ❌ Tidak Layak (<50)
-
-        **Sumber DY Terakhir:**
-        DY Terakhir diambil dari data live Yahoo Finance jika tersedia. Jika Yahoo sedang
-        tidak mengembalikan data tersebut (umum terjadi karena rate-limit/throttling),
-        sistem otomatis menghitung yield trailing 12 bulan dari riwayat pembayaran dividen
-        aktual, lalu jika itu pun tidak tersedia, memakai estimasi dari data historis
-        `liquid_dividend_stocks.csv`. Nilai yang bukan dari sumber live akan ditandai
-        **"(estimasi)"** pada kartu hasil.
-
-        **Ex-Date Warning:**
-        Beli saham *sebelum* cum-date (1 hari bursa sebelum ex-date) untuk mendapat dividen.
-        Harga sering terkoreksi setelah ex-date — ini bukan sinyal jual otomatis, tapi perlu diantisipasi.
+        * **Entry:** Rentang harga yang disarankan untuk mulai membeli.
+        * **TP (Take Profit):** Target harga untuk merealisasikan keuntungan.
+        * **SL (Stop Loss):** Batas toleransi kerugian.
+        * **ATR:** Indikator volatilitas harga.
+        * **Maks Lot:** Rekomendasi porsi maksimal pembelian yang aman.
+        * **RVOL:** Relative Volume — seberapa ramai dibanding rata-rata 20 hari.
+        * **PSAR:** Parabolic SAR — konfirmasi arah tren.
+        * **Supertrend:** Indikator tren berbasis ATR.
         """)
 
-    # ── Tombol jalankan ───────────────────────────────────────────────────
-    if st.button(
-        "🚀 JALANKAN SCREENING HDY",
-        use_container_width=True,
-        type="primary",
-    ):
-        raw_results   = []
-        loading_ph    = st.empty()
-        loading_ph.write("### 🔄 Menganalisa saham HDY... Mohon tunggu.")
-        status_text   = st.empty()
-        progress_bar  = st.progress(0)
-        total_saham   = len(ticker_list)
+    if "Praktis" in ui_mode:
+        st.write("### 1️⃣ Pilih Gaya Beli Anda")
+        trade_mode_raw = st.radio(
+            "Suka memantau layar setiap hari atau disimpan beberapa hari?",
+            ["Day Trading (Beli Pagi, Jual Siang/Sore)",
+             "Swing Trading (Beli & Simpan Beberapa Hari)"],
+            horizontal=True,
+        )
+        trade_mode = "Day Trading" if "Day" in trade_mode_raw else "Swing Trading"
+    else:
+        st.info(
+            "⏰ **Waktu Analisa Optimal:**\n"
+            "- **Day Trading:** 09.30 - 11.00 WIB\n"
+            "- **Swing Trading:** > 16.00 WIB"
+        )
+        trade_mode = st.radio(
+            "Pilih Strategi Trading:", ["Day Trading", "Swing Trading"], horizontal=True
+        )
+
+    if "Praktis" in ui_mode:
+        st.write("### 2️⃣ Kalkulator Keamanan Dana")
+        mtf_filter   = True
+        sector_boost = True
+        col_m1, col_m2 = st.columns(2)
+        with col_m1:
+            total_modal = st.number_input(
+                "Berapa Total Uang Anda untuk Saham? (Rp):",
+                min_value=1_000_000, value=10_000_000, step=1_000_000,
+            )
+        with col_m2:
+            modal_risiko = st.number_input(
+                "Batas maksimal uang yang rela hilang per saham? (Rp):",
+                min_value=10_000, value=100_000, step=50_000,
+            )
+        batas_alokasi_rp = total_modal * MAX_ALLOC_PCT
+        st.success(
+            f"Sistem akan memastikan Anda tidak membeli saham melebihi "
+            f"Rp {format_rp(batas_alokasi_rp)} per saham."
+        )
+    else:
+        with st.expander("🛠️ Pengaturan Filter & Manajemen Risiko", expanded=False):
+            col_f1, col_f2 = st.columns(2)
+            with col_f1:
+                mtf_filter   = st.checkbox("Hanya saham searah tren besar", value=True)
+            with col_f2:
+                sector_boost = st.checkbox("Hanya saham dari sektor yang kuat", value=True)
+            st.markdown("---")
+            col_m1, col_m2 = st.columns(2)
+            with col_m1:
+                total_modal = st.number_input(
+                    "Total Modal Portofolio (Rp):",
+                    min_value=1_000_000, value=100_000_000, step=5_000_000,
+                )
+            with col_m2:
+                modal_risiko = st.number_input(
+                    "Nominal Maksimal Siap Rugi (Rp):",
+                    min_value=10_000, value=1_000_000, step=50_000,
+                )
+            risiko_persen    = (modal_risiko / total_modal) * 100 if total_modal > 0 else 0
+            batas_alokasi_rp = total_modal * MAX_ALLOC_PCT
+            st.markdown(f"""
+            <div style="background-color:#d4edda; border-left:5px solid #28a745;
+                        padding:10px; border-radius:5px;">
+                <p style="margin:0; font-size:12px; color:#155724;">
+                    Total Modal: <b>Rp {format_rp(total_modal)}</b> |
+                    Nominal Siap Rugi (<b>{risiko_persen:.1f}%</b>):
+                    <b>Rp {format_rp(modal_risiko)}</b>
+                </p>
+            </div>""", unsafe_allow_html=True)
+
+    session, status_desc = get_market_session()
+    if "Tutup" in status_desc:
+        st.error(f"🛑 **Bursa Saham Sedang Tutup ({session})**")
+    elif "Wait" in status_desc:
+        st.warning("⏳ **Bursa Saham Belum Buka (Sesi Pra-Pasar)**")
+    elif "Analysis" in status_desc:
+        st.info("🌙 **Bursa Saham Sudah Tutup (Sesi Pasca-Pasar)**")
+    else:
+        st.success("🟢 **Bursa Saham Sedang Buka (Live Market)**")
+
+    st.markdown("---")
+
+    tombol_cari = (
+        "🚀 CARIKAN SAHAM UNTUK SAYA"
+        if "Praktis" in ui_mode
+        else f"🚀 JALANKAN ANALISA {trade_mode.upper()}"
+    )
+
+    if st.button(tombol_cari, use_container_width=True):
+        raw_results    = []
+        loading_header = st.empty()
+        loading_header.write("### 🔄 Mesin sedang memilah saham. Mohon tunggu...")
+        status_text  = st.empty()
+        progress_bar = st.progress(0)
+        total_saham  = len(saham_list)
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
             futures = {
-                executor.submit(process_single_hdy, ticker, df_universe): ticker
-                for ticker in ticker_list
+                executor.submit(
+                    process_single_stock, ticker, trade_mode, mtf_filter, df_universe
+                ): ticker
+                for ticker in saham_list
             }
             completed = 0
             for future in concurrent.futures.as_completed(futures):
@@ -1259,321 +1383,199 @@ def run_screening_hdy() -> None:
                 if result is not None:
                     raw_results.append(result)
 
-        loading_ph.empty()
+        loading_header.empty()
         status_text.empty()
         progress_bar.empty()
 
-        if not raw_results:
-            st.warning(
-                "Tidak ada saham yang lolos screening HDY dengan filter saat ini. "
-                "Coba perluas filter di sidebar."
-            )
-            st.stop()
+        df_all = pd.DataFrame(raw_results)
+        sector_report, leading_sectors = analyze_sector_momentum(df_all)
 
-        # ── Post-filter: skor & DY minimum ───────────────────────────────
-        score_min = st.session_state.get("hdy_filter_score_min", SCORE_MIN_ENTRY)
-        dy_min    = st.session_state.get("hdy_filter_dy_min", 0.0)
-
-        final_results = [
-            r for r in raw_results
-            if r["Skor"] >= score_min and r["DY_Curr"] >= dy_min
-        ]
-        final_results.sort(key=lambda x: x["Skor"], reverse=True)
-
-        # ── Stale warning ─────────────────────────────────────────────────
-        if final_results:
-            max_stale = max(r["StaleDays"] for r in final_results)
+        # Stale warning: >= 2 hari
+        if not df_all.empty and "StaleDays" in df_all.columns:
+            max_stale = int(df_all["StaleDays"].max())
             if max_stale >= 2:
                 st.warning(
-                    f"⚠️ Data {max_stale} hari tertinggal — kemungkinan libur bursa. "
-                    f"Harga dan DY yang ditampilkan adalah data candle terakhir yang valid."
+                    f"⚠️ **PERINGATAN: {max_stale} hari bursa libur.** — "
+                    f"Data hari libur kosong sudah dihapus otomatis, "
+                    f"tapi analisis indikator berisiko tidak akurat selama libur bursa. "
+                    f"Sinyal tetap dapat dibaca sebagai persiapan sesi berikutnya."
                 )
 
-        # ── Peringatan jika banyak ticker pakai DY estimasi (bukan live) ──
-        n_estimasi = sum(1 for r in raw_results if r.get("DY_Source") != "live_info")
-        if raw_results and n_estimasi / len(raw_results) >= 0.3:
-            st.warning(
-                f"⚠️ **{n_estimasi} dari {len(raw_results)} saham** menggunakan DY hasil "
-                f"estimasi (TTM/CSV), bukan data live Yahoo Finance. Ini biasanya terjadi "
-                f"saat Yahoo Finance melakukan rate-limit/throttling pada sesi fetch ini. "
-                f"Nilai estimasi tetap dihitung dari data dividen aktual, tapi disarankan "
-                f"jalankan ulang screening beberapa saat lagi untuk konfirmasi data live."
+        final_picks = []
+        sl_mult  = SL_MULT_DAY    if trade_mode == "Day Trading" else SL_MULT_SWING
+        max_loss = MAX_LOSS_PCT_DAY if trade_mode == "Day Trading" else MAX_LOSS_PCT_SWING
+        rr_min   = RR_MIN_DAY      if trade_mode == "Day Trading" else RR_MIN_SWING
+
+        for stock in raw_results:
+            f_score = stock["Skor"]
+
+            # Bonus sektor (post-processing)
+            if sector_boost and stock["Sektor"] in leading_sectors:
+                f_score += 10
+                stock["Alasan"].append(f"Sector Hot: {stock['Sektor']} +10")
+            # Floor dan cap setelah bonus sektor
+            f_score = min(max(round(f_score), 0), 100)
+
+            # Kalkulasi SL, TP, RRR
+            atr_sl      = int(stock["Harga"] - (sl_mult * stock["ATR"]))
+            hard_cap_sl = int(stock["Harga"] * (1 - max_loss))
+            sl          = max(atr_sl, hard_cap_sl)
+            tp          = int(stock["Harga"] + (stock["Harga"] - sl) * rr_min)
+            rrr         = (
+                (tp - stock["Harga"]) / (stock["Harga"] - sl)
+                if stock["Harga"] > sl else 0
             )
 
-        st.session_state["hdy_results"]      = final_results
-        st.session_state["hdy_raw_results"]  = raw_results
-        st.session_state["hdy_done"]         = True
-
-    # ── TAMPILKAN HASIL ───────────────────────────────────────────────────
-    if not st.session_state.get("hdy_done", False):
-        return
-
-    final_results = st.session_state.get("hdy_results", [])
-    raw_results   = st.session_state.get("hdy_raw_results", [])
-
-    if not final_results:
-        st.warning(
-            "Tidak ada saham yang memenuhi kriteria minimum (Skor & DY filter). "
-            "Turunkan slider filter di sidebar."
-        )
-        return
-
-    top5      = final_results[:5]
-    watchlist = final_results[5:20]
-
-    # ═══════════════════════════════════════════════════════════════════════
-    # BAGIAN 1 — MARKET OVERVIEW
-    # ═══════════════════════════════════════════════════════════════════════
-    st.subheader("📊 Overview Sektor Dividen")
-
-    df_all = pd.DataFrame(raw_results)
-    if not df_all.empty and "Sektor" in df_all.columns:
-        sector_summary = (
-            df_all.groupby("Sektor")
-            .agg(Avg_Skor=("Skor", "mean"), Jumlah=("Ticker", "count"))
-            .reset_index()
-            .sort_values("Avg_Skor", ascending=False)
-        )
-        col_chart, col_info = st.columns([2, 1])
-        with col_chart:
-            fig = px.bar(
-                sector_summary,
-                x="Sektor", y="Avg_Skor",
-                color="Avg_Skor", color_continuous_scale="Greens",
-                text=sector_summary["Avg_Skor"].apply(lambda v: f"{v:.0f}"),
-                title="Rata-rata Skor HDY per Sektor",
-            )
-            fig.update_traces(textposition="outside")
-            fig.update_layout(
-                plot_bgcolor="#0E1117", paper_bgcolor="#0E1117",
-                font_color="white", height=320,
-                coloraxis_showscale=False,
-            )
-            st.plotly_chart(fig, use_container_width=True)
-        with col_info:
-            st.markdown("**Top 3 Sektor Terkuat:**")
-            for _, row in sector_summary.head(3).iterrows():
-                st.success(f"**{row['Sektor']}** — Avg Skor: {row['Avg_Skor']:.0f}")
-            st.markdown(f"**Total lolos KO:** {len(raw_results)} saham")
-            st.markdown(f"**Masuk hasil (skor ≥ filter):** {len(final_results)} saham")
-
-    st.markdown("---")
-
-    # ═══════════════════════════════════════════════════════════════════════
-    # BAGIAN 2 — TOP 5 PRIORITAS
-    # ═══════════════════════════════════════════════════════════════════════
-    st.header("🏆 Top 5 Prioritas Dividend Investing")
-
-    _DY_SOURCE_BADGE = {
-        "live_info":      None,
-        "ttm_calculated": ("📡 Estimasi TTM", "#FF9800"),
-        "csv_estimate":   ("🗃️ Estimasi CSV", "#9E9E9E"),
-        "unavailable":    ("❓ Tidak tersedia", "#D50000"),
-    }
-
-    cols = st.columns(min(len(top5), 5))
-    for idx, item in enumerate(top5):
-        with cols[idx]:
-            warna      = item["Warna"]
-            fwd        = item.get("Forward")
-            exdate     = item["Exdate"]
-            warna_teks = "#000" if warna == "#FFD600" else "#fff"
-
-            # Card header
-            st.markdown(
-                f"""
-                <div style="background:#1e2b3e;border-radius:10px;padding:14px;
-                            border:2px solid {warna};text-align:center;
-                            margin-bottom:4px;">
-                    <div style="font-size:1.3em;font-weight:900;color:white;">
-                        {item['Ticker']}
-                    </div>
-                    <div style="font-size:0.78em;color:#90CAF9;">{item['Sektor']}</div>
-                    <div style="margin:6px 0;">
-                        <span style="background:{warna};color:{warna_teks};
-                                     padding:2px 10px;border-radius:12px;
-                                     font-size:0.82em;font-weight:bold;">
-                            {item['Label']}
-                        </span>
-                    </div>
-                    <div style="font-size:2em;font-weight:900;color:{warna};">
-                        {item['Skor']}
-                        <span style="font-size:0.5em;color:#A0A0A0;">/100</span>
-                    </div>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
-
-            # Metrik utama
-            st.metric("Harga",        f"Rp {format_rp(item['Harga'])}")
-            st.metric("DY Terakhir",   f"{item['DY_Curr']:.2f}%")
-
-            badge = _DY_SOURCE_BADGE.get(item.get("DY_Source", "live_info"))
-            if badge:
-                label_b, warna_b = badge
-                st.markdown(
-                    f"<div style='font-size:0.72em;color:{warna_b};margin-top:-8px;"
-                    f"margin-bottom:6px;'>{label_b}</div>",
-                    unsafe_allow_html=True,
+            # Lot maksimal
+            risiko_per_lembar = stock["Harga"] - sl
+            if risiko_per_lembar > 0:
+                lembar_final = min(
+                    modal_risiko / risiko_per_lembar,
+                    batas_alokasi_rp / stock["Harga"],
                 )
-
-            if item["DY_Avg5"]:
-                st.metric("DY Rata-rata 5Y", f"{item['DY_Avg5']:.2f}%")
-            if fwd:
-                st.metric("Forward DY",
-                          f"{fwd['dy_fwd']:.2f}%",
-                          delta=fwd["label"].replace("🟢", "").replace("🟡", "").replace("🔴", "").strip())
-            if item.get("AnomalyYield"):
-                st.warning("⚠️ Yield Anomaly")
-
-            # Ex-date info
-            st.markdown(
-                f"<div style='font-size:0.8em;padding:6px;background:#1a1a2e;"
-                f"border-radius:6px;border-left:3px solid {exdate['warna']};'>"
-                f"<b style='color:{exdate['warna']};'>Ex-Date:</b><br>"
-                f"<span style='color:#E0E0E0;font-size:0.95em;'>{exdate['ex_date_str']}</span>"
-                f"</div>",
-                unsafe_allow_html=True,
-            )
-            if exdate["status"] in ("menjelang", "hari_ini", "baru_lewat", "estimasi_dari_riwayat"):
-                st.markdown(
-                    f"<div style='font-size:0.75em;color:{exdate['warna']};margin-top:4px;'>"
-                    f"{exdate['pesan']}</div>",
-                    unsafe_allow_html=True,
-                )
-
-            # Dim breakdown mini
-            st.markdown(
-                f"<div style='font-size:0.75em;color:#607D8B;margin-top:6px;'>"
-                f"A:{item['DimA']}/40 B:{item['DimB']}/40 "
-                f"C:{item['DimC']}/10 D:{item['DimD']}/10"
-                f"</div>",
-                unsafe_allow_html=True,
-            )
-            if item["Syariah"].lower() in ("ya", "yes"):
-                st.markdown("🕌 **Syariah**")
-
-    # ═══════════════════════════════════════════════════════════════════════
-    # BAGIAN 3 — WATCHLIST (rank 6–20)
-    # ═══════════════════════════════════════════════════════════════════════
-    if watchlist:
-        st.markdown("---")
-        st.subheader(f"📋 Watchlist HDY — Rank 6 s.d. {min(20, 5 + len(watchlist))}")
-
-        # Catatan: kolom "Sumber DY" (live/TTM est./CSV est./N/A) sengaja TIDAK
-        # ditampilkan di tabel watchlist ini — keputusan disengaja agar tabel
-        # tidak membingungkan user awam. Badge sumber DY tetap ada di kartu
-        # Top 5 di atas. Untuk verifikasi data dividen lebih dalam pada saham
-        # tertentu di watchlist ini, user diarahkan memakai modul Analisa
-        # Dividen (dividen.py) secara terpisah.
-        df_watch = pd.DataFrame([{
-            "Rank":           idx + 6,
-            "Ticker":         w["Ticker"],
-            "Sektor":         w["Sektor"],
-            "Syariah":        "Ya" if w["Syariah"].lower() in ("ya", "yes") else "Tidak",
-            "Label":          w["Label"],
-            "Skor":           w["Skor"],
-            "Harga (Rp)":     w["Harga"],
-            "DY Terakhir (%)":w["DY_Curr"],
-            "DY Avg 5Y (%)":  w["DY_Avg5"] if w["DY_Avg5"] else "N/A",
-            "Fwd DY (%)":     w["Forward"]["dy_fwd"] if w.get("Forward") else "N/A",
-            "Fwd Label":      w["Forward"]["label"] if w.get("Forward") else "N/A",
-            "Ex-Date":        w["Exdate"]["ex_date_str"],
-            "Ex Note":        w["Exdate"]["pesan"],
-            "A/B/C/D":        f"{w['DimA']}/{w['DimB']}/{w['DimC']}/{w['DimD']}",
-        } for idx, w in enumerate(watchlist)])
-
-        def _color_row(row):
-            skor = row["Skor"]
-            if skor >= 80:
-                c = "background-color:#1a2e1a"
-            elif skor >= 65:
-                c = "background-color:#1a2a1a"
-            elif skor >= 50:
-                c = "background-color:#2a2a12"
+                lot_maksimal = int(lembar_final / 100)
             else:
-                c = "background-color:#2a1212"
-            return [c] * len(row)
+                lot_maksimal = 0
 
-        st.dataframe(
-            df_watch.style.apply(_color_row, axis=1),
-            column_config={
-                "Skor": st.column_config.ProgressColumn(
-                    min_value=0, max_value=100, format="%d",
-                ),
-                "DY Terakhir (%)": st.column_config.NumberColumn(format="%.2f%%"),
-            },
-            use_container_width=True,
-            hide_index=True,
-        )
-        st.caption(
-            "💡 Untuk memastikan data dividen historis lebih lengkap pada saham "
-            "tertentu di watchlist ini (riwayat DY, payout ratio, konsistensi "
-            "pembayaran), gunakan modul **Analisa Dividen Pro** secara terpisah."
-        )
+            pct_risk   = ((stock["Harga"] - sl) / stock["Harga"]) * 100 if stock["Harga"] > 0 else 0
+            pct_reward = ((tp - stock["Harga"]) / stock["Harga"]) * 100 if stock["Harga"] > 0 else 0
 
-    # ═══════════════════════════════════════════════════════════════════════
-    # BAGIAN 4 — DETAIL SCORING EKSPANDER
-    # ═══════════════════════════════════════════════════════════════════════
-    st.markdown("---")
-    with st.expander("🔍 Detail Skor Per Dimensi (Top 5)", expanded=False):
-        for item in top5:
-            st.markdown(f"#### {item['Ticker']} — Skor: {item['Skor']}/100")
-            c1, c2, c3, c4 = st.columns(4)
-            da, db, dc, dd = item["DetailA"], item["DetailB"], item["DetailC"], item["DetailD"]
-            with c1:
-                st.markdown(f"**Dimensi A: {item['DimA']}/40**")
-                st.caption(f"AAGR EPS: {da.get('aagr_eps', 'N/A')}% → {da.get('poin_aagr', 0)}pt")
-                st.caption(f"FCF Positif: {da.get('fcf_positif', 0)}/5 → {da.get('poin_fcf', 0)}pt")
-                st.caption(f"FCF PR avg: {da.get('fcf_pr', 'N/A')}% → {da.get('poin_fpr', 0)}pt")
-                st.caption(f"EPS Tumbuh: {da.get('eps_tumbuh', 0)} tahun → {da.get('poin_konsisten', 0)}pt")
-                st.caption(f"DPS Stability: {da.get('dps_stability', 0)}/4 → {da.get('poin_dps_a', 0)}pt")
-            with c2:
-                st.markdown(f"**Dimensi B: {item['DimB']}/40**")
-                st.caption(f"DY Avg 5Y: {db.get('dy_avg', 'N/A')}% → {db.get('poin_dy', 0)}pt")
-                st.caption(f"PR Avg 5Y: {db.get('pr_avg', 'N/A')}% → {db.get('poin_pr', 0)}pt")
-                st.caption(f"Freq Div: {db.get('frekuensi', 0)}/5 → {db.get('poin_freq', 0)}pt")
-                st.caption(f"AEPD: {db.get('aepd', 'N/A')} → {db.get('poin_aepd', 0)}pt")
-                st.caption(f"DPS Stability B → {db.get('poin_dps_b', 0)}pt")
-            with c3:
-                st.markdown(f"**Dimensi C: {item['DimC']}/10**")
-                st.caption(f"EPS YoY: {dc.get('eps_yoy', 'N/A')}% → {dc.get('poin_c', 0)}pt")
-            with c4:
-                st.markdown(f"**Dimensi D: {item['DimD']}/10**")
-                sektor_t = str(item["Sektor"]).strip().title()
-                if sektor_t in SEKTOR_BANK:
-                    st.caption(f"CAR: {dd.get('car', 'N/A')}% → {dd.get('poin_car', 0)}pt")
-                    st.caption(f"NPL: {dd.get('npl', 'N/A')}% → {dd.get('poin_npl', 0)}pt")
-                elif sektor_t in SEKTOR_INFRA:
-                    st.caption(f"Debt/EBITDA: {dd.get('debt_ebitda', 'N/A')}x → {dd.get('poin_de', 0)}pt")
-                    st.caption(f"ICR: {dd.get('icr', 'N/A')}x → {dd.get('poin_icr', 0)}pt")
-                else:
-                    st.caption(f"DER: {dd.get('der', 'N/A')}x → {dd.get('poin_der', 0)}pt")
-                    st.caption(f"ICR: {dd.get('icr', 'N/A')}x → {dd.get('poin_icr', 0)}pt")
+            if f_score >= SCORE_MIN_ENTRY and rrr >= RRR_MIN_ENTRY:
+                final_picks.append({
+                    "Ticker":         stock["Ticker"],
+                    "Sektor":         stock["Sektor"],
+                    "Skor":           f_score,
+                    "Harga_Saat_Ini": int(stock["Harga"]),
+                    "Syariah":        stock["Syariah"],
+                    "Quality":        stock["Quality"],
+                    "Entry":          f"Rp {format_rp(int(stock['Harga'] * 0.99))} - {format_rp(stock['Harga'])}",
+                    "SL":             sl,
+                    "TP":             tp,
+                    "RRR":            f"{rrr:.1f}x",
+                    "Status":         "FULL SIZING" if f_score >= 85 else "CICIL SEBAGIAN",
+                    "Logic":          " | ".join(stock["Alasan"]),
+                    "Lot_Maks":       f"{format_rp(lot_maksimal)} Lot",
+                    "Pct_Risk":       f"-{pct_risk:.1f}%",
+                    "Pct_Reward":     f"+{pct_reward:.1f}%",
+                })
+
+        final_picks.sort(key=lambda x: x["Skor"], reverse=True)
+        st.session_state["final_picks"]   = final_picks[:10]
+        st.session_state["sector_report"] = sector_report
+        st.session_state["pdf_session"]   = session
+        st.session_state["analysis_done"] = True
+
+        if any(p["Skor"] >= 85 for p in st.session_state["final_picks"]):
+            play_alert_sound()
+
+    # ── TAMPILKAN HASIL ───────────────────────────────────────────────────────
+    if st.session_state.get("analysis_done", False):
+        res       = st.session_state.get("final_picks", [])
+        top_3     = res[:3]
+        watchlist = res[3:10]
+
+        st.subheader("🌐 Kondisi Pasar Saat Ini")
+        c1, c2 = st.columns([2, 1])
+        with c1:
+            sr = st.session_state.get("sector_report", pd.DataFrame())
+            if not sr.empty:
+                fig = px.bar(
+                    sr.reset_index(),
+                    x="Sektor", y="Avg_Score",
+                    color="Avg_Score", color_continuous_scale="Greens",
+                    title="Kekuatan Sektor Saat Ini",
+                )
+                st.plotly_chart(fig, use_container_width=True)
+        with c2:
+            st.write("**Sektor Paling Ramai:**")
+            if not sr.empty:
+                for s in sr.index[:3]:
+                    st.success(s)
+
+        st.markdown("---")
+        judul = (
+            "🏆 Pilihan Terbaik Saat Ini"
+            if "Praktis" in ui_mode
+            else f"🏆 Top 3 Prioritas {trade_mode}"
+        )
+        st.header(judul)
+
+        if top_3:
+            cols = st.columns(len(top_3))
+            for idx, item in enumerate(top_3):
+                with cols[idx]:
+                    st.markdown(f"### {item['Ticker']}")
+                    st.write(f"**Sektor:** {item['Sektor']}")
+                    st.write(f"**Syariah:** {item['Syariah']} | **Quality:** {item['Quality']}")
+                    if "Praktis" in ui_mode:
+                        st.info(f"🛒 **Beli di harga:** {item['Entry']}")
+                        st.success(f"💰 **Jual Untung di:** Rp {format_rp(item['TP'])} ({item['Pct_Reward']})")
+                        st.error(f"🛑 **Batas Aman:** Rp {format_rp(item['SL'])} ({item['Pct_Risk']})")
+                        st.warning(f"📦 **Maksimal Beli:** {item['Lot_Maks']} ({item['Status']})")
+                    else:
+                        st.metric("Skor Institusi", f"{item['Skor']}/100 Pts", item["Status"])
+                        st.write(f"**Target (TP):** Rp {format_rp(item['TP'])} ({item['Pct_Reward']})")
+                        st.write(f"**Proteksi (SL):** Rp {format_rp(item['SL'])} ({item['Pct_Risk']})")
+                        st.info(f"Area Entry: {item['Entry']}")
+                        st.warning(f"🛡️ **Maks. Aman:** {item['Lot_Maks']}")
+                        st.caption(f"💡 {item['Logic']}")
+        else:
+            st.warning(
+                "Mesin belum menemukan saham yang benar-benar memenuhi kriteria saat ini. "
+                "Coba jalankan ulang setelah jam 09.30 WIB atau ubah filter strategi."
+            )
+
+        if watchlist:
             st.markdown("---")
+            st.subheader("📋 Daftar Cadangan (Peringkat 4-10)")
+            df_watch = pd.DataFrame(watchlist).copy()
+            df_watch["SL_tampil"] = df_watch.apply(
+                lambda x: f"Rp {format_rp(x['SL'])} ({x['Pct_Risk']})", axis=1
+            )
+            df_watch["TP_tampil"] = df_watch.apply(
+                lambda x: f"Rp {format_rp(x['TP'])} ({x['Pct_Reward']})", axis=1
+            )
+            if "Praktis" in ui_mode:
+                df_watch = df_watch.rename(columns={
+                    "Sektor":    "Industri",
+                    "Entry":     "Area Beli",
+                    "SL_tampil": "Jual Rugi (Batas Aman)",
+                    "TP_tampil": "Jual Untung (Target)",
+                })
+                kolom_tampil = [
+                    "Ticker", "Industri", "Syariah", "Quality",
+                    "Area Beli", "Jual Rugi (Batas Aman)",
+                    "Jual Untung (Target)", "Lot_Maks", "Status",
+                ]
+            else:
+                df_watch = df_watch.rename(columns={"SL_tampil": "SL", "TP_tampil": "TP"})
+                kolom_tampil = [
+                    "Ticker", "Sektor", "Syariah", "Quality", "Skor",
+                    "Status", "Entry", "SL", "TP", "RRR", "Lot_Maks",
+                ]
+            st.dataframe(df_watch[kolom_tampil], use_container_width=True, hide_index=True)
 
-    # ═══════════════════════════════════════════════════════════════════════
-    # EXPORT PDF & DISCLAIMER
-    # ═══════════════════════════════════════════════════════════════════════
-    st.markdown("<br>", unsafe_allow_html=True)
-    waktu_str = datetime.now(_TZ_WIB).strftime("%Y%m%d_%H%M")
-    pdf_bytes = export_to_pdf_hdy(top5, watchlist)
-    st.download_button(
-        label="📥 UNDUH LAPORAN SCREENING HDY (PDF)",
-        data=pdf_bytes,
-        file_name=f"ExpertStockPro_ScreeningHDY_{waktu_str}.pdf",
-        mime="application/pdf",
-        use_container_width=True,
-    )
+        st.markdown("<br><hr>", unsafe_allow_html=True)
+        st.caption(
+            "DISCLAIMER: Laporan ini dihasilkan otomatis oleh algoritma. "
+            "Bukan rekomendasi beli/jual. Keputusan investasi adalah tanggung jawab Anda. "
+            "Selalu DYOR dan terapkan manajemen risiko."
+        )
 
-    st.markdown("---")
-    st.caption(
-        "⚠️ **DISCLAIMER:** Hasil screening ini dihasilkan secara otomatis oleh algoritma. "
-        "Bukan merupakan rekomendasi beli/jual. Keputusan investasi sepenuhnya tanggung "
-        "jawab Anda. Selalu lakukan DYOR dan terapkan manajemen risiko."
-    )
+        waktu_cetak_pdf = datetime.now(_TZ_WIB).strftime("%Y%m%d_%H%M")
+        pdf_data = export_to_pdf(
+            res, trade_mode,
+            st.session_state.get("pdf_session", session),
+            st.session_state.get("sector_report", pd.DataFrame()),
+        )
+        st.download_button(
+            label="📥 UNDUH LAPORAN SCREENING LENGKAP (PDF)",
+            data=pdf_data,
+            file_name=f"ExpertStockPro_{trade_mode}_{waktu_cetak_pdf}.pdf",
+            mime="application/pdf",
+            use_container_width=True,
+        )
 
 
 if __name__ == "__main__":
-    run_screening_hdy()
+    run_screening()
