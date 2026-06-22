@@ -1461,13 +1461,12 @@ def run_screening_hdy() -> None:
         st.markdown("---")
         st.subheader(f"📋 Watchlist HDY — Rank 6 s.d. {min(20, 5 + len(watchlist))}")
 
-        _DY_SOURCE_SUFFIX = {
-            "live_info":      "",
-            "ttm_calculated": " (TTM est.)",
-            "csv_estimate":   " (CSV est.)",
-            "unavailable":    " (N/A)",
-        }
-
+        # Catatan: kolom "Sumber DY" (live/TTM est./CSV est./N/A) sengaja TIDAK
+        # ditampilkan di tabel watchlist ini — keputusan disengaja agar tabel
+        # tidak membingungkan user awam. Badge sumber DY tetap ada di kartu
+        # Top 5 di atas. Untuk verifikasi data dividen lebih dalam pada saham
+        # tertentu di watchlist ini, user diarahkan memakai modul Analisa
+        # Dividen (dividen.py) secara terpisah.
         df_watch = pd.DataFrame([{
             "Rank":           idx + 6,
             "Ticker":         w["Ticker"],
@@ -1477,7 +1476,6 @@ def run_screening_hdy() -> None:
             "Skor":           w["Skor"],
             "Harga (Rp)":     w["Harga"],
             "DY Terakhir (%)":w["DY_Curr"],
-            "Sumber DY":      _DY_SOURCE_SUFFIX.get(w.get("DY_Source", ""), ""),
             "DY Avg 5Y (%)":  w["DY_Avg5"] if w["DY_Avg5"] else "N/A",
             "Fwd DY (%)":     w["Forward"]["dy_fwd"] if w.get("Forward") else "N/A",
             "Fwd Label":      w["Forward"]["label"] if w.get("Forward") else "N/A",
@@ -1510,10 +1508,9 @@ def run_screening_hdy() -> None:
             hide_index=True,
         )
         st.caption(
-            "Kolom **Sumber DY**: kosong = data live Yahoo Finance. "
-            "(TTM est.) = dihitung dari riwayat dividen aktual 12 bulan terakhir. "
-            "(CSV est.) = estimasi dari data historis liquid_dividend_stocks.csv. "
-            "(N/A) = tidak ada data dividen sama sekali yang bisa dipakai."
+            "💡 Untuk memastikan data dividen historis lebih lengkap pada saham "
+            "tertentu di watchlist ini (riwayat DY, payout ratio, konsistensi "
+            "pembayaran), gunakan modul **Analisa Dividen Pro** secara terpisah."
         )
 
     # ═══════════════════════════════════════════════════════════════════════
