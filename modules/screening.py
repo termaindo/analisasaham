@@ -1515,38 +1515,74 @@ def run_screening() -> None:
         if watchlist:
             st.markdown("---")
             st.subheader("📋 Daftar Cadangan (Peringkat 4-10)")
-            df_watch = pd.DataFrame(watchlist).copy()
-            df_watch["SL_tampil"] = df_watch.apply(
-                lambda x: f"Rp {format_rp(x['SL'])} ({x['Pct_Risk']})", axis=1
-            )
-            df_watch["TP_tampil"] = df_watch.apply(
-                lambda x: f"Rp {format_rp(x['TP'])} ({x['Pct_Reward']})", axis=1
-            )
-            # FIX: buang kolom numerik asli SL/TP SEBELUM rename kolom _tampil.
-            # Tanpa ini, rename("SL_tampil" -> "SL") menghasilkan DUA kolom
-            # bernama "SL" (dan dua "TP") sekaligus di df_watch, yang membuat
-            # Streamlit melempar "Duplicate column names found" saat
-            # st.dataframe(df_watch[kolom_tampil], ...) dipanggil.
-            df_watch = df_watch.drop(columns=["SL", "TP"])
+
+            # FIX (versi ke-2 — anti-duplikasi struktural):
+            # Sebelumnya df_watch dibangun dari pd.DataFrame(watchlist) yang
+            # sudah punya kolom numerik "SL"/"TP", lalu kolom tampilan string
+            # "SL_tampil"/"TP_tampil" di-rename balik menjadi "SL"/"TP" —
+            # pendekatan drop()+rename() ini rapuh terhadap perubahan lain di
+            # masa depan (mis. urutan kode berubah, drop() tidak sempat
+            # jalan, dsb) dan tetap bisa menghasilkan "Duplicate column
+            # names found" di st.dataframe().
+            #
+            # Sekarang df_watch dibangun LANGSUNG dari list-of-dict dengan
+            # nama kolom akhir yang sudah eksplisit dan unik per baris.
+            # Dengan pendekatan ini duplikasi kolom secara struktural tidak
+            # mungkin terjadi, apa pun isi dict "watchlist".
             if "Praktis" in ui_mode:
-                df_watch = df_watch.rename(columns={
-                    "Sektor":    "Industri",
-                    "Entry":     "Area Beli",
-                    "SL_tampil": "Jual Rugi (Batas Aman)",
-                    "TP_tampil": "Jual Untung (Target)",
-                })
                 kolom_tampil = [
                     "Ticker", "Industri", "Syariah", "Quality",
                     "Area Beli", "Jual Rugi (Batas Aman)",
                     "Jual Untung (Target)", "Lot_Maks", "Status",
                 ]
+                rows_watch = [
+                    {
+                        "Ticker":                 w["Ticker"],
+                        "Industri":               w["Sektor"],
+                        "Syariah":                w["Syariah"],
+                        "Quality":                w["Quality"],
+                        "Area Beli":              w["Entry"],
+                        "Jual Rugi (Batas Aman)": f"Rp {format_rp(w['SL'])} ({w['Pct_Risk']})",
+                        "Jual Untung (Target)":   f"Rp {format_rp(w['TP'])} ({w['Pct_Reward']})",
+                        "Lot_Maks":               w["Lot_Maks"],
+                        "Status":                 w["Status"],
+                    }
+                    for w in watchlist
+                ]
             else:
-                df_watch = df_watch.rename(columns={"SL_tampil": "SL", "TP_tampil": "TP"})
                 kolom_tampil = [
                     "Ticker", "Sektor", "Syariah", "Quality", "Skor",
                     "Status", "Entry", "SL", "TP", "RRR", "Lot_Maks",
                 ]
-            st.dataframe(df_watch[kolom_tampil], use_container_width=True, hide_index=True)
+                rows_watch = [
+                    {
+                        "Ticker":   w["Ticker"],
+                        "Sektor":   w["Sektor"],
+                        "Syariah":  w["Syariah"],
+                        "Quality":  w["Quality"],
+                        "Skor":     w["Skor"],
+                        "Status":   w["Status"],
+                        "Entry":    w["Entry"],
+                        "SL":       f"Rp {format_rp(w['SL'])} ({w['Pct_Risk']})",
+                        "TP":       f"Rp {format_rp(w['TP'])} ({w['Pct_Reward']})",
+                        "RRR":      w["RRR"],
+                        "Lot_Maks": w["Lot_Maks"],
+                    }
+                    for w in watchlist
+                ]
+
+            df_watch = pd.DataFrame(rows_watch, columns=kolom_tampil)
+
+            # Guard eksplisit — kalau suatu saat ada yang menambah kolom lagi
+            # ke rows_watch tanpa update kolom_tampil (atau sebaliknya),
+            # error akan muncul di sini dengan pesan yang jelas, alih-alih
+            # error samar dari Streamlit.
+            assert not df_watch.columns.duplicated().any(), (
+                f"Kolom duplikat terdeteksi di df_watch: "
+                f"{df_watch.columns[df_watch.columns.duplicated()].tolist()}"
+            )
+
+            st.dataframe(df_watch, use_container_width=True, hide_index=True)
 
         st.markdown("<br><hr>", unsafe_allow_html=True)
         st.caption(
