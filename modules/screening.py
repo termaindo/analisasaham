@@ -115,11 +115,6 @@ _TZ_WIB = pytz.timezone("Asia/Jakarta")
 # LOAD UNIVERSE
 # -----------------------------------------------------------------------------
 
-# Threshold filter universe trading — harus konsisten dengan admin_panel.py profil "trading"
-_TRADING_MIN_VALUE_MA20 = 2_000_000_000
-_TRADING_MIN_ROE        = 10.0
-
-
 @st.cache_data(ttl=60 * 60 * 24, show_spinner=False)
 def load_universe() -> tuple[list[str], pd.DataFrame]:
     """
@@ -136,6 +131,8 @@ def load_universe() -> tuple[list[str], pd.DataFrame]:
         # dividen yang lolos threshold lebih rendah tidak masuk antrian API call.
         # Filter hanya aktif jika kolom tersedia — agar tidak crash saat
         # liquid_stocks.csv belum di-enrich ulang.
+        _TRADING_MIN_VALUE_MA20 = 2_000_000_000
+        _TRADING_MIN_ROE        = 10.0
         if "Value_MA20" in df.columns:
             df = df[
                 df["Value_MA20"].notna() &
@@ -172,16 +169,6 @@ def load_universe() -> tuple[list[str], pd.DataFrame]:
     except Exception as e:
         st.error(f"Gagal membaca universe saham: {e}")
         return [], pd.DataFrame()
-
-
-def clear_load_universe_cache() -> None:
-    """
-    Clear cache load_universe().
-    Dipanggil dari admin_panel.py setelah admin upload liquid_stocks.csv baru ke GitHub
-    dan menekan tombol 'Clear cache' — agar screening langsung membaca file terbaru
-    tanpa harus menunggu TTL 24 jam habis.
-    """
-    load_universe.clear()
 
 
 def _normalize_universe_columns(df: pd.DataFrame) -> pd.DataFrame:
@@ -1535,6 +1522,12 @@ def run_screening() -> None:
             df_watch["TP_tampil"] = df_watch.apply(
                 lambda x: f"Rp {format_rp(x['TP'])} ({x['Pct_Reward']})", axis=1
             )
+            # FIX: buang kolom numerik asli SL/TP SEBELUM rename kolom _tampil.
+            # Tanpa ini, rename("SL_tampil" -> "SL") menghasilkan DUA kolom
+            # bernama "SL" (dan dua "TP") sekaligus di df_watch, yang membuat
+            # Streamlit melempar "Duplicate column names found" saat
+            # st.dataframe(df_watch[kolom_tampil], ...) dipanggil.
+            df_watch = df_watch.drop(columns=["SL", "TP"])
             if "Praktis" in ui_mode:
                 df_watch = df_watch.rename(columns={
                     "Sektor":    "Industri",
