@@ -55,11 +55,15 @@ def _sanitize_pdf(text: str) -> str:
 # KONSTANTA
 # ─────────────────────────────────────────────────────────────────────────────
 RSI_OVERBOUGHT      = 70
+RSI_OVERBOUGHT_EXTREME = 75   # AUDIT FIX: ambang penalti overbought sesungguhnya.
+                              # RSI 60-70 dibiarkan sbg zona momentum kuat, bukan dihukum.
 RSI_OVERSOLD        = 30
 STOCH_OVERBOUGHT    = 80
 STOCH_OVERSOLD      = 20
 ADX_TREND_STRONG    = 25
 ADX_SIDEWAYS        = 20
+ADX_HARD_VETO       = 12    # AUDIT FIX: veto keras HANYA di bawah ini (pasar benar2 mati)
+VOL_HARD_VETO       = 0.4   # AUDIT FIX: veto keras HANYA di bawah ini (likuiditas nyaris nihil)
 VOLUME_SPIKE_RATIO  = 2.0
 BB_PERIOD           = 20
 BB_STD              = 2
@@ -96,6 +100,9 @@ PEN_ADX_WEAK        = 20
 PEN_VOL_SEPI        = 10
 PEN_RSI_OB          = 5
 PEN_BB_UPPER        = 5
+W_MOM_MACD_SUSTAINED  = 12   # AUDIT FIX: tier baru — bullish & histogram menguat 2x berturut
+W_ENTRY_FIB_BREAKOUT  = 6    # AUDIT FIX: breakout di atas 0.618 dgn volume = bonus, bukan -4
+W_ENTRY_BB_WALK       = 6    # AUDIT FIX: "walking the band" = kontinuasi bullish, bukan -5
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -572,6 +579,7 @@ def compute_score(df: pd.DataFrame, timeframe: str = "swing") -> dict:
 
     last  = df.iloc[valid_iloc]
     prev1 = df.iloc[max(0, valid_iloc - 1)]
+    prev2 = df.iloc[max(0, valid_iloc - 2)]
     prev5 = df.iloc[max(0, valid_iloc - 5)]
 
     result = {
@@ -634,15 +642,33 @@ def compute_score(df: pd.DataFrame, timeframe: str = "swing") -> dict:
         "ok": vol_ok,
     }
 
+    # AUDIT FIX (lihat evaluasi teknikal.py): sebelumnya ADX<20 ATAU Vol_Ratio<0.8
+    # meng-override SELURUH hasil analisa menjadi "KONDISI TIDAK IDEAL", walau
+    # Layer 2/3/4 sangat bullish (skor mentah bisa 80-90 dibuang begitu saja).
+    # ADX>=20 sendiri adalah ambang standar TA (Wilder DMI system), tapi
+    # AND-gate ganda + override total membuat saham awal-tren (justru saat
+    # entry paling menguntungkan, sebelum ADX naik tegas di atas 20) nyaris
+    # tidak pernah lolos, walau banyak platform lain sudah menyebutnya "buy".
+    #
+    # Sekarang: veto keras HANYA untuk kondisi benar-benar ekstrem (pasar
+    # datar total DAN nyaris tidak likuid secara bersamaan). Selain itu,
+    # kegagalan ADX/Volume individual jadi penalti proporsional yang tetap
+    # masuk skor numerik (lihat bagian TOTAL SKOR di bawah), bukan veto.
+    extreme_veto = (adx_val < ADX_HARD_VETO) and (vol_ratio < VOL_HARD_VETO)
+    result["go_nogo"] = not extreme_veto
+
     if not adx_ok:
-        result["go_nogo"] = False
         result["nogo_reason"].append(
-            f"ADX {adx_val:.1f} < {ADX_SIDEWAYS} — pasar sedang sideways, sinyal trend tidak valid."
+            f"ADX {adx_val:.1f} < {ADX_SIDEWAYS} — trend belum terkonfirmasi kuat (mengurangi skor)."
         )
     if not vol_ok:
-        result["go_nogo"] = False
         result["nogo_reason"].append(
-            f"Volume ratio {vol_ratio:.2f}x terlalu sepi — sinyal tidak terkonfirmasi volume."
+            f"Volume ratio {vol_ratio:.2f}x di bawah rata-rata — partisipasi volume lemah (mengurangi skor)."
+        )
+    if extreme_veto:
+        result["nogo_reason"].append(
+            f"Pasar datar total (ADX {adx_val:.1f} < {ADX_HARD_VETO}) DAN nyaris tidak likuid "
+            f"(Vol Ratio {vol_ratio:.2f}x < {VOL_HARD_VETO}) — sinyal apapun di kondisi ini tidak layak dipercaya."
         )
 
     # LAYER 2 — TREND CONFIRMATION
@@ -711,6 +737,17 @@ def compute_score(df: pd.DataFrame, timeframe: str = "swing") -> dict:
     macd_div_bull   = "Bullish" in macd_div
     macd_div_bear   = "Bearish" in macd_div
 
+    # AUDIT FIX: tren yang SUDAH berjalan (bukan baru crossover) sebelumnya
+    # selalu jatuh ke tier "Bullish Momentum" (+8) datar, walau histogramnya
+    # masih terus menguat 2 candle berturut — situasi yang lazimnya dianggap
+    # tren sehat yang masih berakselerasi, bukan sekadar netral. Bonus "fresh
+    # cross" (+15) hanya berlaku 1 candle, jadi mayoritas tren mapan (yang
+    # justru sering dilabeli "buy" platform lain karena sudah terkonfirmasi)
+    # kehilangan poin dibanding momen krusial crossover-nya sendiri.
+    macd_hist_rising_2x = (
+        last['MACD_Hist'] > prev1['MACD_Hist'] > prev2['MACD_Hist']
+    )
+
     if macd_cross_bull:
         macd_pts, macd_label = W_MOM_MACD_CROSS, "Bullish Crossover Baru 🟢"
     elif macd_cross_bear:
@@ -719,6 +756,8 @@ def compute_score(df: pd.DataFrame, timeframe: str = "swing") -> dict:
         macd_pts, macd_label = W_MOM_MACD_DIV, macd_div
     elif macd_div_bear:
         macd_pts, macd_label = -W_MOM_MACD_DIV, macd_div
+    elif macd_bull and macd_hist_rising_2x:
+        macd_pts, macd_label = W_MOM_MACD_SUSTAINED, "Bullish Sustained & Histogram Menguat ✅"
     elif macd_bull:
         macd_pts, macd_label = 8, "Bullish Momentum ✅"
     else:
@@ -734,14 +773,23 @@ def compute_score(df: pd.DataFrame, timeframe: str = "swing") -> dict:
     rsi_prev = prev1['RSI']
     rsi_div  = _detect_rsi_divergence(df)
 
+    # AUDIT FIX: sebelumnya RSI 60-70 (zona momentum kuat pada uptrend) hanya
+    # diberi +4 — LEBIH RENDAH dari RSI netral 40-60 (+8), padahal riset TA
+    # konsisten menyebut RSI>70 bisa bertahan berhari-hari/berminggu pada tren
+    # kuat tanpa itu berarti sinyal jual (band-walk RSI). Ambang penalti
+    # overbought juga dinaikkan dari 70 -> 75 agar tidak menghukum momentum
+    # sehat, hanya kondisi benar-benar ekstrem.
     if "Divergensi Bullish" in rsi_div:
         rsi_pts, rsi_label = W_MOM_RSI_DIV, rsi_div
     elif "Divergensi Bearish" in rsi_div:
         rsi_pts, rsi_label = -W_MOM_RSI_DIV, rsi_div
-    elif rsi_val > RSI_OVERBOUGHT:
-        rsi_pts, rsi_label = -PEN_RSI_OB, f"Overbought ⚠️ ({rsi_val:.1f})"
+    elif rsi_val > RSI_OVERBOUGHT_EXTREME:
+        rsi_pts, rsi_label = -PEN_RSI_OB, f"Overbought Ekstrem ⚠️ ({rsi_val:.1f})"
     elif rsi_val < RSI_OVERSOLD:
         rsi_pts, rsi_label = 5, f"Oversold — Potensi Reversal ({rsi_val:.1f})"
+    elif RSI_OVERBOUGHT < rsi_val <= RSI_OVERBOUGHT_EXTREME:
+        arah_rsi = "↗️ Naik" if rsi_val > rsi_prev else "↘️ Turun"
+        rsi_pts, rsi_label = W_MOM_RSI_NORM, f"Momentum Kuat ({rsi_val:.1f} {arah_rsi})"
     elif 40 <= rsi_val <= 60:
         arah_rsi = "↗️ Naik" if rsi_val > rsi_prev else "↘️ Turun"
         rsi_pts, rsi_label = W_MOM_RSI_NORM, f"Normal ({rsi_val:.1f} {arah_rsi})"
@@ -791,12 +839,21 @@ def compute_score(df: pd.DataFrame, timeframe: str = "swing") -> dict:
     score_entry += vol_pts
     result["layer4_entry"]["Volume_Spike"] = {"poin": vol_pts, "label": vol_label}
 
+    # AUDIT FIX: sebelumnya breakout di atas 0.618 SELALU -4 ("Resistance
+    # Area") — menghukum persis pola breakout yang jadi buruan trader
+    # momentum, dan bertentangan dengan Layer 2 (EMA/Supertrend bullish) yang
+    # justru mengonfirmasi tren naik. Sekarang breakout dgn volume konfirmasi
+    # (>=1.5x rata-rata) = bonus; tanpa konfirmasi volume = netral (bukan
+    # dihukum), karena breakout tanpa volume memang lebih rawan gagal.
     if in_golden_zone:
         fib_pts, fib_label = W_ENTRY_FIB, f"Di Golden Zone 0.618–0.786 🎯 ({fib_786:,.0f}–{fib_618:,.0f})"
     elif curr_price < fib_786:
         fib_pts, fib_label = 4, f"Di bawah Golden Zone (Support Kuat)"
     elif curr_price > fib_618:
-        fib_pts, fib_label = -4, f"Di atas Golden Zone (Resistance Area)"
+        if vol_ratio >= 1.5:
+            fib_pts, fib_label = W_ENTRY_FIB_BREAKOUT, f"Breakout Golden Zone dgn Volume 🚀 ({vol_ratio:.1f}x)"
+        else:
+            fib_pts, fib_label = 0, "Breakout Golden Zone (belum terkonfirmasi volume)"
     else:
         fib_pts, fib_label = 0, f"Di luar Golden Zone"
     score_entry += fib_pts
@@ -811,12 +868,25 @@ def compute_score(df: pd.DataFrame, timeframe: str = "swing") -> dict:
     at_upper      = curr_price >= last['BB_Upper'] * 0.99
     at_lower      = curr_price <= last['BB_Lower'] * 1.01
 
+    # AUDIT FIX: "walking the band" — 2+ dari 3 candle terakhir menempel/
+    # melewati upper band DISERTAI volume >= rata-rata — adalah pola
+    # KONTINUASI bullish yang lazim pada tren kuat, bukan sinyal reversal.
+    # Sebelumnya sistem ini selalu menghukum -5 setiap kali harga di upper
+    # band, walau itu justru ciri saham breakout yang sedang lari kencang.
+    band_walk_count = sum(
+        1 for row in (last, prev1, prev2)
+        if row['BB_Upper'] > 0 and row['Close'] >= row['BB_Upper'] * 0.98
+    )
+    band_walk = band_walk_count >= 2
+
     if squeeze:
         bb_pts, bb_label = W_ENTRY_BB - 2, "Squeeze 📦 — Breakout Imminent"
     elif at_lower:
         bb_pts, bb_label = W_ENTRY_BB, f"Di Lower Band ({last['BB_Lower']:,.0f}) — Potensi Oversold"
+    elif at_upper and band_walk and vol_ratio >= 1.0:
+        bb_pts, bb_label = W_ENTRY_BB_WALK, f"Walking the Upper Band 🚀 (Kontinuasi Bullish, {band_walk_count}/3 candle)"
     elif at_upper:
-        bb_pts, bb_label = -PEN_BB_UPPER, f"Di Upper Band ({last['BB_Upper']:,.0f}) — Resistance"
+        bb_pts, bb_label = 0, f"Di Upper Band ({last['BB_Upper']:,.0f}) — netral, belum tentu resistance"
     else:
         pos_pct = ((curr_price - last['BB_Lower']) / (last['BB_Upper'] - last['BB_Lower']) * 100) if (last['BB_Upper'] - last['BB_Lower']) > 0 else 50
         bb_pts, bb_label = 0, f"Di tengah band ({pos_pct:.0f}% dari bawah)"
@@ -841,17 +911,29 @@ def compute_score(df: pd.DataFrame, timeframe: str = "swing") -> dict:
     raw = score_trend + score_mom + score_entry
     result["score_raw"] = raw
 
-    if not result["go_nogo"]:
-        raw = min(raw - PEN_ADX_WEAK, 0) if not adx_ok else raw
-        raw = raw - PEN_VOL_SEPI if not vol_ok else raw
+    # AUDIT FIX: baris lama `raw = min(raw - PEN_ADX_WEAK, 0) if not adx_ok else raw`
+    # adalah bug tersembunyi kedua di luar override label — setiap kali ADX<20,
+    # skor MENTAH dipaksa maksimal 0 walau Layer 2/3/4 sangat bullish (mis. raw=90
+    # jadi min(90-20,0)=0). Sekarang jadi penalti proporsional (setengah bobot),
+    # bukan clamp, dan berlaku independen dari extreme_veto.
+    if not adx_ok:
+        raw -= PEN_ADX_WEAK * 0.5
+    if not vol_ok:
+        raw -= PEN_VOL_SEPI * 0.5
 
     score_final = max(-100, min(100, raw))
     result["score"] = score_final
 
+    # AUDIT FIX: go_nogo sekarang HANYA True->False untuk extreme_veto (pasar
+    # datar total & nyaris tidak likuid bersamaan). Kegagalan ADX/Volume biasa
+    # sudah tercermin di skor numerik via penalti proporsional di atas, dan
+    # tetap diberi catatan peringatan (context_warning) tanpa membuang label.
+    result["context_warning"] = " | ".join(result["nogo_reason"]) if result["nogo_reason"] else None
+
     if not result["go_nogo"]:
         result["label"]      = "KONDISI TIDAK IDEAL"
         result["warna"]      = "#9E9E9E"
-        result["signal"]     = "TUNGGU — Kondisi Pasar Belum Mendukung"
+        result["signal"]     = "TUNGGU — Market Datar & Tidak Likuid (ADX & Volume Sangat Lemah Bersamaan)"
         result["confidence"] = " | ".join(result["nogo_reason"])
     elif score_final >= 65:
         result["label"]      = "STRONG BUY"
@@ -888,6 +970,13 @@ def compute_score(df: pd.DataFrame, timeframe: str = "swing") -> dict:
         result["warna"]      = "#B71C1C"
         result["signal"]     = "STRONG SELL — Konfirmasi Tinggi"
         result["confidence"] = "Tekanan jual sangat dominan. Exit posisi dan hindari buy."
+
+    # AUDIT FIX: untuk label non-veto (go_nogo=True) yang tetap punya catatan
+    # ADX/Volume lemah, tambahkan sebagai peringatan konteks di confidence —
+    # user tetap melihat skor & label sesungguhnya, tapi diberi tahu kalau
+    # trend/volume belum sepenuhnya solid, bukan kehilangan info sama sekali.
+    if result["go_nogo"] and result["context_warning"]:
+        result["confidence"] += f" ⚠️ Catatan: {result['context_warning']}"
 
     if timeframe == "day":
         sl_mult_buy = 1.5
