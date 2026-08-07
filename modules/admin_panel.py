@@ -14,8 +14,10 @@ Dua file output terpisah:
   liquid_dividend_stocks.csv → universe analisa Dividen (kolom HDY lengkap)
 """
 
+import concurrent.futures
 import datetime
 import os
+import time
 
 import pandas as pd
 import streamlit as st
@@ -27,26 +29,8 @@ from utils.data_loader import (
     clear_liquid_stocks_cache,
     clear_liquid_dividend_stocks_cache,
     enrich_and_filter,
+    get_liquid_stocks,
 )
-
-
-def _clear_universe_cache() -> None:
-    """
-    Clear cache load_universe() di screening.py secara lazy import.
-    Dipanggil bersamaan dengan clear_liquid_stocks_cache() saat admin menekan
-    tombol 'Clear cache' profil Trading — agar kedua layer cache terhapus sekaligus
-    dan screening langsung membaca universe terbaru dari liquid_stocks.csv.
-
-    Lazy import digunakan untuk menghindari circular import karena screening.py
-    juga mengimport dari utils.data_loader.
-    """
-    try:
-        from modules.screening import clear_load_universe_cache
-        clear_load_universe_cache()
-    except Exception:
-        # Modul belum pernah diimport dalam sesi ini — cache-nya belum ada,
-        # tidak perlu di-clear.
-        pass
 
 # Konfigurasi per profil
 _PROFIL_CONFIG = {
@@ -202,38 +186,228 @@ def _render_enrichment_panel(profil: str, df_pre: pd.DataFrame) -> None:
         if os.path.exists(cfg["liquid_path"]):
             mtime = os.path.getmtime(cfg["liquid_path"])
             tgl   = datetime.datetime.fromtimestamp(mtime).strftime("%d %b %Y %H:%M")
-
-            # Diagnostik jumlah ticker di file aktif
-            try:
-                df_cek   = pd.read_csv(cfg["liquid_path"], sep=None, engine="python")
-                n_ticker = len(df_cek)
-                st.success(
-                    f"✅ `{cfg['file_name']}` ditemukan — "
-                    f"terakhir diupdate: {tgl} — "
-                    f"**{n_ticker} ticker**"
-                )
-            except Exception:
-                st.success(f"✅ `{cfg['file_name']}` ditemukan — terakhir diupdate: {tgl}")
-
+            st.success(f"✅ `{cfg['file_name']}` ditemukan — terakhir diupdate: {tgl}")
             if st.button(
                 "🔄 Clear cache (paksa baca ulang file terbaru)",
                 key=f"clear_cache_{profil}",
             ):
                 cfg["clear_cache"]()
-                if profil == "trading":
-                    # Clear juga cache load_universe() di screening.py agar
-                    # universe langsung diperbarui tanpa menunggu TTL 24 jam.
-                    _clear_universe_cache()
-                    st.success(
-                        "✅ Cache `get_liquid_stocks` dan `load_universe` dikosongkan. "
-                        "Screening akan membaca universe terbaru pada request berikutnya."
-                    )
-                else:
-                    st.success("✅ Cache dikosongkan. Data terbaru akan dimuat pada request berikutnya.")
+                st.success("Cache dikosongkan. Data terbaru akan dimuat pada request berikutnya.")
         else:
             st.warning(
                 f"⚠️ `{cfg['file_name']}` belum ada di folder `/data`. "
                 f"Modul terkait akan fallback ke `pre_liquid_stocks.csv`."
+            )
+
+
+def _render_backtest_panel() -> None:
+    """
+    Panel Backtest & Kalibrasi Skor Teknikal — jalankan walk-forward backtest
+    dari compute_score() di modules/teknikal.py langsung dari admin panel,
+    tanpa perlu buka terminal lokal.
+
+    CATATAN PENTING: ini operasi berat (fetch histori bertahun-tahun untuk
+    banyak saham via yfinance). Untuk kalibrasi penuh (semua saham universe,
+    histori panjang), lebih aman dijalankan via CLI lokal
+    (`python backtest_teknikal.py --from-liquid --years 5`) karena Streamlit
+    Cloud punya keterbatasan resource/timeout dan risiko rate-limit Yahoo
+    lebih tinggi saat banyak request beruntun dalam satu proses. Panel ini
+    dirancang untuk cek cepat / iterasi kalibrasi skala kecil-menengah.
+
+    Sesuai STANDAR_KODING.md, tidak ada file yang ditulis ke disk di sini —
+    hasil disimpan di st.session_state dan diunduh via st.download_button,
+    karena filesystem Streamlit Cloud bersifat sementara (reset saat restart).
+    """
+    st.subheader("🧪 Backtest & Kalibrasi Skor Teknikal")
+    st.caption(
+        "Menjalankan walk-forward backtest atas `compute_score()` di "
+        "`modules/teknikal.py` untuk mengecek apakah threshold skor "
+        "(65/35/10/-9/-34/-64) benar-benar berkorelasi dengan win rate historis."
+    )
+
+    try:
+        import backtest_teknikal as bt
+    except ImportError as e:
+        st.error(
+            f"❌ Tidak bisa memuat `backtest_teknikal.py`. Pastikan file ada di "
+            f"root repo (sejajar `app.py`).\n\nDetail: {e}"
+        )
+        return
+
+    st.warning(
+        "⚠️ **Operasi ini berat** — mengambil histori bertahun-tahun untuk banyak "
+        "saham sekaligus lewat yfinance. Bisa lambat, kena rate-limit Yahoo, atau "
+        "timeout di Streamlit Cloud. Untuk kalibrasi **penuh** (semua saham, 5 tahun), "
+        "jalankan `python backtest_teknikal.py --from-liquid --years 5` dari terminal "
+        "lokal. Gunakan panel ini untuk cek cepat atau iterasi kalibrasi skala kecil."
+    )
+
+    col1, col2 = st.columns(2)
+    with col1:
+        sumber = st.radio(
+            "Sumber ticker",
+            ["Manual (aman, cepat)", "Semua dari liquid_stocks.csv (berat)"],
+            key="bt_sumber",
+        )
+        tickers_input = None
+        if sumber.startswith("Manual"):
+            tickers_input = st.text_input(
+                "Daftar ticker (pisah koma)",
+                value="BBCA,BBRI,TLKM,ASII,UNVR",
+                key="bt_tickers_input",
+            )
+    with col2:
+        years = st.number_input(
+            "Tahun histori", min_value=1, max_value=10, value=3, key="bt_years",
+            help="Semakin panjang, semakin banyak sample tapi semakin lama & berat.",
+        )
+        holding_days_str = st.text_input(
+            "Holding period (hari bursa, pisah koma)", value="5,10,20", key="bt_holding",
+        )
+
+    col3, col4, col5 = st.columns(3)
+    with col3:
+        min_warmup = st.number_input(
+            "Min warmup (bar)", min_value=60, max_value=400, value=250, key="bt_warmup",
+            help="Minimum bar sebelum mulai sampling, agar EMA200/ADX stabil.",
+        )
+    with col4:
+        sample_every = st.number_input(
+            "Sample tiap N hari", min_value=1, max_value=10, value=3, key="bt_sample",
+            help="Naikkan untuk mempercepat run (mengorbankan jumlah sample).",
+        )
+    with col5:
+        max_workers = st.number_input(
+            "Thread paralel", min_value=1, max_value=10, value=5, key="bt_workers",
+        )
+
+    if st.button("▶️ Jalankan Backtest", type="primary", key="btn_run_backtest"):
+        if sumber.startswith("Manual"):
+            tickers = [
+                (t.strip().upper().replace(".JK", "") + ".JK")
+                for t in (tickers_input or "").split(",") if t.strip()
+            ]
+        else:
+            df_liquid = get_liquid_stocks()
+            if df_liquid.empty:
+                st.error("`liquid_stocks.csv` kosong/tidak ditemukan.")
+                return
+            col_t = "Ticker" if "Ticker" in df_liquid.columns else df_liquid.columns[0]
+            tickers = [
+                (t if t.endswith(".JK") else t + ".JK")
+                for t in df_liquid[col_t].astype(str).str.strip().tolist()
+            ]
+
+        if not tickers:
+            st.error("Tidak ada ticker untuk diproses.")
+            return
+
+        try:
+            holding_days = sorted(
+                int(x.strip()) for x in holding_days_str.split(",") if x.strip()
+            )
+        except ValueError:
+            st.error("Format holding period tidak valid. Contoh yang benar: 5,10,20")
+            return
+
+        progress_bar = st.progress(0, text="Memulai backtest...")
+        status_text  = st.empty()
+        all_rows: list[dict] = []
+        gagal: list[str] = []
+        total = len(tickers)
+
+        t0 = time.time()
+        with concurrent.futures.ThreadPoolExecutor(max_workers=int(max_workers)) as executor:
+            futures = {
+                executor.submit(
+                    bt.walk_forward_single, t, int(years), holding_days,
+                    int(min_warmup), int(sample_every),
+                ): t
+                for t in tickers
+            }
+            done = 0
+            for future in concurrent.futures.as_completed(futures):
+                t = futures[future]
+                done += 1
+                progress_bar.progress(done / total, text=f"Memproses ({done}/{total}): {t}")
+                try:
+                    rows = future.result()
+                    if rows:
+                        all_rows.extend(rows)
+                        status_text.caption(f"✅ {t}: {len(rows)} titik sinyal")
+                    else:
+                        gagal.append(t)
+                        status_text.caption(f"⚠️ {t}: data tidak cukup, dilewati")
+                except Exception as e:
+                    gagal.append(t)
+                    status_text.caption(f"❌ {t}: error — {e}")
+
+        elapsed = time.time() - t0
+        progress_bar.progress(1.0, text="Selesai!")
+        status_text.empty()
+
+        if not all_rows:
+            st.error("Tidak ada titik sinyal yang berhasil dihitung. Cek ticker/parameter.")
+            return
+
+        df_sinyal = pd.DataFrame(all_rows)
+        df_label  = bt.summarize(df_sinyal, holding_days, "Label", bt._LABEL_ORDER)
+        df_decile = bt.summarize(df_sinyal, holding_days, "Decile", None)
+
+        st.session_state["backtest_detail"] = df_sinyal
+        st.session_state["backtest_label"]  = df_label
+        st.session_state["backtest_decile"] = df_decile
+        st.session_state["backtest_done"]   = True
+        st.session_state["backtest_meta"]   = {
+            "elapsed": elapsed, "total": total, "gagal": gagal, "n_sinyal": len(all_rows),
+        }
+
+    # ── Tampilkan hasil dari session_state (survive re-run saat download) ──
+    if st.session_state.get("backtest_done", False):
+        meta = st.session_state["backtest_meta"]
+        st.success(
+            f"✅ Selesai dalam {meta['elapsed']:.0f} detik | "
+            f"{meta['n_sinyal']} titik sinyal dari {meta['total']} ticker "
+            f"({len(meta['gagal'])} dilewati/gagal)"
+        )
+        if meta["gagal"]:
+            st.caption(
+                f"Dilewati: {', '.join(meta['gagal'][:15])}"
+                f"{' ...' if len(meta['gagal']) > 15 else ''}"
+            )
+
+        st.markdown("**Ringkasan per Label (threshold saat ini)**")
+        st.dataframe(st.session_state["backtest_label"], use_container_width=True, hide_index=True)
+
+        st.markdown("**Ringkasan per Decile Skor**")
+        st.dataframe(st.session_state["backtest_decile"], use_container_width=True, hide_index=True)
+
+        st.caption(
+            "💡 Cek kolom WinRate_*D_%: kalau bucket 'BELI (35-64)' win rate-nya "
+            "di bawah 50%, threshold 35 kemungkinan terlalu longgar. Kalau bucket "
+            "'MASUK PANTAUAN (10-34)' win rate-nya sudah setara/lebih baik dari "
+            "'BELI', threshold BELI mungkin terlalu ketat."
+        )
+
+        ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        dl1, dl2, dl3 = st.columns(3)
+        with dl1:
+            st.download_button(
+                "⬇️ Detail Sinyal (CSV)",
+                data=st.session_state["backtest_detail"].to_csv(index=False).encode("utf-8"),
+                file_name=f"backtest_sinyal_{ts}.csv", mime="text/csv", key="dl_bt_detail",
+            )
+        with dl2:
+            st.download_button(
+                "⬇️ Ringkasan Label (CSV)",
+                data=st.session_state["backtest_label"].to_csv(index=False).encode("utf-8"),
+                file_name=f"backtest_ringkasan_label_{ts}.csv", mime="text/csv", key="dl_bt_label",
+            )
+        with dl3:
+            st.download_button(
+                "⬇️ Ringkasan Decile (CSV)",
+                data=st.session_state["backtest_decile"].to_csv(index=False).encode("utf-8"),
+                file_name=f"backtest_ringkasan_decile_{ts}.csv", mime="text/csv", key="dl_bt_decile",
             )
 
 
@@ -269,6 +443,11 @@ def render_admin_panel() -> None:
 
     _render_enrichment_panel("trading", df_pre)
     _render_enrichment_panel("dividen", df_pre)
+
+    st.divider()
+
+    # ── Backtest & Kalibrasi Skor Teknikal (opsional, sejajar dgn enrichment) ─
+    _render_backtest_panel()
 
     st.divider()
 
