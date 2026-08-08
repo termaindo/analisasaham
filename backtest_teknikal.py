@@ -19,7 +19,7 @@ CARA PAKAI
 Jalankan dari root repo (folder yang berisi app.py, modules/, utils/):
 
     python backtest_teknikal.py --from-liquid --years 5 --holding-days 5,10,20
-    python backtest_teknikal.py --tickers BBCA,BBRI,TLKM,ASII --years 3
+    python backtest_teknikal.py --tickers UVCR,TOWR,HOPE,RAJA --years 3
 
 Output:
     outputs/backtest_sinyal_<timestamp>.csv     -> detail tiap titik sinyal
@@ -286,7 +286,7 @@ def summarize(df_sinyal: pd.DataFrame, holding_days: list[int], bucket_col: str,
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# MAIN
+# MAINUV
 # ─────────────────────────────────────────────────────────────────────────────
 
 def main():
@@ -294,7 +294,7 @@ def main():
         description="Backtest walk-forward untuk kalibrasi threshold skor teknikal.py"
     )
     parser.add_argument("--tickers", type=str, default=None,
-                         help="Daftar ticker manual, pisah koma. Contoh: BBCA,BBRI,TLKM")
+                         help="Daftar ticker manual, pisah koma. Contoh: UVCR,HOPE,RAJA")
     parser.add_argument("--from-liquid", action="store_true",
                          help="Ambil universe dari liquid_stocks.csv via get_liquid_stocks()")
     parser.add_argument("--years", type=int, default=5,
