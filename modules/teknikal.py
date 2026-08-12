@@ -978,32 +978,53 @@ def compute_score(df: pd.DataFrame, timeframe: str = "swing") -> dict:
     if result["go_nogo"] and result["context_warning"]:
         result["confidence"] += f" ⚠️ Catatan: {result['context_warning']}"
 
+    # AUDIT FIX (SL/TP terlalu lebar): sebelumnya SL/TP murni kelipatan ATR
+    # tanpa batas persen — pada saham ber-ATR tinggi (umum di IDX mid/small-cap
+    # saat volatile), SL Day Trade bisa tembus 6-8% dan Swing 10%+, jauh dari
+    # standar (Day Trade idealnya <2%, Swing 5-8%). screening.py sudah punya
+    # hard cap (MAX_LOSS_PCT_DAY=3%, MAX_LOSS_PCT_SWING=8%) — teknikal.py
+    # sebelumnya tidak konsisten dengan itu. Sekarang: kelipatan ATR dasar
+    # diturunkan, DIBATASI floor & cap persen, lalu TP dihitung dari jarak SL
+    # yang sudah dibatasi tsb (bukan dari ATR mentah) agar RR 1:1 / 1:2 tetap
+    # konsisten walau SL sudah di-cap. Floor mencegah SL kelewat mepet
+    # (whipsaw) saat ATR sangat rendah/saham low-volatility.
     if timeframe == "day":
-        sl_mult_buy = 1.5
-        tp1_mult    = 1.5
-        tp2_mult    = 3.0
+        sl_atr_mult  = 1.0     # turun dari 1.5x ATR
+        rr1          = 1.0
+        rr2          = 2.0
+        sl_pct_cap   = 0.02    # hard cap 2% — day trade harus ketat
+        sl_pct_floor = 0.005   # floor 0.5% — cegah SL kelewat mepet
     else:
-        sl_mult_buy = 2.0
-        tp1_mult    = 2.0
-        tp2_mult    = 4.0
+        sl_atr_mult  = 1.5     # turun dari 2.0x ATR
+        rr1          = 1.0
+        rr2          = 2.0
+        sl_pct_cap   = 0.07    # hard cap 7% — swing trade IDX umum 5-8%
+        sl_pct_floor = 0.02    # floor 2%
 
-    entry_price = curr_price
-    sl  = entry_price - sl_mult_buy * atr_val
-    tp1 = entry_price + tp1_mult    * atr_val
-    tp2 = entry_price + tp2_mult    * atr_val
+    entry_price  = curr_price
+    atr_pct_raw  = (atr_val / entry_price) if entry_price > 0 else 0
+    sl_pct_raw   = sl_atr_mult * atr_pct_raw
+    sl_pct       = min(max(sl_pct_raw, sl_pct_floor), sl_pct_cap)
+    sl_dist      = sl_pct * entry_price
+    sl_was_capped = sl_pct_raw > sl_pct_cap
+
+    sl  = entry_price - sl_dist
+    tp1 = entry_price + sl_dist * rr1
+    tp2 = entry_price + sl_dist * rr2
 
     result["trading_plan"] = {
-        "entry":   entry_price,
-        "sl":      sl,
-        "tp1":     tp1,
-        "tp2":     tp2,
-        "atr":     atr_val,
-        "atr_pct": (atr_val / entry_price * 100) if entry_price > 0 else 0,
-        "sl_pct":  ((entry_price - sl) / entry_price * 100) if entry_price > 0 else 0,
-        "tp1_pct": ((tp1 - entry_price) / entry_price * 100) if entry_price > 0 else 0,
-        "tp2_pct": ((tp2 - entry_price) / entry_price * 100) if entry_price > 0 else 0,
-        "rr1":     tp1_mult / sl_mult_buy,
-        "rr2":     tp2_mult / sl_mult_buy,
+        "entry":      entry_price,
+        "sl":         sl,
+        "tp1":        tp1,
+        "tp2":        tp2,
+        "atr":        atr_val,
+        "atr_pct":    (atr_val / entry_price * 100) if entry_price > 0 else 0,
+        "sl_pct":     ((entry_price - sl) / entry_price * 100) if entry_price > 0 else 0,
+        "tp1_pct":    ((tp1 - entry_price) / entry_price * 100) if entry_price > 0 else 0,
+        "tp2_pct":    ((tp2 - entry_price) / entry_price * 100) if entry_price > 0 else 0,
+        "rr1":        rr1,
+        "rr2":        rr2,
+        "sl_capped":  sl_was_capped,
     }
 
     result["info"] = {
@@ -1300,6 +1321,13 @@ def render_trading_plan(sc: dict, total_modal: float, max_risiko: float):
         st.metric("🛑 Stop Loss", f"Rp {plan['sl']:,.0f}", delta=f"-{plan['sl_pct']:.1f}%", delta_color="inverse")
     with c3:
         st.metric("🎯 Target 1 (R:R 1:1)", f"Rp {plan['tp1']:,.0f}", delta=f"+{plan['tp1_pct']:.1f}%")
+
+    if plan.get("sl_capped"):
+        st.caption(
+            f"ℹ️ ATR saham ini ({plan['atr_pct']:.1f}%) di atas rata-rata — SL dibatasi "
+            f"(cap) ke {plan['sl_pct']:.1f}% agar tetap moderat. Volatilitas riil lebih "
+            f"tinggi dari SL yang ditampilkan; pertimbangkan ukuran posisi lebih kecil."
+        )
 
     c4, c5, c6 = st.columns(3)
     with c4:
