@@ -19,7 +19,8 @@ CARA PAKAI
 Jalankan dari root repo (folder yang berisi app.py, modules/, utils/):
 
     python backtest_teknikal.py --from-liquid --years 5 --holding-days 5,10,20
-    python backtest_teknikal.py --tickers UVCR,TOWR,HOPE,RAJA --years 3
+    python backtest_teknikal.py --tickers BBCA,BBRI,TLKM,ASII --years 3
+    python backtest_teknikal.py --tickers BBCA,BBRI,TLKM --years 3 --non-overlapping
 
 Output:
     outputs/backtest_sinyal_<timestamp>.csv     -> detail tiap titik sinyal
@@ -43,6 +44,19 @@ KETERBATASAN (baca sebelum menyimpulkan)
    window) untuk tiap titik sampel — ini caranya paling akurat mencegah
    lookahead bias, tapi otomatis lebih lambat dibanding hitung sekali di
    seluruh data. Pakai --sample-every untuk mempercepat kalau perlu.
+5. OVERLAP ANTAR SINYAL (PENTING — baca sebelum percaya N_Sinyal):
+   Secara default, jarak antar titik sampel (--sample-every, default 2 hari
+   bursa) jauh lebih pendek daripada holding period terpanjang (default 20
+   hari). Akibatnya window forward-return dari sinyal berturut-turut SALING
+   TUMPANG TINDIH — sinyal hari ke-100 dan hari ke-102 sama-sama "melihat"
+   sebagian besar harga yang sama di hari ke-102 s.d. ke-120. Ini membuat
+   observasi TIDAK independen: N_Sinyal yang besar di ringkasan output
+   MENGGELEMBUNGKAN rasa percaya diri statistik (winrate/avg return terlihat
+   presisi padahal effective sample size jauh lebih kecil). Gunakan flag
+   --non-overlapping untuk memaksa jarak antar sampel >= holding period
+   terpanjang per ticker, sehingga tiap window forward-return benar-benar
+   independen satu sama lain (trade-off: jumlah sinyal per ticker jauh lebih
+   sedikit, tapi tiap sinyal itu bermakna secara statistik).
 """
 
 import argparse
@@ -161,10 +175,22 @@ def walk_forward_single(
     holding_days: list[int],
     min_warmup: int,
     sample_every: int,
+    non_overlapping: bool = False,
 ) -> list[dict]:
     """
     Hitung skor teknikal di tiap titik sampel historis (expanding window, tanpa
     lookahead), lalu catat forward return riil untuk tiap holding period.
+
+    Parameter non_overlapping (BARU):
+        Jika True, jarak antar titik sampel dipaksa >= max(holding_days) —
+        bukan cuma sample_every. Ini menjamin window forward-return dari
+        sinyal berturut-turut TIDAK saling tumpang tindih, sehingga tiap
+        baris hasil adalah observasi yang independen secara statistik.
+        sample_every yang diberikan user tetap dipakai sebagai LANTAI
+        minimum jarak (kalau user set sample_every lebih besar dari
+        max(holding_days), yang lebih besar itu yang dipakai) — non_overlapping
+        hanya menaikkan jarak minimum, tidak pernah menurunkannya.
+
     Return: list of dict, satu dict per titik sinyal.
     """
     df_raw = fetch_history(ticker, years)
@@ -184,9 +210,19 @@ def walk_forward_single(
 
     n = len(df_ind)
     max_hold = max(holding_days)
-    hasil = []
 
-    idx_range = range(min_warmup, n - max_hold, max(1, sample_every))
+    # ── Tentukan langkah sampling efektif ───────────────────────────────────
+    # Non-overlapping: langkah minimum = max_hold (jamin window forward-return
+    # terpanjang tidak pernah beririsan antar titik sinyal berurutan). Window
+    # holding period yang lebih pendek (mis. 5D/10D) otomatis ikut tidak
+    # beririsan juga karena langkahnya >= max_hold >= holding period itu.
+    if non_overlapping:
+        effective_step = max(sample_every, max_hold)
+    else:
+        effective_step = max(1, sample_every)
+
+    hasil = []
+    idx_range = range(min_warmup, n - max_hold, effective_step)
 
     for i in idx_range:
         window = df_ind.iloc[: i + 1]   # hanya data s.d. hari ke-i — tanpa lookahead
@@ -206,6 +242,7 @@ def walk_forward_single(
             "Decile":      _decile_bucket(sc["score"]),
             "GoNogo":      sc["go_nogo"],
             "HargaEntry":  harga_entry,
+            "NonOverlapping": non_overlapping,
         }
 
         for h in holding_days:
@@ -286,7 +323,7 @@ def summarize(df_sinyal: pd.DataFrame, holding_days: list[int], bucket_col: str,
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# MAINUV
+# MAIN
 # ─────────────────────────────────────────────────────────────────────────────
 
 def main():
@@ -294,7 +331,7 @@ def main():
         description="Backtest walk-forward untuk kalibrasi threshold skor teknikal.py"
     )
     parser.add_argument("--tickers", type=str, default=None,
-                         help="Daftar ticker manual, pisah koma. Contoh: UVCR,HOPE,RAJA")
+                         help="Daftar ticker manual, pisah koma. Contoh: BBCA,BBRI,TLKM")
     parser.add_argument("--from-liquid", action="store_true",
                          help="Ambil universe dari liquid_stocks.csv via get_liquid_stocks()")
     parser.add_argument("--years", type=int, default=5,
@@ -304,18 +341,36 @@ def main():
     parser.add_argument("--min-warmup", type=int, default=250,
                          help="Minimum bar warmup sebelum mulai sampling (default: 250, agar EMA200/ADX stabil)")
     parser.add_argument("--sample-every", type=int, default=2,
-                         help="Sampling tiap N hari bursa (default: 2, untuk mempercepat run tanpa kehilangan sinyal terlalu banyak)")
+                         help="Sampling tiap N hari bursa (default: 2, untuk mempercepat run tanpa kehilangan sinyal terlalu banyak). "
+                              "Diabaikan (dinaikkan otomatis) jika --non-overlapping dipakai dan nilainya lebih kecil dari holding period terpanjang.")
+    parser.add_argument("--non-overlapping", action="store_true",
+                         help="Paksa jarak antar titik sampel >= holding period terpanjang, supaya window "
+                              "forward-return antar sinyal tidak saling tumpang tindih (observasi independen). "
+                              "Mengurangi jumlah sinyal per ticker secara signifikan, tapi hasil win rate/avg "
+                              "return jadi bisa dipercaya secara statistik, bukan sekadar N besar yang semu.")
     parser.add_argument("--max-workers", type=int, default=6,
                          help="Jumlah thread paralel fetch+backtest per ticker (default: 6)")
     parser.add_argument("--output-dir", type=str, default="outputs",
                          help="Folder output CSV (default: outputs/)")
+    parser.add_argument("--tag", type=str, default=None,
+                         help="Label opsional ditambahkan ke nama file output (mis. nama batch: 'batch1_perbankan'). "
+                              "Berguna saat menjalankan backtest bertahap per batch ticker.")
     args = parser.parse_args()
 
     holding_days = sorted(int(x.strip()) for x in args.holding_days.split(",") if x.strip())
     tickers = load_universe(args)
 
+    max_hold = max(holding_days)
+    if args.non_overlapping and args.sample_every < max_hold:
+        print(
+            f"ℹ️ --non-overlapping aktif: --sample-every dinaikkan otomatis dari "
+            f"{args.sample_every} menjadi {max_hold} hari bursa (= holding period terpanjang), "
+            f"supaya window forward-return antar sinyal tidak tumpang tindih."
+        )
+
     print(f"📊 Universe: {len(tickers)} ticker | Histori: {args.years} tahun | "
-          f"Holding: {holding_days} hari | Sample tiap {args.sample_every} hari")
+          f"Holding: {holding_days} hari | "
+          f"Mode: {'NON-OVERLAPPING (observasi independen)' if args.non_overlapping else f'overlapping, sample tiap {args.sample_every} hari (lihat catatan overlap di header script)'}")
     print("🔄 Menjalankan walk-forward backtest (bisa beberapa menit)...\n")
 
     t0 = time.time()
@@ -326,7 +381,7 @@ def main():
         futures = {
             executor.submit(
                 walk_forward_single, t, args.years, holding_days,
-                args.min_warmup, args.sample_every,
+                args.min_warmup, args.sample_every, args.non_overlapping,
             ): t
             for t in tickers
         }
@@ -359,10 +414,13 @@ def main():
     df_sinyal = pd.DataFrame(all_rows)
 
     os.makedirs(args.output_dir, exist_ok=True)
-    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-    path_detail  = os.path.join(args.output_dir, f"backtest_sinyal_{ts}.csv")
-    path_label   = os.path.join(args.output_dir, f"backtest_ringkasan_label_{ts}.csv")
-    path_decile  = os.path.join(args.output_dir, f"backtest_ringkasan_decile_{ts}.csv")
+    ts  = datetime.now().strftime("%Y%m%d_%H%M%S")
+    tag = f"_{args.tag}" if args.tag else ""
+    mode_suffix = "_nonoverlap" if args.non_overlapping else "_overlap"
+
+    path_detail  = os.path.join(args.output_dir, f"backtest_sinyal_{ts}{tag}{mode_suffix}.csv")
+    path_label   = os.path.join(args.output_dir, f"backtest_ringkasan_label_{ts}{tag}{mode_suffix}.csv")
+    path_decile  = os.path.join(args.output_dir, f"backtest_ringkasan_decile_{ts}{tag}{mode_suffix}.csv")
 
     df_sinyal.to_csv(path_detail, index=False)
 
@@ -390,6 +448,16 @@ def main():
     print(f"   - Ringkasan label   : {path_label}")
     print(f"   - Ringkasan decile  : {path_decile}")
 
+    if not args.non_overlapping:
+        print(
+            "\n⚠️ PERINGATAN: run ini memakai mode OVERLAPPING (default). N_Sinyal di atas "
+            "BUKAN jumlah observasi independen — window forward-return antar sinyal saling "
+            "beririsan karena jarak sampling lebih pendek dari holding period. Winrate/avg "
+            "return di atas cenderung TERLIHAT lebih presisi daripada yang sebenarnya. "
+            "Jalankan ulang dengan --non-overlapping untuk hasil yang independen secara "
+            "statistik sebelum mengambil kesimpulan kalibrasi threshold."
+        )
+
     print(
         "\n💡 Cara baca: kalau target aplikasi win rate >50%, cek kolom WinRate_*D_%"
         " untuk tiap bucket. Kalau bucket 'BELI (35-64)' win rate-nya jauh di bawah 50%,"
@@ -397,6 +465,14 @@ def main():
         " sudah >50%, threshold 'BELI' saat ini mungkin terlalu ketat (skor 10-34 sudah"
         " cukup layak, tapi masih dilabeli 'pantau saja')."
     )
+
+    if args.tag:
+        print(
+            f"\n📦 Batch '{args.tag}' selesai. Kalau menjalankan multi-batch, gabungkan semua "
+            f"file backtest_sinyal_*.csv dari tiap batch (pd.concat) sebelum menghitung "
+            f"summarize() gabungan lintas batch — jangan hanya membandingkan ringkasan "
+            f"per-batch secara terpisah, karena N per batch terlalu kecil untuk disimpulkan sendiri-sendiri."
+        )
 
 
 if __name__ == "__main__":
