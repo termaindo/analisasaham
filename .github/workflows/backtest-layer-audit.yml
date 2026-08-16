@@ -1,1 +1,57 @@
+name: Backtest Layer Audit
 
+# Dipicu manual dari tab "Actions" di GitHub — bukan otomatis saat push,
+# supaya tidak menghabiskan menit Actions setiap ada commit biasa.
+on:
+  workflow_dispatch:
+    inputs:
+      tickers:
+        description: 'Daftar ticker, pisah koma (contoh: BBCA,BBRI,BMRI,BBNI,BRIS)'
+        required: true
+        type: string
+      tag:
+        description: "Label batch (contoh: batch1_bank)"
+        required: true
+        type: string
+      years:
+        description: 'Tahun histori'
+        required: false
+        default: '5'
+        type: string
+      non_overlapping:
+        description: 'Gunakan sampling non-overlapping?'
+        required: false
+        default: true
+        type: boolean
+
+jobs:
+  run-backtest:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install scipy   # untuk analyze_layer_audit.py (uji signifikansi)
+
+      - name: Jalankan backtest_layer_audit.py
+        run: |
+          python backtest_layer_audit.py \
+            --tickers "${{ inputs.tickers }}" \
+            --years ${{ inputs.years }} \
+            --tag "${{ inputs.tag }}" \
+            ${{ inputs.non_overlapping == true && '--non-overlapping' || '' }}
+
+      - name: Upload hasil sebagai artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: layer-audit-${{ inputs.tag }}
+          path: outputs/layer_audit_*.csv
+          retention-days: 14
