@@ -328,10 +328,19 @@ def _calc_supertrend(df: pd.DataFrame, period: int, multiplier: float) -> pd.Ser
             else prev_lo
         )
 
-        prev_dir = direction.iloc[i - 1] if i > 1 else True
-        if prev_dir is False and close.iloc[i] > upper_b.iloc[i]:
+        # AUDIT FIX (bug kritis ditemukan lewat layer audit backtest, Agustus 2026):
+        # direction adalah pd.Series(dtype=bool) -> setiap .iloc[] mengembalikan
+        # numpy.bool_, BUKAN bool Python. 'numpy.bool_(True) is True' SELALU False,
+        # jadi kedua cabang if/elif di bawah sebelumnya TIDAK PERNAH tereksekusi
+        # setelah candle kedua -- arah Supertrend membeku permanen di nilai awal
+        # (True) selama sisa window, apapun pergerakan harganya. Terbukti: backtest
+        # 1402 sinyal / 30 ticker / 4 tahun menunjukkan Supertrend_poin = +10 di
+        # 100% sample, termasuk saat downtrend tajam. Fix: cast eksplisit ke bool()
+        # Python dan pakai '==' bukan 'is' untuk perbandingan nilai boolean.
+        prev_dir = bool(direction.iloc[i - 1]) if i > 1 else True
+        if prev_dir == False and close.iloc[i] > upper_b.iloc[i]:
             direction.iloc[i] = True
-        elif prev_dir is True and close.iloc[i] < lower_b.iloc[i]:
+        elif prev_dir == True and close.iloc[i] < lower_b.iloc[i]:
             direction.iloc[i] = False
         else:
             direction.iloc[i] = prev_dir
