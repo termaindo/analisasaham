@@ -1,0 +1,60 @@
+name: Backtest Layer Audit Experiment (Trend Normal/Reversed/Neutral)
+
+# Dipicu manual dari tab "Actions" — sama seperti backtest-layer-audit.yml.
+# Script yang dijalankan (backtest_layer_audit_experiment.py) TIDAK mengubah
+# modules/teknikal.py sama sekali; ia hanya memanggil compute_score() apa
+# adanya dan menyusun ulang 3 varian skor dari Trend_Total/Momentum_Total/
+# Entry_Total yang sudah tersedia di hasilnya. Aman dijalankan kapan saja.
+on:
+  workflow_dispatch:
+    inputs:
+      tickers:
+        description: 'Daftar ticker, pisah koma (contoh: BBCA,BBRI,BMRI,BBNI,BRIS)'
+        required: true
+        type: string
+      tag:
+        description: "Label batch (contoh: batch1_bank_experiment, atau bbri_only)"
+        required: true
+        type: string
+      years:
+        description: 'Tahun histori'
+        required: false
+        default: '5'
+        type: string
+      non_overlapping:
+        description: 'Gunakan sampling non-overlapping?'
+        required: false
+        default: true
+        type: boolean
+
+jobs:
+  run-backtest-experiment:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install scipy   # untuk ringkasan cepat korelasi di akhir script
+
+      - name: Jalankan backtest_layer_audit_experiment.py
+        run: |
+          python backtest_layer_audit_experiment.py \
+            --tickers "${{ inputs.tickers }}" \
+            --years ${{ inputs.years }} \
+            --tag "${{ inputs.tag }}" \
+            ${{ inputs.non_overlapping == true && '--non-overlapping' || '' }}
+
+      - name: Upload hasil sebagai artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: layer-audit-experiment-${{ inputs.tag }}
+          path: outputs/layer_audit_experiment_*.csv
+          retention-days: 14
