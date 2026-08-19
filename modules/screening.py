@@ -126,13 +126,13 @@ def load_universe() -> tuple[list[str], pd.DataFrame]:
     if not df_liquid.empty:
         df = _normalize_universe_columns(df_liquid)
 
-        # Filter trading: hanya ticker dengan Value_MA20 >= 2M dan ROE >= 10%.
+        # Filter trading: hanya ticker dengan Value_MA20 >= 500jt dan ROE >= 5%.
         # Dilakukan di sini (bukan di process_single_stock) agar saham profil
         # dividen yang lolos threshold lebih rendah tidak masuk antrian API call.
         # Filter hanya aktif jika kolom tersedia — agar tidak crash saat
         # liquid_stocks.csv belum di-enrich ulang.
-        _TRADING_MIN_VALUE_MA20 = 2_000_000_000
-        _TRADING_MIN_ROE        = 10.0
+        _TRADING_MIN_VALUE_MA20 = 500_000_000
+        _TRADING_MIN_ROE        = 5.0
         if "Value_MA20" in df.columns:
             df = df[
                 df["Value_MA20"].notna() &
