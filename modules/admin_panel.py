@@ -15,7 +15,9 @@ Dua file output terpisah:
 
 Panel tambahan (tidak menulis file ke disk, hasil via session_state + download_button):
   - Backtest & Kalibrasi Skor Teknikal  → backtest_teknikal.py (skor total)
-  - Layer Audit Kontribusi Per-Indikator → backtest_layer_audit.py (per indikator)
+  - Layer Audit Kontribusi Per-Indikator (teknikal.py) → backtest_layer_audit.py
+  - Layer Audit Kontribusi Per-Indikator (screening.py, Swing Trading) →
+    backtest_layer_audit_screening.py
 """
 
 import concurrent.futures
@@ -640,6 +642,265 @@ def _render_layer_audit_panel() -> None:
         )
 
 
+def _render_layer_audit_screening_panel() -> None:
+    """
+    Panel Layer Audit — Screening (Swing Trading). Sama filosofinya dengan
+    `_render_layer_audit_panel()` di atas, tapi untuk sistem scoring Swing
+    Trading di modules/screening.py, lewat backtest_layer_audit_screening.py.
+
+    ⚠️ PERBEDAAN PENTING dari panel Layer Audit teknikal.py:
+    `process_single_stock()` di screening.py bukan fungsi murni (menyatu
+    dengan fetch live & df_universe), jadi backtest_layer_audit_screening.py
+    memakai SALINAN MANUAL dari blok scoring Swing Trading — bukan import
+    langsung. Cakupan yang diaudit di sini HANYA mode Swing Trading (Day
+    Trading di-skip, sama seperti keterbatasan yfinance intraday di panel
+    Backtest & Kalibrasi Teknikal). Filter eligibility (Value_MA20,
+    MarketCap, ROE/ROA) dan bonus Sector Hot juga TIDAK tercermin di sini
+    karena bergantung snapshot live/lintas-ticker, bukan time series per
+    ticker. Detail lengkap ada di docstring backtest_layer_audit_screening.py.
+
+    Sesuai STANDAR_KODING.md, tidak ada file yang ditulis ke disk — hasil
+    disimpan di st.session_state dan diunduh via st.download_button.
+    """
+    st.subheader("🔬 Layer Audit — Kontribusi Per-Indikator Screening (Swing Trading)")
+    st.caption(
+        "Menjalankan `backtest_layer_audit_screening.py` untuk membongkar kontribusi "
+        "poin tiap indikator individual dari scoring **Swing Trading** di "
+        "`modules/screening.py` terhadap forward return riil."
+    )
+    st.info(
+        "ℹ️ Hanya mode **Swing Trading** yang diaudit (Day Trading tidak — yfinance "
+        "hanya kasih 60 hari data 15m, tidak cukup untuk kalibrasi bertahun-tahun). "
+        "Filter eligibility (Value_MA20, MarketCap, ROE/ROA) dan bonus Sector Hot "
+        "TIDAK tercermin di hasil ini karena bergantung data live/snapshot lintas-ticker, "
+        "bukan time series historis per ticker. Pre-filter OBV Divergence & CMF(20) serta "
+        "gate MTF dicatat sebagai **flag diagnostik** (kolom OBV_ok/CMF_ok/MTF_ok), bukan "
+        "gate yang menggugurkan — supaya kamu bisa cek sendiri apakah filter itu benar-benar "
+        "menyaring ke arah yang tepat."
+    )
+
+    try:
+        import backtest_layer_audit_screening as las
+    except ImportError as e:
+        st.error(
+            f"❌ Tidak bisa memuat `backtest_layer_audit_screening.py`. Pastikan file "
+            f"ada di root repo (sejajar `app.py`).\n\nDetail: {e}"
+        )
+        return
+
+    st.warning(
+        "⚠️ **Operasi berat**, sama seperti panel Layer Audit Teknikal di atas. "
+        "Untuk batch besar (banyak ticker sekaligus) atau histori panjang, jalankan "
+        "lewat GitHub Actions (`backtest-layer-audit-screening.yml`) supaya tidak kena "
+        "timeout Streamlit Cloud. Panel ini untuk cek cepat per batch kecil, atau untuk "
+        "spot-check awal sebelum full-batch."
+    )
+
+    col1, col2 = st.columns(2)
+    with col1:
+        las_tickers_input = st.text_input(
+            "Daftar ticker (pisah koma)",
+            value="BBCA,BBRI,BMRI,BBNI,BRIS",
+            key="las_tickers_input",
+        )
+    with col2:
+        las_tag = st.text_input(
+            "Tag batch",
+            value="",
+            key="las_tag_input",
+            placeholder="contoh: batch1_bank",
+            help="Dipakai sebagai nama file hasil download, supaya gampang dikenali saat digabung nanti.",
+        )
+
+    with st.expander("⚙️ Parameter lanjutan (opsional — default sudah sesuai rekomendasi)", expanded=False):
+        col3, col4, col5 = st.columns(3)
+        with col3:
+            las_years = st.number_input(
+                "Tahun histori", min_value=1, max_value=10, value=5, key="las_years",
+            )
+            las_non_overlap = st.checkbox(
+                "Non-overlapping (disarankan)", value=True, key="las_non_overlap",
+                help=(
+                    "Jarak antar titik sampel dipaksa >= holding period terpanjang, "
+                    "supaya window forward-return antar sinyal tidak tumpang tindih "
+                    "(observasi independen secara statistik)."
+                ),
+            )
+        with col4:
+            las_holding_str = st.text_input(
+                "Holding period (hari bursa, pisah koma)", value="5,10,20", key="las_holding",
+            )
+            las_min_warmup = st.number_input(
+                "Min warmup (bar)", min_value=60, max_value=400, value=250, key="las_warmup",
+            )
+        with col5:
+            las_sample_every = st.number_input(
+                "Sample tiap N hari (diabaikan jika non-overlapping aktif)",
+                min_value=1, max_value=20, value=2, key="las_sample",
+            )
+            las_max_workers = st.number_input(
+                "Thread paralel", min_value=1, max_value=10, value=5, key="las_workers",
+            )
+
+    if st.button("▶️ Jalankan Layer Audit Screening", type="primary", key="btn_run_layer_audit_screening"):
+        if not las_tag.strip():
+            st.error("Isi Tag batch dulu — dipakai sebagai nama file hasil download.")
+            return
+
+        tickers = [
+            (t.strip().upper().replace(".JK", "") + ".JK")
+            for t in las_tickers_input.split(",") if t.strip()
+        ]
+        if not tickers:
+            st.error("Isi daftar ticker dulu.")
+            return
+
+        try:
+            holding_days = sorted(int(x.strip()) for x in las_holding_str.split(",") if x.strip())
+        except ValueError:
+            st.error("Format holding period tidak valid. Contoh yang benar: 5,10,20")
+            return
+
+        progress_bar = st.progress(0, text="Memulai layer audit screening...")
+        status_text  = st.empty()
+        all_rows: list[dict] = []
+        gagal: list[str] = []
+        total = len(tickers)
+
+        t0 = time.time()
+        with concurrent.futures.ThreadPoolExecutor(max_workers=int(las_max_workers)) as executor:
+            futures = {
+                executor.submit(
+                    las.walk_forward_screening_single, t, int(las_years), holding_days,
+                    int(las_min_warmup), int(las_sample_every), bool(las_non_overlap),
+                ): t
+                for t in tickers
+            }
+            done = 0
+            for future in concurrent.futures.as_completed(futures):
+                t = futures[future]
+                done += 1
+                progress_bar.progress(done / total, text=f"Memproses ({done}/{total}): {t}")
+                try:
+                    rows = future.result()
+                    if rows:
+                        all_rows.extend(rows)
+                        status_text.caption(f"✅ {t}: {len(rows)} titik sinyal")
+                    else:
+                        gagal.append(t)
+                        status_text.caption(f"⚠️ {t}: data tidak cukup, dilewati")
+                except Exception as e:
+                    gagal.append(t)
+                    status_text.caption(f"❌ {t}: error — {e}")
+
+        elapsed = time.time() - t0
+        progress_bar.progress(1.0, text="Selesai!")
+        status_text.empty()
+
+        if not all_rows:
+            st.error("Tidak ada titik sinyal yang berhasil dihitung. Cek ticker/parameter.")
+            return
+
+        df_sinyal = pd.DataFrame(all_rows)
+
+        st.session_state["layer_audit_screening_df"]   = df_sinyal
+        st.session_state["layer_audit_screening_tag"]  = las_tag.strip()
+        st.session_state["layer_audit_screening_meta"] = {
+            "elapsed": elapsed, "total": total, "gagal": gagal,
+            "n_sinyal": len(all_rows), "holding_days": holding_days,
+        }
+        st.session_state["layer_audit_screening_done"] = True
+
+    # ── Tampilkan hasil dari session_state (survive re-run saat download) ──
+    if st.session_state.get("layer_audit_screening_done", False):
+        meta      = st.session_state["layer_audit_screening_meta"]
+        df_sinyal = st.session_state["layer_audit_screening_df"]
+        tag_saved = st.session_state["layer_audit_screening_tag"]
+
+        st.success(
+            f"✅ Selesai dalam {meta['elapsed']:.0f} detik | "
+            f"{meta['n_sinyal']} titik sinyal dari {meta['total']} ticker "
+            f"({len(meta['gagal'])} dilewati/gagal)"
+        )
+        if meta["gagal"]:
+            st.caption(
+                f"Dilewati: {', '.join(meta['gagal'][:15])}"
+                f"{' ...' if len(meta['gagal']) > 15 else ''}"
+            )
+
+        st.markdown("**Ranking indikator (Pearson, cek cepat) — urut dari |korelasi horizon terpanjang| tertinggi**")
+        holding_days = meta["holding_days"]
+        poin_cols = [
+            "Supertrend_poin", "MAStructure_poin", "MACD_GC_poin", "MACD_Hist_poin",
+            "RVOL_poin", "RSIMomentum_poin", "RSITrend_poin", "PSAR_poin",
+            "VPT_poin", "MACDRecovery_poin", "RSIOB_penalty",
+        ]
+        rows_rank = []
+        for col in poin_cols + ["Skor"]:
+            if col not in df_sinyal.columns:
+                continue
+            row = {"Indikator": col}
+            for h in holding_days:
+                ret_col = f"Return_{h}D_pct"
+                if ret_col in df_sinyal.columns:
+                    row[f"Pearson_{h}D"] = round(df_sinyal[col].corr(df_sinyal[ret_col]), 3)
+            rows_rank.append(row)
+        df_rank = pd.DataFrame(rows_rank)
+        sort_col = f"Pearson_{max(holding_days)}D"
+        if sort_col in df_rank.columns:
+            df_rank["_abs"] = df_rank[sort_col].abs()
+            df_rank = df_rank.sort_values("_abs", ascending=False).drop(columns="_abs")
+        st.dataframe(df_rank, use_container_width=True, hide_index=True)
+
+        st.markdown("**Efek flag diagnostik (lolos vs digugurkan di app live) — cek cepat**")
+        flag_cols = ["OBV_ok", "CMF_ok", "MTF_ok"]
+        rows_flag = []
+        for col in flag_cols:
+            if col not in df_sinyal.columns:
+                continue
+            row = {"Flag": col}
+            for h in holding_days:
+                ret_col = f"Return_{h}D_pct"
+                if ret_col not in df_sinyal.columns:
+                    continue
+                true_vals  = df_sinyal.loc[df_sinyal[col] == True, ret_col]
+                false_vals = df_sinyal.loc[df_sinyal[col] == False, ret_col]
+                row[f"Avg_True_{h}D"]  = round(true_vals.mean(), 2) if len(true_vals) else None
+                row[f"Avg_False_{h}D"] = round(false_vals.mean(), 2) if len(false_vals) else None
+            rows_flag.append(row)
+        if rows_flag:
+            st.dataframe(pd.DataFrame(rows_flag), use_container_width=True, hide_index=True)
+
+        st.caption(
+            "⚠️ Angka di atas dari satu batch kecil TANPA uji signifikansi — bisa "
+            "menyesatkan kalau dijadikan kesimpulan sendiri. Gabungkan semua batch "
+            "(`analyze_layer_audit_screening.py` via GitHub Actions, atau kirim seluruh "
+            "file hasil ke Claude) sebelum menyimpulkan indikator/filter mana yang layak "
+            "diubah bobot atau threshold-nya. Ingat: hasil ini HANYA mode Swing Trading, "
+            "dan TIDAK mencerminkan filter eligibility maupun bonus Sector Hot."
+        )
+
+        with st.expander("📄 Lihat detail per sinyal (50 baris pertama)"):
+            st.dataframe(df_sinyal.head(50), use_container_width=True, hide_index=True)
+            st.caption(f"Menampilkan 50 dari {len(df_sinyal)} baris. Unduh CSV lengkap di bawah untuk semuanya.")
+
+        ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        mode_suffix = "_nonoverlap" if bool(df_sinyal["NonOverlapping"].iloc[0]) else "_overlap"
+        file_name = f"layer_audit_screening_{ts}_{tag_saved}{mode_suffix}.csv"
+        st.download_button(
+            "⬇️ Download Detail Sinyal (CSV)",
+            data=df_sinyal.to_csv(index=False).encode("utf-8"),
+            file_name=file_name,
+            mime="text/csv",
+            key="dl_layer_audit_screening_detail",
+        )
+        st.caption(
+            "💡 Jalankan panel ini per batch (ganti ticker & tag), download tiap hasilnya, "
+            "lalu kumpulkan semua file dan kirim ke Claude — atau jalankan "
+            "`analyze_layer_audit_screening.py` sendiri — untuk analisis gabungan lintas batch."
+        )
+
+
 def render_admin_panel() -> None:
     st.header("⚙️ Panel Admin — Enrichment Data Saham")
     st.caption(
@@ -680,8 +941,13 @@ def render_admin_panel() -> None:
 
     st.divider()
 
-    # ── Layer Audit — kontribusi per-indikator (opsional, lanjutan dari backtest) ─
+    # ── Layer Audit — kontribusi per-indikator teknikal.py (lanjutan dari backtest) ─
     _render_layer_audit_panel()
+
+    st.divider()
+
+    # ── Layer Audit — kontribusi per-indikator screening.py (Swing Trading) ─
+    _render_layer_audit_screening_panel()
 
     st.divider()
 
