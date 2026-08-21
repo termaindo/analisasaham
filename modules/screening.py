@@ -36,7 +36,13 @@ Swing Trade scoring (interval 1d):
 7. RSI(14) Trend: naik konsisten 3 candle berturut -> 10 poin
 8. PSAR bullish -> 5 poin
 9. VPT Trend: slope EMA(10) VPT positif >= 3 dari 5 candle terakhir -> 5 poin
-Bonus MACD Early Recovery: Hist > 0 tapi MACD < Signal -> +10
+Bonus MACD Early Recovery: MACD < Signal (belum cross) TAPI Histogram menguat
+  dibanding candle sebelumnya (Hist[i] > Hist[i-1]) -> +10
+  [FIX 21 Agu 2026 — lihat catatan AUDIT FIX di kode: kondisi lama
+  "Hist>0 DAN MACD<Signal" matematis mustahil karena Hist=MACD-Signal,
+  sehingga bonus ini dead code (tidak pernah menyala, 0/2953 pada layer
+  audit backtest_layer_audit_screening.py). Diganti jadi histogram
+  menguat sebagai leading indicator sebelum golden cross terjadi.]
 Penalti RSI Overbought (>75): -15
 Bonus Sektor Hot: +10 (post-processing)
 
@@ -1110,14 +1116,27 @@ def process_single_stock(
             if compute_vpt_trend(df, valid_iloc):
                 score += 5; alasan.append("VPT Trend Naik +5")
 
-            # Bonus: MACD Early Recovery
-            # Histogram sudah berbalik positif (Hist > 0) TAPI MACD Line masih < Signal Line
+            # AUDIT FIX (21 Agu 2026 — lihat backtest_layer_audit_screening.py):
+            # Bonus "MACD Early Recovery" versi lama mensyaratkan
+            #   hist_now > 0  DAN  macd_now < sig_now
+            # Ini MUSTAHIL secara matematis karena MACD_Hist didefinisikan
+            # persis sebagai (MACD - MACD_Signal) di calculate_indicators() —
+            # jadi hist_now > 0 SELALU berarti macd_now > sig_now, kontradiksi
+            # langsung dengan syarat kedua. Akibatnya bonus ini dead code:
+            # tidak pernah menyala (terbukti 0/2953 observasi pada layer audit
+            # backtest_layer_audit_screening.py, batch kalibrasi + 8 holdout).
+            #
+            # Fix: pertahankan semangat "early" (sebelum golden cross resmi
+            # terjadi — itu sudah ditangani terpisah di poin 3 MACD Golden
+            # Cross) dengan menukar syarat histogram dari "sudah positif"
+            # menjadi "sedang menguat dibanding candle sebelumnya" — leading
+            # indicator histogram menyempit/membaik saat MACD line masih di
+            # bawah Signal line (belum cross).
             if valid_iloc >= 1:
-                hist_now = float(df["MACD_Hist"].iloc[valid_iloc])
                 macd_now = float(last["MACD"])
                 sig_now  = float(last["MACD_Signal"])
-                if hist_now > 0 and macd_now < sig_now:
-                    score += 10; alasan.append("MACD Early Recovery (Hist>0, MACD<Signal) +10")
+                if macd_now < sig_now and hist_now > hist_prev:
+                    score += 10; alasan.append("MACD Early Recovery (Hist Menguat, Belum Cross) +10")
 
             # Penalti: RSI Overbought
             if rsi_val > RSI_OVERBOUGHT:
