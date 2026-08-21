@@ -32,6 +32,16 @@ langsung. Konsekuensinya:
     CSV hasil script ini untuk tanggal candle terakhir. Kalau meleset,
     JANGAN lanjut ke analisis — perbaiki dulu fungsi di bawah.
 
+RIWAYAT SINKRONISASI:
+  - 21 Agu 2026: screening.py diperbaiki (bug dead-code "MACD Early
+    Recovery" — kondisi lama matematis mustahil karena MACD_Hist =
+    MACD - MACD_Signal). Fungsi compute_score_swing_pure() di bawah
+    disinkronkan mengikuti fix tsb. Hasil layer audit SEBELUM tanggal ini
+    (MACDRecovery_poin selalu 0) TIDAK bisa dibandingkan apple-to-apple
+    dengan hasil audit SESUDAH tanggal ini untuk kolom tersebut — kalau
+    menggabungkan batch lama + baru, exclude atau tandai terpisah kolom
+    MACDRecovery_poin dan Skor totalnya.
+
 CAKUPAN AUDIT INI (Swing Trading, interval 1d):
   Diskorkan (poin, ikut ditotal ke 'Skor'):
     - Supertrend (10,3) tier: fresh cross +20 / sustained +15 / else 0
@@ -43,7 +53,8 @@ CAKUPAN AUDIT INI (Swing Trading, interval 1d):
     - RSI(14) Trend 3 candle naik +10
     - PSAR bullish +5
     - VPT Trend (EMA10 slope) +5
-    - Bonus MACD Early Recovery +10
+    - Bonus MACD Early Recovery +10 (MACD<Signal, histogram menguat — lihat
+      catatan sinkronisasi 21 Agu 2026 di compute_score_swing_pure())
     - Penalti RSI Overbought (>75) -15
 
   TIDAK diskorkan, hanya dicatat sebagai FLAG diagnostik (bukan gate):
@@ -285,9 +296,16 @@ def compute_score_swing_pure(df: pd.DataFrame, i: int) -> dict:
     detail["VPT_poin"] = vpt_pts
 
     # Bonus: MACD Early Recovery
+    # SINKRONISASI 21 Agu 2026: mengikuti fix di screening.py — kondisi lama
+    # (hist_now > 0 DAN macd_now < sig_now) matematis mustahil karena
+    # MACD_Hist = MACD - MACD_Signal, sehingga dulu selalu 0 (dead code).
+    # Kondisi baru: MACD masih di bawah Signal (belum cross) TAPI histogram
+    # menguat dibanding candle sebelumnya (leading indicator sebelum golden
+    # cross). Kalau screening.py diubah lagi ke depannya, blok ini HARUS
+    # disinkronkan ulang manual — tidak otomatis ikut berubah.
     macd_now = float(last["MACD"])
     sig_now = float(last["MACD_Signal"])
-    recovery_pts = 10 if (i >= 1 and hist_now > 0 and macd_now < sig_now) else 0
+    recovery_pts = 10 if (i >= 1 and macd_now < sig_now and hist_now > hist_prev) else 0
     score += recovery_pts
     detail["MACDRecovery_poin"] = recovery_pts
 
